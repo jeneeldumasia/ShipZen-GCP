@@ -158,6 +158,7 @@ resource "google_storage_bucket" "build_logs" {
   name          = "shipzen-build-logs-${random_id.bucket_suffix.hex}"
   location      = var.gcp_region
   force_destroy = true
+  uniform_bucket_level_access = true
 
   lifecycle_rule {
     condition {
