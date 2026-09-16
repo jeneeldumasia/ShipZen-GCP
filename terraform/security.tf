@@ -55,37 +55,4 @@ resource "helm_release" "kyverno_policies" {
   depends_on = [helm_release.kyverno]
 }
 
-resource "kubernetes_manifest" "builder_policy_exception" {
-  manifest = {
-    apiVersion = "kyverno.io/v2beta1"
-    kind       = "PolicyException"
-    metadata = {
-      name      = "builder-unconfined-exception"
-      namespace = "kyverno"
-    }
-    spec = {
-      exceptions = [
-        {
-          policyName = "disallow-unconfined-seccomp"
-          ruleNames  = ["check-seccomp"]
-        },
-        {
-          policyName = "disallow-unconfined-apparmor"
-          ruleNames  = ["check-apparmor"]
-        }
-      ]
-      match = {
-        any = [
-          {
-            resources = {
-              kinds      = ["Pod"]
-              namespaces = ["shipzen-build"]
-              containers = ["buildkit", "pack"]
-            }
-          }
-        ]
-      }
-    }
-  }
-  depends_on = [helm_release.kyverno, helm_release.kyverno_policies]
-}
+
