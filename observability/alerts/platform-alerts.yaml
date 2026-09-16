@@ -1,0 +1,81 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shipzen-platform-alerts
+  namespace: observability
+spec:
+  groups:
+    - name: platform-alerts
+      rules:
+        # Queue Backlog
+        - alert: DeploymentQueueBacklog
+          expr: shipzen_queue_depth > 100
+          for: 5m
+          labels:
+            severity: high
+          annotations:
+            summary: "High deployment queue backlog"
+            description: "There are more than 100 pending deployments. Workers may be stalled or capacity exhausted."
+
+        # DLQ Growth
+        - alert: DLQGrowing
+          expr: increase(shipzen_dlq_depth[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Dead Letter Queue is growing"
+            description: "Deployments are failing max retries and entering the DLQ."
+
+        # Builder Failures
+        - alert: HighBuilderFailures
+          expr: rate(shipzen_retry_total[5m]) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High rate of builder failures/retries"
+            description: "Builder pods are experiencing elevated failure rates."
+
+        # Redis Failures
+        - alert: RedisDown
+          expr: up{job="redis"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Redis Stream Backend Down"
+            description: "Deployment Queue relies on Redis, which is unreachable."
+
+        # PostgreSQL Failures
+        - alert: PostgreSQLDown
+          expr: pg_up == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PostgreSQL Database Down"
+            description: "The core Source of Truth is unreachable. Reconciliations will fail."
+
+        # Gateway Failures
+        - alert: EnvoyGatewayDown
+          expr: up{job="envoy-gateway"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Envoy Gateway Down"
+            description: "Ingress routing for tenant workloads is failing."
+
+        # Reconciliation Failures
+        - alert: ReconciliationDriftHigh
+          # Fix #14/#6.2: shipzen_drift_total is now a Counter (was Gauge).
+          # rate() is correct for a Counter. The old Gauge + rate() combination
+          # always returned 0 making this alert permanently silent.
+          expr: rate(shipzen_drift_total_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Continuous drift detected"
+            description: "The Reconciliation Engine is constantly detecting drift. The self-healing loop may be failing to apply manifests."

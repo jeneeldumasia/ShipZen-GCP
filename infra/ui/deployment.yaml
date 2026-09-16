@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipzen-ui
+  namespace: shipzen-system
+  labels:
+    app: shipzen-ui
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipzen-ui
+  template:
+    metadata:
+      labels:
+        app: shipzen-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ui
+          image: shipzen-ui:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://shipzen.jeneeldumasia.codes/api/v1"
+            - name: NEXT_PUBLIC_APP_DOMAIN
+              value: "shipzen.jeneeldumasia.codes"
+            - name: AUTH_TRUST_HOST
+              value: "true"
+            - name: AUTH_URL
+              value: "https://shipzen.jeneeldumasia.codes"
+            - name: NODE_OPTIONS
+              value: "--dns-result-order=ipv4first"
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-auth-secret
+                  key: auth_secret
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-github
+                  key: client_id
+                  optional: true
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-github
+                  key: client_secret
+                  optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10

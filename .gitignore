@@ -1,0 +1,53 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Node
+node_modules/
+dist/
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+shipzen_analysis.md
+deployhub_analysis.md
+console.txt
+job_logs.txt
+
+# IDE / Scratch / Temp
+.vscode/
+.kiro/
+scratch/
+generate_docs.py
+rename.py
+update_adrs.py
+update_docs_pg.py
+scratch_deployhub/
+*.zip
+p o l i c y _ u p d a t e . j s o n  
+*-secret.json
+ 
+# AI Context
+.ai/
+
+# AWS Nuke Tools
+aws-nuke*
+LICENSE
+nuke-config.yaml

@@ -1,0 +1,18 @@
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: shipzen-build-exception
+  namespace: shipzen-build
+spec:
+  exceptions:
+    - policyName: "*"
+      ruleNames:
+        - "*"
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - Job
+          namespaces:
+            - shipzen-build

@@ -1,0 +1,82 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: platform-routing
+  namespace: shipzen-system
+spec:
+  route:
+    receiver: slack-general
+    groupBy: ['alertname', 'namespace']
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 1h
+    routes:
+      - matchers:
+          - name: severity
+            value: critical
+            matchType: "="
+        receiver: pagerduty-critical
+        repeatInterval: 1h
+      - matchers:
+          - name: severity
+            value: high
+            matchType: "="
+        receiver: slack-alerts
+        repeatInterval: 5m
+      - matchers:
+          - name: severity
+            value: warning
+            matchType: "="
+        receiver: slack-alerts
+        repeatInterval: 24h
+  
+  receivers:
+    - name: slack-general
+      slackConfigs:
+        - apiURL:
+            name: shipzen-alerts-secrets
+            key: slack-webhook-url
+          channel: '#shipzen-general'
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .GroupLabels.SortedPairs.Values | join " " }}'
+          text: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
+          
+    - name: slack-alerts
+      slackConfigs:
+        - apiURL:
+            name: shipzen-alerts-secrets
+            key: slack-webhook-url
+          channel: '#shipzen-alerts'
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .GroupLabels.SortedPairs.Values | join " " }}'
+          text: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
+          
+    - name: pagerduty-critical
+      pagerdutyConfigs:
+        - routingKey:
+            name: shipzen-alerts-secrets
+            key: pagerduty-routing-key
+          sendResolved: true
+
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: shipzen-alerts-secrets
+  namespace: shipzen-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: shipzen-alerts-secrets
+  data:
+    - secretKey: slack-webhook-url
+      remoteRef:
+        key: shipzen/alerts
+        property: slack-webhook-url
+    - secretKey: pagerduty-routing-key
+      remoteRef:
+        key: shipzen/alerts
+        property: pagerduty-routing-key

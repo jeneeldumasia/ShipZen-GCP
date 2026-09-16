@@ -1,0 +1,509 @@
+name: Infra Teardown
+on:
+  workflow_dispatch: # Manual trigger only to prevent accidental destruction
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform-destroy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+      TF_VAR_aws_region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+      cluster_not_found: 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Configure kubectl
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} || echo "cluster_not_found=true" >> $GITHUB_ENV
+
+      # Step 1: Suspend ArgoCD auto-sync FIRST.
+      # If we skip this, ArgoCD's selfHeal will re-create every resource
+      # we delete in the next steps, causing a race condition.
+      - name: Suspend ArgoCD Auto-Sync
+        if: env.cluster_not_found != 'true'
+        run: |
+          kubectl patch application shipzen-platform \
+            -n argocd \
+            --type merge \
+            -p '{"spec":{"syncPolicy":{"automated":null}}}' \
+          || echo "ArgoCD application not found, continuing..."
+
+      # Step 2: Delete Karpenter NodePools and EC2NodeClass so Karpenter
+      # stops provisioning new nodes and begins draining its own nodes.
+      # These nodes are NOT managed by Terraform, so we must remove them
+      # explicitly — they hold ENIs that block VPC deletion.
+      - name: Delete Karpenter NodePools and NodeClasses
+        if: env.cluster_not_found != 'true'
+        run: |
+          kubectl delete nodepool --all --ignore-not-found=true || true
+          kubectl delete ec2nodeclass --all --ignore-not-found=true || true
+
+      # Step 3: Drain and delete any remaining Karpenter-provisioned nodes.
+      # We identify them by the karpenter.sh/nodepool label.
+      # This ensures their ENIs are released before Terraform runs.
+      - name: Drain Karpenter Nodes
+        if: env.cluster_not_found != 'true'
+        run: |
+          KARPENTER_NODES=$(kubectl get nodes -l karpenter.sh/nodepool \
+            -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+
+          if [ -n "$KARPENTER_NODES" ]; then
+            for NODE in $KARPENTER_NODES; do
+              echo "Draining node: $NODE"
+              kubectl drain "$NODE" \
+                --ignore-daemonsets \
+                --delete-emptydir-data \
+                --force \
+                --timeout=120s || true
+            done
+            kubectl delete node $KARPENTER_NODES --ignore-not-found=true || true
+          else
+            echo "No Karpenter nodes found."
+          fi
+
+      # Step 3.5: Clean up Cloudflare DNS records to prevent dangling records
+      - name: Cleanup Cloudflare DNS
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "Cleaning up Cloudflare DNS records..."
+          ZONE_NAME="jeneeldumasia.codes"
+          
+          ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
+               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+               -H "Content-Type: application/json" | jq -r '.result[0].id')
+               
+          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ]; then
+            echo "Could not retrieve Zone ID, skipping DNS cleanup."
+            exit 0
+          fi
+
+          PAGE=1
+          while true; do
+            RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?page=$PAGE&per_page=100" \
+                 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                 -H "Content-Type: application/json")
+            
+            HAS_RESULTS=$(echo "$RECORDS" | jq -r '.result | length')
+            if [ "$HAS_RESULTS" -eq "0" ]; then
+              break
+            fi
+
+            echo "$RECORDS" | jq -c '.result[] | select(.name | contains("shipzen")) | {id: .id, name: .name}' | while read row; do
+              RECORD_ID=$(echo "$row" | jq -r '.id')
+              RECORD_NAME=$(echo "$row" | jq -r '.name')
+              if [ -n "$RECORD_ID" ] && [ "$RECORD_ID" != "null" ]; then
+                echo "Deleting DNS record $RECORD_NAME (ID: $RECORD_ID)"
+                curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
+                   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                   -H "Content-Type: application/json"
+              fi
+            done
+            PAGE=$((PAGE+1))
+          done
+
+      # Step 4: Delete HTTPRoutes and Services of type LoadBalancer FIRST,
+      # then wait for AWS to fully deprovision the NLB/ELB.
+      # This is the #1 cause of VPC deletion failures — dangling ENIs from
+      # load balancers that Terraform doesn't manage directly.
+      - name: Delete LoadBalancer Services and HTTPRoutes
+        if: env.cluster_not_found != 'true'
+        run: |
+          # Delete gateway HTTPRoutes (tenant workload routes)
+          kubectl delete httproute --all --all-namespaces --ignore-not-found=true || true
+
+          # Delete ingress resources (these provision AWS ALBs)
+          kubectl delete ingress --all --all-namespaces --ignore-not-found=true || true
+
+          # Delete only LoadBalancer-type services (these provision AWS NLBs)
+          # We do NOT delete all services — ClusterIP services are fine to leave for Terraform
+          kubectl get svc --all-namespaces -o json | \
+            jq -r '.items[] | select(.spec.type == "LoadBalancer") | "\(.metadata.namespace) \(.metadata.name)"' | \
+            while read NS NAME; do
+              echo "Deleting LoadBalancer service $NS/$NAME"
+              kubectl delete svc "$NAME" -n "$NS" --ignore-not-found=true || true
+            done
+
+      # Step 5: Force Delete ALL Load Balancers in our VPC.
+      # Kubernetes auto-generates LB names (e.g. 'a96304a043ff34844875f422f978eb9a')
+      # that do NOT contain 'shipzen', so name-based search misses them.
+      # We find them by VPC ID instead — if it's in our VPC, it must go.
+      - name: Force Delete Load Balancers, Target Groups, ENIs, EIPs, and Security Groups
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=shipzen-vpc" \
+            --query "Vpcs[0].VpcId" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "VPC not found, skipping LB/SG cleanup."
+            exit 0
+          fi
+
+          echo "Found VPC: $VPC_ID"
+
+          # --- Pre-clean orphaned Target Groups in this VPC ---
+          # Some stale TGs can block LB deletion/deregistration chains.
+          echo "=== Pre-cleaning orphaned Target Groups ==="
+          PRE_TG_ARNS=$(aws elbv2 describe-target-groups \
+            --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" \
+            --output text 2>/dev/null || echo "")
+
+          for TG in $PRE_TG_ARNS; do
+            echo "Pre-clean deleting target group: $TG"
+            aws elbv2 delete-target-group --target-group-arn "$TG" 2>/dev/null || true
+          done
+
+          # --- Delete Classic ELBs (v1 API) ---
+          # Kubernetes cloud-controller-manager creates Classic ELBs when the
+          # AWS Load Balancer Controller isn't ready. These are INVISIBLE to
+          # the elbv2 API and must be found via the v1 elb API.
+          echo "=== Checking for Classic ELBs (v1) ==="
+          CLASSIC_LBS=$(aws elb describe-load-balancers \
+            --query "LoadBalancerDescriptions[?VPCId=='$VPC_ID'].LoadBalancerName" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$CLASSIC_LBS" ]; then
+            for LB_NAME in $CLASSIC_LBS; do
+              echo "Deleting Classic ELB: $LB_NAME"
+              aws elb delete-load-balancer --load-balancer-name "$LB_NAME" 2>/dev/null || true
+            done
+          else
+            echo "No Classic ELBs found."
+          fi
+
+          # --- Delete ALBs/NLBs (v2 API) ---
+          echo "=== Checking for ALBs/NLBs (v2) ==="
+          ALL_LB_ARNS=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ALL_LB_ARNS" ]; then
+            for ARN in $ALL_LB_ARNS; do
+              echo "Deleting load balancer: $ARN"
+              aws elbv2 delete-load-balancer --load-balancer-arn "$ARN" 2>/dev/null || true
+            done
+          else
+            echo "No ALBs/NLBs found."
+          fi
+
+          # --- Wait for ALL LB ENIs to be fully released ---
+          echo "=== Waiting for LB ENIs to be released ==="
+          MAX_WAIT=180
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            ELB_ENI_COUNT=$(aws ec2 describe-network-interfaces \
+              --filters "Name=vpc-id,Values=$VPC_ID" "Name=description,Values=ELB *" \
+              --query "length(NetworkInterfaces)" \
+              --output text 2>/dev/null || echo "0")
+
+            if [ "$ELB_ENI_COUNT" = "0" ]; then
+              echo "All LB ENIs released."
+              break
+            fi
+
+            echo "Still $ELB_ENI_COUNT LB ENIs in VPC... (${ELAPSED}s/${MAX_WAIT}s)"
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
+          done
+
+          # --- Delete orphaned Target Groups in this VPC ---
+          echo "=== Cleaning up orphaned Target Groups ==="
+          TG_ARNS=$(aws elbv2 describe-target-groups \
+            --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" \
+            --output text 2>/dev/null || echo "")
+
+          for TG in $TG_ARNS; do
+            echo "Deleting target group: $TG"
+            aws elbv2 delete-target-group --target-group-arn "$TG" 2>/dev/null || true
+          done
+
+          # --- Release Elastic IPs associated with this VPC ---
+          # NLBs provision EIPs in public subnets. If these aren't released,
+          # the internet gateway can't detach and the VPC can't be deleted.
+          echo "=== Releasing Elastic IPs ==="
+          SUBNET_IDS=$(aws ec2 describe-subnets \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "Subnets[*].SubnetId" \
+            --output text 2>/dev/null || echo "")
+
+          # Find EIPs associated with ENIs in our VPC
+          EIP_ALLOCS=$(aws ec2 describe-addresses \
+            --query "Addresses[?Domain=='vpc'].{AllocationId:AllocationId,AssociationId:AssociationId,NetworkInterfaceId:NetworkInterfaceId}" \
+            --output json 2>/dev/null || echo "[]")
+
+          # Get all ENIs in our VPC to cross-reference
+          VPC_ENI_IDS=$(aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "NetworkInterfaces[*].NetworkInterfaceId" \
+            --output text 2>/dev/null || echo "")
+
+          echo "$EIP_ALLOCS" | jq -r '.[] | "\(.AllocationId) \(.AssociationId) \(.NetworkInterfaceId)"' 2>/dev/null | while read ALLOC ASSOC ENI; do
+            if echo "$VPC_ENI_IDS" | grep -qw "$ENI" 2>/dev/null; then
+              if [ "$ASSOC" != "null" ] && [ -n "$ASSOC" ]; then
+                echo "Disassociating EIP: $ALLOC (association: $ASSOC)"
+                aws ec2 disassociate-address --association-id "$ASSOC" 2>/dev/null || true
+              fi
+              echo "Releasing EIP: $ALLOC"
+              aws ec2 release-address --allocation-id "$ALLOC" 2>/dev/null || true
+            fi
+          done
+
+          # --- Force-detach and delete orphaned ENIs ---
+          echo "=== Cleaning up orphaned ENIs ==="
+          ENIS=$(aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "NetworkInterfaces[?Status=='available' || contains(Description, 'ELB')].{ID:NetworkInterfaceId,AttachId:Attachment.AttachmentId,Status:Status}" \
+            --output json 2>/dev/null || echo "[]")
+
+          echo "$ENIS" | jq -r '.[] | "\(.ID) \(.AttachId) \(.Status)"' 2>/dev/null | while read ENI_ID ATTACH_ID STATUS; do
+            if [ "$STATUS" = "in-use" ] && [ "$ATTACH_ID" != "null" ] && [ -n "$ATTACH_ID" ]; then
+              echo "Force-detaching ENI: $ENI_ID"
+              aws ec2 detach-network-interface --attachment-id "$ATTACH_ID" --force 2>/dev/null || true
+              sleep 5
+            fi
+            echo "Deleting ENI: $ENI_ID"
+            aws ec2 delete-network-interface --network-interface-id "$ENI_ID" 2>/dev/null || true
+          done
+
+          # --- Delete orphaned Security Groups ---
+          echo "=== Cleaning up orphaned Security Groups ==="
+          # Wait a moment for ENI deletions to propagate
+          sleep 10
+          SG_IDS=$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default' && !contains(GroupName, 'shipzen-cluster')].GroupId" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$SG_IDS" ]; then
+            # First, remove all ingress/egress rules that reference other SGs (breaks circular deps)
+            for SG in $SG_IDS; do
+              echo "Revoking all rules from SG: $SG"
+              aws ec2 revoke-security-group-ingress --group-id "$SG" \
+                --ip-permissions "$(aws ec2 describe-security-groups --group-ids "$SG" --query 'SecurityGroups[0].IpPermissions' --output json 2>/dev/null)" 2>/dev/null || true
+              aws ec2 revoke-security-group-egress --group-id "$SG" \
+                --ip-permissions "$(aws ec2 describe-security-groups --group-ids "$SG" --query 'SecurityGroups[0].IpPermissionsEgress' --output json 2>/dev/null)" 2>/dev/null || true
+            done
+            # Then delete them
+            for SG in $SG_IDS; do
+              echo "Deleting security group: $SG"
+              aws ec2 delete-security-group --group-id "$SG" 2>/dev/null || \
+                echo "Could not delete $SG (may still have dependencies)"
+            done
+          else
+            echo "No orphaned security groups found."
+          fi
+
+      # Step 8.5: Force Uninstall Problematic Helm Releases
+      # Kyverno often hangs during terraform destroy because its cleanup job
+      # fails to run or its webhooks cause a deadlock. Force uninstalling it
+      # without hooks ensures Terraform can cleanly remove it from state.
+      - name: Force Uninstall Problematic Helm Releases
+        if: env.cluster_not_found != 'true'
+        run: |
+          echo "Force uninstalling Kyverno without hooks..."
+          helm uninstall kyverno-policies -n kyverno --no-hooks --ignore-not-found || true
+          helm uninstall kyverno -n kyverno --no-hooks --ignore-not-found || true
+          echo "Force uninstalling KEDA without hooks..."
+          helm uninstall keda -n keda --no-hooks --ignore-not-found || true
+          echo "Deleting all validating and mutating webhooks to prevent deadlocks..."
+          kubectl delete validatingwebhookconfigurations --all --ignore-not-found=true || true
+          kubectl delete mutatingwebhookconfigurations --all --ignore-not-found=true || true
+
+      # Step 9: Full Terraform destroy. By this point:
+      # - Karpenter nodes are gone (ENIs released)
+      # - Load balancers are gone (ENIs and SGs released)
+      # - App namespaces are terminated
+      # - ArgoCD is not fighting us
+      # - Kyverno is forcefully uninstalled
+      # Terraform should be able to cleanly destroy EKS, the VPC, and S3.
+      - name: Cleanup Stuck Namespaces
+        if: env.cluster_not_found != 'true'
+        run: |
+          for ns in $(kubectl get ns | grep Terminating | awk '{print $1}'); do
+            echo "Force deleting stuck namespace: $ns"
+            kubectl get ns "$ns" -o json | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/"$ns"/finalize -f - || true
+          done
+      - name: Terraform Destroy
+        working-directory: ./terraform
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+        run: terraform destroy -auto-approve
+        continue-on-error: true
+        id: first_destroy
+
+      # If first destroy failed, clean up again and retry
+      - name: Retry Cleanup and Terraform Destroy
+        if: steps.first_destroy.outcome == 'failure'
+        working-directory: ./terraform
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+        run: |
+          echo "First terraform destroy failed. Running cleanup and retrying..."
+          
+          echo "=== Sweeping for stuck namespaces from first run ==="
+          for ns in $(kubectl get ns 2>/dev/null | grep Terminating | awk '{print $1}'); do
+            echo "Force deleting stuck namespace: $ns"
+            kubectl get ns "$ns" -o json | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/"$ns"/finalize -f - || true
+          done
+
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=shipzen-vpc" \
+            --query "Vpcs[0].VpcId" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+            # Pre-clean orphaned target groups first (best-effort)
+            aws elbv2 describe-target-groups \
+              --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" \
+              --output text 2>/dev/null | xargs -n1 aws elbv2 delete-target-group --target-group-arn 2>/dev/null || true
+
+            # Kill Classic ELBs
+            aws elb describe-load-balancers \
+              --query "LoadBalancerDescriptions[?VPCId=='$VPC_ID'].LoadBalancerName" \
+              --output text 2>/dev/null | xargs -n1 aws elb delete-load-balancer --load-balancer-name 2>/dev/null || true
+
+            # Kill v2 LBs
+            aws elbv2 describe-load-balancers \
+              --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
+              --output text 2>/dev/null | xargs -n1 aws elbv2 delete-load-balancer --load-balancer-arn 2>/dev/null || true
+
+            # Retry target group cleanup after LB deletes
+            aws elbv2 describe-target-groups \
+              --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" \
+              --output text 2>/dev/null | xargs -n1 aws elbv2 delete-target-group --target-group-arn 2>/dev/null || true
+
+            echo "Waiting 90s for AWS to release resources..."
+            sleep 90
+
+            # Force cleanup ENIs
+            aws ec2 describe-network-interfaces \
+              --filters "Name=vpc-id,Values=$VPC_ID" \
+              --query "NetworkInterfaces[*].{ID:NetworkInterfaceId,AttachId:Attachment.AttachmentId}" \
+              --output json 2>/dev/null | jq -r '.[] | "\(.ID) \(.AttachId)"' | while read ENI_ID ATTACH_ID; do
+                if [ "$ATTACH_ID" != "null" ] && [ -n "$ATTACH_ID" ]; then
+                  aws ec2 detach-network-interface --attachment-id "$ATTACH_ID" --force 2>/dev/null || true
+                  sleep 3
+                fi
+                aws ec2 delete-network-interface --network-interface-id "$ENI_ID" 2>/dev/null || true
+              done
+
+            # Release all EIPs in VPC
+            VPC_ENI_IDS=$(aws ec2 describe-network-interfaces \
+              --filters "Name=vpc-id,Values=$VPC_ID" \
+              --query "NetworkInterfaces[*].NetworkInterfaceId" \
+              --output text 2>/dev/null || echo "")
+            aws ec2 describe-addresses --query "Addresses[?Domain=='vpc']" --output json 2>/dev/null | \
+              jq -r '.[].AllocationId' | while read ALLOC; do
+                aws ec2 release-address --allocation-id "$ALLOC" 2>/dev/null || true
+              done
+
+            # Delete SGs
+            SG_IDS=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=$VPC_ID" \
+              --query "SecurityGroups[?GroupName!='default' && !contains(GroupName, 'shipzen-cluster')].GroupId" \
+              --output text 2>/dev/null || echo "")
+            for SG in $SG_IDS; do
+              aws ec2 revoke-security-group-ingress --group-id "$SG" \
+                --ip-permissions "$(aws ec2 describe-security-groups --group-ids "$SG" --query 'SecurityGroups[0].IpPermissions' --output json 2>/dev/null)" 2>/dev/null || true
+              aws ec2 revoke-security-group-egress --group-id "$SG" \
+                --ip-permissions "$(aws ec2 describe-security-groups --group-ids "$SG" --query 'SecurityGroups[0].IpPermissionsEgress' --output json 2>/dev/null)" 2>/dev/null || true
+              aws ec2 delete-security-group --group-id "$SG" 2>/dev/null || true
+            done
+          fi
+
+          echo "Retrying terraform destroy..."
+          terraform destroy -auto-approve
+
+      # Step 10: Final sanity check — confirm the VPC is gone.
+      # If it still exists, print a warning with what's blocking it.
+      - name: Verify Cleanup
+        if: always()
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=shipzen-vpc" \
+            --query "Vpcs[0].VpcId" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "✅ VPC fully deleted. All infrastructure is down."
+          else
+            echo "⚠️  VPC $VPC_ID still exists. Listing remaining dependencies:"
+            echo "--- Network Interfaces ---"
+            aws ec2 describe-network-interfaces \
+              --filters "Name=vpc-id,Values=$VPC_ID" \
+              --query "NetworkInterfaces[*].{ID:NetworkInterfaceId,Desc:Description,Status:Status}" \
+              --output table || true
+            echo "--- Security Groups ---"
+            aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=$VPC_ID" \
+              --query "SecurityGroups[?GroupName!='default'].{ID:GroupId,Name:GroupName}" \
+              --output table || true
+          fi
+
+      # Step 11: Ultimate Nuclear Cleanup
+      # Kubernetes controllers (like EBS CSI) and dynamic scripts often leave behind
+      # resources that Terraform doesn't track in its state file.
+      # This step aggressively sweeps the account for anything left behind.
+      - name: Nuke Orphaned Volumes, Buckets, and IPs
+        if: always()
+        run: |
+          echo "🧹 Sweeping for orphaned EBS Volumes (dynamically provisioned by Kubernetes)..."
+          VOLUMES=$(aws ec2 describe-volumes \
+            --query "Volumes[?Tags != null] | [?contains(to_string(Tags), 'shipzen')].VolumeId" \
+            --output text 2>/dev/null || echo "")
+          
+          for VOL in $VOLUMES; do
+            echo "Deleting orphaned EBS Volume: $VOL"
+            aws ec2 delete-volume --volume-id "$VOL" || true
+          done
+
+          echo "🧹 Sweeping for orphaned S3 Buckets..."
+          BUCKETS=$(aws s3api list-buckets --query "Buckets[?contains(Name, 'shipzen')].Name" --output text 2>/dev/null || echo "")
+          
+          for BUCKET in $BUCKETS; do
+            echo "Emptying and deleting orphaned S3 Bucket: $BUCKET"
+            aws s3 rm "s3://$BUCKET" --recursive || true
+            # Sometimes delete fails if there are lingering delete markers or versions
+            aws s3api delete-bucket --bucket "$BUCKET" || true
+          done
+
+          echo "🧹 Sweeping for unassociated Elastic IPs..."
+          # Find any EIPs that are not associated with an instance/ENI and are tagged with shipzen
+          EIPS=$(aws ec2 describe-addresses \
+            --query "Addresses[?AssociationId==null && Tags[?contains(Value, 'shipzen')]].AllocationId" \
+            --output text 2>/dev/null || echo "")
+            
+          for EIP in $EIPS; do
+            echo "Releasing orphaned Elastic IP: $EIP"
+            aws ec2 release-address --allocation-id "$EIP" || true
+          done
+          
+          echo "✅ Nuclear sweep complete. Account is clean."

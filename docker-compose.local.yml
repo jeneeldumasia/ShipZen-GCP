@@ -1,0 +1,194 @@
+# ============================================================================
+# ShipZen — Zero-Cloud Local Development Stack
+# ============================================================================
+#
+# Provides a complete, offline-capable development environment by replacing
+# every AWS dependency with a local equivalent:
+#
+#   AWS S3             → LocalStack  (http://localhost:4566)
+#   AWS Secrets Manager → LocalStack  (http://localhost:4566)
+#   AWS ECR            → registry:2   (http://localhost:5001)
+#   GitHub OAuth       → stub-token bypass (built into auth.py)
+#   Kubernetes (ctrl)  → not started; see LOCAL_DEV.md §Advanced
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml --env-file .env.local up --build
+#
+# Quick smoke test after startup:
+#   curl -s http://localhost:8000/healthz
+#   curl -s -H "Authorization: Bearer stub-token" http://localhost:8000/projects
+# ============================================================================
+
+name: shipzen-local
+
+# ---------------------------------------------------------------------------
+# Shared environment block — consumed by both `api` and (when added) worker.
+# All AWS calls are redirected to LocalStack via AWS_ENDPOINT_URL.
+# ---------------------------------------------------------------------------
+x-aws-local: &aws-local
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+  # boto3 ≥ 1.28 reads this to override every service endpoint in one shot.
+  # service-specific overrides (AWS_ENDPOINT_URL_S3 etc.) take precedence if set.
+  AWS_ENDPOINT_URL: http://localstack:4566
+
+x-db-env: &db-env
+  DATABASE_URL: postgresql://shipzen:shipzen-local@postgres:5432/shipzen
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  STREAM_NAME: deploy_stream
+
+services:
+
+  # ── Infrastructure ─────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shipzen
+      POSTGRES_USER: shipzen
+      POSTGRES_PASSWORD: shipzen-local
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./api/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shipzen -d shipzen"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    # Persistence: save every 60 s if ≥ 1 key changed — lightweight for dev
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # LocalStack — unified emulator for S3 and Secrets Manager.
+  # The free community edition supports both services without any extra config.
+  localstack:
+    image: localstack/localstack:3.4
+    restart: unless-stopped
+    environment:
+      SERVICES: s3,secretsmanager
+      DEBUG: "0"
+      # Persist state across restarts so seeded buckets / secrets survive
+      PERSISTENCE: "1"
+      LOCALSTACK_HOST: localstack:4566
+    ports:
+      - "4566:4566"   # Unified gateway
+      - "4510-4559:4510-4559"  # Legacy per-service ports (unused but kept for tooling)
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./local/init-localstack.sh:/etc/localstack/init/ready.d/init-localstack.sh:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"s3\": \"available\"'"]
+      interval: 8s
+      timeout: 5s
+      retries: 20
+
+  # Local OCI container registry — replaces ECR for development builds.
+  # The worker/builder uses this as the push target when ENVIRONMENT=development.
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    ports:
+      - "5001:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+
+  # ── Application Services ───────────────────────────────────────────────────
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      <<: [*aws-local, *db-env]
+      # Runtime identity
+      ENVIRONMENT: development
+      # Local stub auth — lets curl/Postman use `Authorization: Bearer stub-token`
+      # without a GitHub account. Disabled automatically when ENVIRONMENT=production.
+      ENABLE_LOCAL_STUB_AUTH: "true"
+      # Point the API at a local registry for any image URI construction.
+      ECR_REPOSITORY_URL: "localhost:5001/shipzen-builds"
+      ECR_REGISTRY: "localhost:5001"
+      # S3 bucket created by init-localstack.sh at stack startup.
+      S3_LOG_BUCKET: shipzen-logs
+      # Optional: comma-separated emails that receive the 'admin' role on first login.
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      # UI origin for CORS (Next.js dev server)
+      UI_ORIGIN: "http://localhost:3000"
+      # Tune workers down for local dev to save RAM
+      WEB_CONCURRENCY: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    # Hot-reload: mount source so uvicorn --reload picks up changes instantly.
+    volumes:
+      - ./api:/app
+    # Override CMD to enable hot-reload for development
+    command: >
+      uvicorn main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app
+        --log-level info
+
+  # ── Optional: Observability ────────────────────────────────────────────────
+  # Lightweight Redis insight for inspecting streams and pub/sub in the browser.
+  # Access at http://localhost:8001
+  redis-insight:
+    image: redis/redisinsight:latest
+    restart: unless-stopped
+    profiles: ["observability"]
+    ports:
+      - "8001:5540"
+    volumes:
+      - redisinsight_data:/data
+
+  # pgAdmin — lightweight Postgres browser.
+  # Access at http://localhost:8080  (login: admin@shipzen.local / admin)
+  pgadmin:
+    image: dpage/pgadmin4:8
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@shipzen.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+  registry_data:
+  redisinsight_data:
+  pgadmin_data:

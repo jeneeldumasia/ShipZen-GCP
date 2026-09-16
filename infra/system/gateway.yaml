@@ -1,0 +1,79 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: gcp-nlb-proxy
+  namespace: shipzen-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: LoadBalancer
+        annotations:
+          networking.gke.io/load-balancer-type: "External"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy-gateway
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: gcp-nlb-proxy
+    namespace: shipzen-system
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: shipzen-gateway
+  namespace: shipzen-system
+  # Annotations moved to EnvoyProxy above
+
+spec:
+  gatewayClassName: envoy-gateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All
+      # Fix #15: redirect all HTTP traffic to HTTPS.
+      # Envoy Gateway implements this via an HTTPRoute filter attached to the
+      # listener. The HTTPRoute below (shipzen-http-redirect) handles the
+      # actual redirect; this listener just needs to accept routes from all
+      # namespaces so the redirect route can bind to it.
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: shipzen-tls-cert
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+# Fix #15: catch-all HTTPRoute on port 80 that issues a 301 redirect to HTTPS.
+# Attach this to the http listener so all tenant traffic is upgraded.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shipzen-http-redirect
+  namespace: shipzen-system
+spec:
+  parentRefs:
+    - name: shipzen-gateway
+      namespace: shipzen-system
+      sectionName: http
+  hostnames:
+    - "*.jeneeldumasia.codes"
+    - "shipzen.jeneeldumasia.codes"
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

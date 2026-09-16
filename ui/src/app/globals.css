@@ -1,0 +1,135 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Syne:wght@400..800&family=Geist:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --canvas-bg: #ffffff;
+    --canvas-card: transparent;
+    --canvas-border: rgba(0, 0, 0, 0.1);
+    
+    --brand-default: #000000;
+    --brand-hover: #333333;
+    
+    --text-primary: #000000;
+    --text-secondary: #777777;
+    --grid-line: rgba(0, 0, 0, 0.05);
+  }
+
+  .dark {
+    --canvas-bg: #000000;
+    --canvas-card: transparent;
+    --canvas-border: rgba(255, 255, 255, 0.1);
+    
+    --brand-default: #ffffff;
+    --brand-hover: #cccccc;
+
+    --text-primary: #ffffff;
+    --text-secondary: #888888;
+    --grid-line: rgba(255, 255, 255, 0.05);
+    
+    --warning: #ea580c;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--canvas-bg);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Clean Solid Background */
+  .bg-mesh {
+    background-color: var(--canvas-bg);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: transparent; }
+  ::-webkit-scrollbar-thumb  { background: var(--canvas-border); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--sidebar-text); }
+}
+
+@layer components {
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-sidebar-text
+           hover:bg-sidebar-hover hover:text-sidebar-heading transition-all duration-300 cursor-pointer;
+  }
+
+  /* Light mode & Dark mode active — filled pill */
+  .nav-item.active {
+    @apply shadow-md;
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-active-text);
+  }
+
+  /* Transparent Card Container */
+  .card {
+    @apply bg-transparent border-none rounded-none shadow-none;
+  }
+
+  /* Input base */
+  .input {
+    @apply w-full border border-canvas-border rounded-none px-3 py-2 text-sm
+           bg-transparent text-text-primary placeholder:text-text-secondary
+           focus:outline-none focus:ring-0 focus:border-brand
+           transition-colors duration-200;
+  }
+  
+  /* Primary Brutalist Button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 bg-brand text-canvas-bg text-sm font-bold uppercase tracking-widest px-5 py-2.5 rounded-none
+           border border-brand transition-all duration-[400ms] ease-[cubic-bezier(0.23,1,0.32,1)]
+           hover:bg-transparent hover:text-brand hover:-translate-y-0.5
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 text-sm text-text-secondary hover:text-text-primary
+           border border-transparent hover:border-canvas-border px-4 py-2.5 rounded-none font-bold uppercase tracking-widest
+           transition-all duration-[400ms] ease-[cubic-bezier(0.23,1,0.32,1)] bg-transparent hover:-translate-y-0.5;
+  }
+
+  /* Danger button */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 text-sm text-red-500 hover:text-red-400 font-bold uppercase tracking-widest
+           border border-red-500 hover:bg-transparent px-4 py-2.5 rounded-none
+           transition-all duration-[400ms] ease-[cubic-bezier(0.23,1,0.32,1)] hover:-translate-y-0.5;
+  }
+
+  /* Table row */
+  .table-row-hover {
+    @apply hover:bg-sidebar-hover transition-colors duration-200 cursor-pointer;
+  }
+
+  /* Section heading */
+  .section-title {
+    @apply text-xs font-bold text-text-secondary uppercase tracking-widest px-3 mb-2;
+    font-family: "Syne", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /* Status dot */
+  .status-dot {
+    @apply w-2 h-2 rounded-full flex-shrink-0 shadow-sm;
+  }
+
+  /* Metric tile - removed card background, just transparent text block */
+  .metric-tile {
+    @apply flex flex-col gap-1 py-4 border-b border-canvas-border;
+  }
+}
+
+@view-transition {
+  navigation: auto;
+}

@@ -1,0 +1,24 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: shipzen-tls-cert
+  namespace: shipzen-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: shipzen-tls-cert
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/tls
+  data:
+    - secretKey: tls.crt
+      remoteRef:
+        key: shipzen/cloudflare-origin-cert
+        property: cert
+    - secretKey: tls.key
+      remoteRef:
+        key: shipzen/cloudflare-origin-cert
+        property: key

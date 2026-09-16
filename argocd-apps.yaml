@@ -1,0 +1,46 @@
+﻿apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shipzen-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "https://github.com/jeneeldumasia/ShipZen.git"
+    targetRevision: HEAD
+    path: infra
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+    syncOptions:
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: shipzen-builder
+      namespace: shipzen-build
+      jsonPointers:
+        - /spec/replicas
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shipzen-gateway
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "https://github.com/jeneeldumasia/ShipZen.git"
+    targetRevision: HEAD
+    path: gateway
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shipzen-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

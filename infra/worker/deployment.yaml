@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipzen-worker
+  namespace: shipzen-system
+  labels:
+    app: shipzen-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipzen-worker
+  template:
+    metadata:
+      labels:
+        app: shipzen-worker
+    spec:
+      serviceAccountName: shipzen-worker-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: shipzen-worker:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-db-credentials
+                  key: url
+            - name: REDIS_HOST
+              value: "redis-master.shipzen-system.svc.cluster.local"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: redis-password
+            - name: STREAM_NAME
+              value: "deploy_stream"
+            - name: CONSUMER_GROUP
+              value: "worker_group"
+            - name: BUILDER_QUEUE_NAME
+              value: "builder_queue"
+            - name: S3_LOG_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-s3-config
+                  key: bucket_name
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-github-app
+                  key: app_id
+                  optional: true
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-github-app
+                  key: private_key
+                  optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          # HIGH-04 Fix: Add startupProbe to allow slow initialization without failing liveness
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /tmp
+              name: workspace-vol
+      volumes:
+        - name: workspace-vol
+          emptyDir: {}

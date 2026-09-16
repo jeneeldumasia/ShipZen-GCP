@@ -1,0 +1,331 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: observability
+  annotations:
+    grafana_folder: "ShipZen"
+  labels:
+    grafana_dashboard: "1"
+data:
+  platform-health.json: |-
+    {
+      "uid": "platform-health",
+      "title": "Platform Health",
+      "panels": [
+        {"title": "Deployment Throughput", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "sum(rate(shipzen_deployments_total[5m])) by (state)"}]},
+        {"title": "Build Duration p95", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "histogram_quantile(0.95, sum by(le) (rate(shipzen_build_duration_seconds_bucket[5m])))"}]},
+        {"title": "Queue Depth (In-Flight)", "type": "timeseries", "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}, "targets": [{"expr": "shipzen_messages_in_flight"}]},
+        {"title": "Queue Depth (DLQ)", "type": "timeseries", "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}, "targets": [{"expr": "shipzen_dlq_depth"}]},
+        {"title": "Active Deployments", "type": "timeseries", "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}, "targets": [{"expr": "sum by (namespace) (shipzen_active_deployments)"}]},
+        {"title": "Failure Rate", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}, "targets": [{"expr": "sum(rate(shipzen_deployments_total{state=\"failed\"}[5m]))"}]}
+      ]
+    }
+  build-performance.json: |-
+    {
+      "apiVersion": "dashboard.grafana.app/v2",
+      "kind": "Dashboard",
+      "metadata": {
+        "name": "build-performance",
+        "namespace": "default",
+        "uid": "b901c294-b684-4a3c-8820-56711b4a808a"
+      },
+      "spec": {
+        "editable": true,
+        "elements": {
+          "panel-1": {
+            "kind": "Panel",
+            "spec": {
+              "data": {
+                "kind": "QueryGroup",
+                "spec": {
+                  "queries": [
+                    {
+                      "kind": "PanelQuery",
+                      "spec": {
+                        "hidden": false,
+                        "query": {
+                          "datasource": {
+                            "name": "prometheus"
+                          },
+                          "group": "prometheus",
+                          "kind": "DataQuery",
+                          "spec": {
+                            "expr": "job:build_duration_seconds:p95:1h"
+                          },
+                          "version": "v0"
+                        },
+                        "refId": "A"
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "Build Duration p95",
+              "vizConfig": {
+                "group": "stat",
+                "kind": "VizConfig",
+                "spec": {
+                  "options": {
+                    "colorMode": "value",
+                    "graphMode": "area",
+                    "justifyMode": "auto",
+                    "orientation": "auto",
+                    "reduceOptions": {
+                      "calcs": ["lastNotNull"],
+                      "fields": "",
+                      "values": false
+                    },
+                    "textMode": "auto",
+                    "wideLayout": true
+                  }
+                },
+                "version": "13.1.0"
+              }
+            }
+          },
+          "panel-2": {
+            "kind": "Panel",
+            "spec": {
+              "data": {
+                "kind": "QueryGroup",
+                "spec": {
+                  "queries": [
+                    {
+                      "kind": "PanelQuery",
+                      "spec": {
+                        "hidden": false,
+                        "query": {
+                          "datasource": {
+                            "name": "prometheus"
+                          },
+                          "group": "prometheus",
+                          "kind": "DataQuery",
+                          "spec": {
+                            "expr": "histogram_quantile(0.50, sum by(le) (rate(shipzen_build_duration_seconds_bucket[1h])))"
+                          },
+                          "version": "v0"
+                        },
+                        "refId": "A"
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "Build Duration p50",
+              "vizConfig": {
+                "group": "stat",
+                "kind": "VizConfig",
+                "spec": {
+                  "options": {
+                    "colorMode": "value",
+                    "graphMode": "area",
+                    "justifyMode": "auto",
+                    "orientation": "auto",
+                    "reduceOptions": {
+                      "calcs": ["lastNotNull"],
+                      "fields": "",
+                      "values": false
+                    },
+                    "textMode": "auto",
+                    "wideLayout": true
+                  }
+                },
+                "version": "13.1.0"
+              }
+            }
+          },
+          "panel-3": {
+            "kind": "Panel",
+            "spec": {
+              "data": {
+                "kind": "QueryGroup",
+                "spec": {
+                  "queries": [
+                    {
+                      "kind": "PanelQuery",
+                      "spec": {
+                        "hidden": false,
+                        "query": {
+                          "datasource": {
+                            "name": "prometheus"
+                          },
+                          "group": "prometheus",
+                          "kind": "DataQuery",
+                          "spec": {
+                            "expr": "rate(shipzen_deployment_success_total[1h])"
+                          },
+                          "version": "v0"
+                        },
+                        "refId": "A"
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "Build Success Rate",
+              "vizConfig": {
+                "group": "timeseries",
+                "kind": "VizConfig",
+                "spec": {
+                  "options": {
+                    "legend": {
+                      "displayMode": "list",
+                      "placement": "bottom",
+                      "showLegend": true
+                    },
+                    "tooltip": {
+                      "mode": "single"
+                    }
+                  }
+                },
+                "version": "13.1.0"
+              }
+            }
+          },
+          "panel-4": {
+            "kind": "Panel",
+            "spec": {
+              "data": {
+                "kind": "QueryGroup",
+                "spec": {
+                  "queries": [
+                    {
+                      "kind": "PanelQuery",
+                      "spec": {
+                        "hidden": false,
+                        "query": {
+                          "datasource": {
+                            "name": "prometheus"
+                          },
+                          "group": "prometheus",
+                          "kind": "DataQuery",
+                          "spec": {
+                            "expr": "rate(shipzen_deployment_failure_total[1h])"
+                          },
+                          "version": "v0"
+                        },
+                        "refId": "A"
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "Build Failure Rate",
+              "vizConfig": {
+                "group": "timeseries",
+                "kind": "VizConfig",
+                "spec": {
+                  "options": {
+                    "legend": {
+                      "displayMode": "list",
+                      "placement": "bottom",
+                      "showLegend": true
+                    },
+                    "tooltip": {
+                      "mode": "single"
+                    }
+                  }
+                },
+                "version": "13.1.0"
+              }
+            }
+          },
+          "panel-5": {
+            "kind": "Panel",
+            "spec": {
+              "data": {
+                "kind": "QueryGroup",
+                "spec": {
+                  "queries": [
+                    {
+                      "kind": "PanelQuery",
+                      "spec": {
+                        "hidden": false,
+                        "query": {
+                          "datasource": {
+                            "name": "prometheus"
+                          },
+                          "group": "prometheus",
+                          "kind": "DataQuery",
+                          "spec": {
+                            "expr": "kube_deployment_status_replicas_ready{deployment=\"shipzen-builder\"}"
+                          },
+                          "version": "v0"
+                        },
+                        "refId": "A"
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "Active Builder Pods",
+              "vizConfig": {
+                "group": "stat",
+                "kind": "VizConfig",
+                "spec": {
+                  "options": {
+                    "colorMode": "value",
+                    "graphMode": "area",
+                    "justifyMode": "auto",
+                    "orientation": "auto",
+                    "reduceOptions": {
+                      "calcs": ["lastNotNull"],
+                      "fields": "",
+                      "values": false
+                    },
+                    "textMode": "auto",
+                    "wideLayout": true
+                  }
+                },
+                "version": "13.1.0"
+              }
+            }
+          }
+        },
+        "layout": {
+          "kind": "GridLayout",
+          "spec": {
+            "items": [
+              {"kind": "GridLayoutItem", "spec": {"element": {"kind": "ElementReference", "name": "panel-3"}, "height": 8, "width": 24, "x": 0, "y": 0}},
+              {"kind": "GridLayoutItem", "spec": {"element": {"kind": "ElementReference", "name": "panel-4"}, "height": 9, "width": 24, "x": 0, "y": 8}},
+              {"kind": "GridLayoutItem", "spec": {"element": {"kind": "ElementReference", "name": "panel-1"}, "height": 3, "width": 6, "x": 0, "y": 17}},
+              {"kind": "GridLayoutItem", "spec": {"element": {"kind": "ElementReference", "name": "panel-2"}, "height": 3, "width": 6, "x": 6, "y": 17}},
+              {"kind": "GridLayoutItem", "spec": {"element": {"kind": "ElementReference", "name": "panel-5"}, "height": 3, "width": 6, "x": 12, "y": 17}}
+            ]
+          }
+        },
+        "timeSettings": {
+          "from": "now-6h",
+          "to": "now"
+        },
+        "title": "Build Performance"
+      }
+    }
+  project-resources.json: |-
+    {
+      "uid": "project-resources",
+      "title": "Per-Project Resource Usage",
+      "panels": [
+        {"title": "CPU Usage by Namespace", "type": "timeseries", "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"tenant-.*\"}[5m])) by (namespace)"}], "fieldConfig": {"defaults": {"unit": "cores"}}},
+        {"title": "Memory by Namespace", "type": "timeseries", "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "sum(container_memory_working_set_bytes{namespace=~\"tenant-.*\"}) by (namespace)"}], "fieldConfig": {"defaults": {"unit": "bytes"}}},
+        {"title": "Quota Saturation", "type": "timeseries", "gridPos": {"h": 8, "w": 24, "x": 0, "y": 9}, "targets": [{"expr": "kube_resourcequota{type=\"used\", namespace=~\"tenant-.*\"} / kube_resourcequota{type=\"hard\", namespace=~\"tenant-.*\"}"}], "fieldConfig": {"defaults": {"unit": "percentunit"}}}
+      ]
+    }
+  pod-health.json: |-
+    {
+      "uid": "pod-health",
+      "title": "Per-Deployment Pod Health",
+      "templating": {
+        "list": [
+          {"name": "namespace", "type": "query", "query": "label_values(kube_pod_info, namespace)"},
+          {"name": "deployment", "type": "query", "query": "label_values(kube_pod_info{namespace=\"$namespace\", created_by_kind=\"ReplicaSet\"}, created_by_name)"}
+        ]
+      },
+      "panels": [
+        {"title": "Pod Ready Status", "type": "stat", "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0}, "targets": [{"expr": "kube_pod_status_ready{namespace=\"$namespace\", pod=~\"$deployment-.*\", condition=\"true\"}"}]},
+        {"title": "Restart Count", "type": "timeseries", "gridPos": {"h": 6, "w": 18, "x": 6, "y": 0}, "targets": [{"expr": "kube_pod_container_status_restarts_total{namespace=\"$namespace\", pod=~\"$deployment-.*\"}"}]},
+        {"title": "CPU Usage %", "type": "timeseries", "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6}, "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod=~\"$deployment-.*\"}[5m])) by (pod) / sum(kube_pod_container_resource_limits{namespace=\"$namespace\", pod=~\"$deployment-.*\", resource=\"cpu\"}) by (pod)"}], "fieldConfig": {"defaults": {"unit": "percentunit"}}},
+        {"title": "Memory Usage %", "type": "timeseries", "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6}, "targets": [{"expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$deployment-.*\"}) by (pod) / sum(kube_pod_container_resource_limits{namespace=\"$namespace\", pod=~\"$deployment-.*\", resource=\"memory\"}) by (pod)"}], "fieldConfig": {"defaults": {"unit": "percentunit"}}}
+      ]
+    }

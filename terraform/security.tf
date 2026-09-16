@@ -1,0 +1,91 @@
+# ── Runtime Security (Kyverno) ────────────────────────────────────────────────
+# Google-level runtime security requires admission controllers.
+# Kyverno enforces policies like "No root pods" or "Images must come from ECR".
+
+resource "helm_release" "kyverno" {
+  name             = "kyverno"
+  repository       = "https://kyverno.github.io/kyverno/"
+  chart            = "kyverno"
+  namespace        = "kyverno"
+  create_namespace = true
+
+  values = [
+    yamlencode({
+      installCRDs = true
+      config = {
+        resourceFilters = [
+          "[Event,*,*]",
+          "[*/*,kube-system,*]",
+          "[*/*,kube-public,*]",
+          "[*/*,kube-node-lease,*]",
+          "[Node,*,*]",
+          "[*/*,observability,*]"
+        ]
+      }
+    })
+  ]
+
+  depends_on = [time_sleep.wait_for_cluster_auth]
+}
+
+resource "helm_release" "kyverno_policies" {
+  name             = "kyverno-policies"
+  repository       = "https://kyverno.github.io/kyverno/"
+  chart            = "kyverno-policies"
+  namespace        = "kyverno"
+
+  create_namespace = true
+
+  values = [
+    yamlencode({
+      validationFailureAction = "Enforce"
+      validationFailureActionOverrides = {
+        all = [
+          {
+            action = "Audit"
+            namespaces = [
+              "observability"
+            ]
+          }
+        ]
+      }
+    })
+  ]
+
+  depends_on = [helm_release.kyverno]
+}
+
+resource "kubernetes_manifest" "builder_policy_exception" {
+  manifest = {
+    apiVersion = "kyverno.io/v2beta1"
+    kind       = "PolicyException"
+    metadata = {
+      name      = "builder-unconfined-exception"
+      namespace = "kyverno"
+    }
+    spec = {
+      exceptions = [
+        {
+          policyName = "disallow-unconfined-seccomp"
+          ruleNames  = ["check-seccomp"]
+        },
+        {
+          policyName = "disallow-unconfined-apparmor"
+          ruleNames  = ["check-apparmor"]
+        }
+      ]
+      match = {
+        any = [
+          {
+            resources = {
+              kinds      = ["Pod"]
+              namespaces = ["shipzen-build"]
+              containers = ["buildkit", "pack"]
+            }
+          }
+        ]
+      }
+    }
+  }
+  depends_on = [helm_release.kyverno, helm_release.kyverno_policies]
+}

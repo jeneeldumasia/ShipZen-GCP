@@ -1,0 +1,38 @@
+name: Debug Cluster
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ''
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION || 'us-east-1' }}
+
+      - name: Debug Cluster
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+          echo "=== NODES ==="
+          kubectl get nodes -o wide || true
+          echo "=== PODS ==="
+          kubectl get pods -A -o wide || true
+          echo "=== EVENTS ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -n 50 || true
+          echo "=== WEBHOOKS ==="
+          kubectl get validatingwebhookconfigurations || true
+          kubectl get mutatingwebhookconfigurations || true
+          
+          echo "=== RESTARTING UI PODS ==="
+          kubectl rollout restart deployment shipzen-ui -n shipzen-system
+          
+          echo "Waiting for UI pods to restart..."
+          kubectl rollout status deployment shipzen-ui -n shipzen-system --timeout=60s || true
