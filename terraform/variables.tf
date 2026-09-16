@@ -39,7 +39,7 @@ variable "cloudflare_api_token" {
 variable "platform_machine_type" {
   description = "GCE machine type for the platform node pool"
   type        = string
-  default     = "e2-standard-4"
+  default     = "n2-standard-8"
 }
 
 variable "use_cloud_sql" {
