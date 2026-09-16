@@ -39,7 +39,12 @@ variable "cloudflare_api_token" {
 variable "platform_machine_type" {
   description = "GCE machine type for the platform node pool"
   type        = string
-  default     = "n2-standard-8"
+  default     = "e2-standard-4"  # 4 vCPUs, 16GB RAM, ~$100/month per node
+  # Options:
+  #   e2-standard-2: 2 vCPUs, 8GB RAM, ~$50/month (budget, may be tight)
+  #   e2-standard-4: 4 vCPUs, 16GB RAM, ~$100/month (recommended for dev/test)
+  #   n2-standard-4: 4 vCPUs, 16GB RAM, ~$121/month (better performance)
+  #   n2-standard-8: 8 vCPUs, 32GB RAM, ~$242/month (overkill for this workload)
 }
 
 variable "use_cloud_sql" {

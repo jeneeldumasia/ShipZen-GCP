@@ -108,34 +108,34 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
-kind: ECRAuthorizationToken
+kind: GCRAccessToken
 metadata:
-  name: ecr-token-generator
+  name: gar-token-generator
   namespace: {{ namespace }}
 spec:
-  region: {{ aws_region }}
-  # Role isn't strictly necessary if the ESO pod IRSA role has ecr:GetAuthorizationToken
+  projectID: {{ gcp_project }}
+  # Uses Workload Identity - no auth needed if ESO SA is properly configured
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: ecr-pull-secret
+  name: gar-pull-secret
   namespace: {{ namespace }}
 spec:
   refreshInterval: "1h"
   target:
-    name: ecr-pull-secret
+    name: gar-pull-secret
     template:
       type: kubernetes.io/dockerconfigjson
       data:
         .dockerconfigjson: |
-          {"auths":{"{{ ecr_registry }}":{"username":"{{ "{{ .username }}" }}","password":"{{ "{{ .password }}" }}","auth":"{{ "{{ printf \"%s:%s\" .username .password | b64enc }}" }}"}}}
+          {"auths":{"{{ gar_registry }}":{"username":"_json_key","password":"{{ "{{ .token | b64dec }}" }}","auth":"{{ "{{ printf \"_json_key:%s\" (.token | b64dec) | b64enc }}" }}"}}}
   dataFrom:
     - sourceRef:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
-          kind: ECRAuthorizationToken
-          name: ecr-token-generator
+          kind: GCRAccessToken
+          name: gar-token-generator
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

@@ -52,10 +52,10 @@ spec:
               value: "worker_group"
             - name: BUILDER_QUEUE_NAME
               value: "builder_queue"
-            - name: S3_LOG_BUCKET
+            - name: GCS_LOG_BUCKET
               valueFrom:
                 secretKeyRef:
-                  name: shipzen-s3-config
+                  name: shipzen-gcs-config
                   key: bucket_name
             - name: GITHUB_APP_ID
               valueFrom:

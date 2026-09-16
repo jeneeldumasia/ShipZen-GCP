@@ -48,11 +48,16 @@ spec:
                 secretKeyRef:
                   name: redis-auth
                   key: redis-password
-            - name: ECR_REGISTRY
+            - name: GAR_REGISTRY
               valueFrom:
                 secretKeyRef:
-                  name: shipzen-ecr-config
+                  name: shipzen-gar-config
                   key: registry_hostname
+            - name: GCP_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-gar-config
+                  key: project_id
           resources:
             requests:
               cpu: "100m"

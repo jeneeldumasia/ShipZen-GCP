@@ -155,11 +155,12 @@ if not DATABASE_URL:
 
 RECONCILIATION_INTERVAL = int(os.getenv("RECONCILIATION_INTERVAL", "15"))
 
-# ECR registry hostname — used when rendering the tenant namespace template
-# so each tenant namespace gets an ECR pull secret via ESO.
-# Format: 123456789012.dkr.ecr.us-east-1.amazonaws.com
-ECR_REGISTRY = os.getenv("ECR_REGISTRY", "")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+# GCP Artifact Registry hostname — used when rendering the tenant namespace template
+# so each tenant namespace gets an Artifact Registry pull secret via ESO.
+# Format: us-central1-docker.pkg.dev/PROJECT_ID/REPO_ID
+GAR_REGISTRY = os.getenv("GAR_REGISTRY", "")
+GCP_PROJECT = os.getenv("GCP_PROJECT", "")
+GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis-master.shipzen-system.svc.cluster.local")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -171,11 +172,11 @@ _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PAS
 jinja_env = Environment(loader=FileSystemLoader("templates"))
 
 
-def ensure_ecr_repository(project_id: str):
+def ensure_gar_repository(project_id: str):
     # GCP Artifact Registry handles package creation automatically on push
     pass
 
-def delete_ecr_repository(project_id: str):
+def delete_gar_repository(project_id: str):
     # TODO: Implement GAR package deletion if needed for cleanup
     # Currently a no-op for GCP migration
     pass
@@ -438,13 +439,13 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                 manifests = template.render(
                     namespace=project.namespace,
                     project_id=project.id,
-                    ecr_registry=ECR_REGISTRY,
-                    aws_region=AWS_REGION,
+                    gar_registry=GAR_REGISTRY,
+                    gcp_project=GCP_PROJECT,
                 )
                 apply_manifests(manifests)
 
                 if check_namespace_exists(project.namespace):
-                    ensure_ecr_repository(project.id)
+                    ensure_gar_repository(project.id)
                     project_cur.execute(
                         "UPDATE projects SET status = %s WHERE id = %s;",
                         (ProjectStatus.READY.value, project.id)
@@ -466,7 +467,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                         f"Namespace {project.namespace} deletion triggered.")
                     project_conn.commit()
                 else:
-                    delete_ecr_repository(project.id)
+                    delete_gar_repository(project.id)
                     # HIGH-08 Fix: Update status to Terminated instead of hard-deleting the row
                     # to preserve audit log foreign keys and history
                     project_cur.execute(
