@@ -1,0 +1,406 @@
+001 | b1e9bb9 | 2026-06-01 | feat: initial commit of DeployHub platform architecture
+002 | cc642f0 | 2026-06-01 | fix: pin helm provider version to resolve syntax error
+003 | b03cf97 | 2026-06-01 | fix: move argocd application into helm values to prevent REST client error during plan
+004 | d0e720f | 2026-06-01 | docs: add session summary and handoff notes
+005 | 3885649 | 2026-06-05 | feat: implement realtime deployments, ecr gates, and ui enhancements
+006 | 805d1a8 | 2026-06-05 | feat: implement realtime deployments, ecr gates, and ui enhancements
+007 | c58eee4 | 2026-06-05 | fix: resolve terraform output error and strengthen infrastructure teardown
+008 | 943bc09 | 2026-06-06 | ci: deploy configurations, gitignore, and cleanup
+009 | 04e76fd | 2026-06-06 | fix: terraform plan errors for route53 and kubernetes_manifest
+010 | 6ad9976 | 2026-06-06 | feat: switch dns and cert-manager to cloudflare
+011 | ff1fe8d | 2026-06-09 | chore: trigger deployment after manual route53 cleanup
+012 | 782981a | 2026-06-09 | feat: configure HCP Terraform cloud backend
+013 | a0f7c5a | 2026-06-09 | fix: explicit AL2 AMI and IRSA for Karpenter
+014 | 96bf0ff | 2026-06-09 | fix: switch to free-tier eligible t3.micro instances
+015 | c917f22 | 2026-06-09 | fix: switch to m7i-flex.large free tier instances
+016 | 36a4133 | 2026-06-09 | feat: DevSecOps transformation - EKS v1.36, Kyverno, Trivy, tfsec, checkov
+017 | c648fe5 | 2026-06-09 | fix: update AMI type to AL2023 for EKS 1.36
+018 | cc5ceeb | 2026-06-09 | fix: resolve ALBC webhook race condition and restore bitnami chart versions
+019 | 4d33591 | 2026-06-09 | fix: comprehensive race conditions, add ebs csi driver, upgrade nodes to c7i.large
+020 | d3aa9ad | 2026-06-09 | fix: revert to free-tier eligible m7i-flex.large
+021 | 8f86083 | 2026-06-09 | fix: bypass crd validation bug with local-exec and fix namespace collision
+022 | 8de5156 | 2026-06-09 | fix: resolve service account collision and add gp3 storageclass for postgres
+023 | 802e29c | 2026-06-09 | fix: resolve volume permissions for bitnami postgres and fix bash substitution syntax
+024 | 2222aa9 | 2026-06-09 | fix: resolve terraform interpolation string escaping for iam role and triggers
+025 | 5da6472 | 2026-06-09 | fix: explicit storage class mapping for postgres and increase crd wait time
+026 | 04f75e8 | 2026-06-09 | chore: add webhook cleanup to destroy pipeline to prevent deadlocks
+027 | 6469e2b | 2026-06-09 | chore: force uninstall kyverno without hooks to fix destroy timeout
+028 | 6d71b4e | 2026-06-09 | docs: update session summary for deep infrastructure teardown hardening
+029 | aff5265 | 2026-06-10 | fix: wait for ClusterSecretStore CRD and refresh api discovery cache
+030 | f5c26ac | 2026-06-10 | fix: move api discovery cache refresh after crd wait
+031 | c27d892 | 2026-06-10 | fix: explicit api server readiness check and postgres karpenter dependency
+032 | 9c1cea1 | 2026-06-10 | fix: unconditionally clear kubernetes discovery cache before apply
+033 | 041438f | 2026-06-10 | fix: use server-side apply for secret store and increase node count for postgres
+034 | 705daad | 2026-06-10 | fix: comprehensive infrastructure audit fixes for NodePool, Gateway API, and dual-default storage class
+035 | 5efab93 | 2026-06-10 | fix: Karpenter amiSelectorTerms and ClusterSecretStore cache race retry loop
+036 | b606219 | 2026-06-10 | fix: ClusterSecretStore apiVersion v1
+037 | f90df04 | 2026-06-10 | docs: update session summary with External Secrets lesson
+038 | 03a4ad7 | 2026-06-10 | fix: downgrade postgres storage class to gp2 to unblock AWS student account EBS constraints
+039 | 050d3e7 | 2026-06-10 | docs: update session summary with failed run and AWS Academy gp3 lesson
+040 | 62006ca | 2026-06-10 | docs: rephrase AWS Academy constraint to generic strict IAM boundary
+041 | 7c044d2 | 2026-06-10 | fix: comprehensive remediation of 20 critical architectural, auth, and infrastructure faults
+042 | 29aa812 | 2026-06-10 | fix: revert iam_github_oidc_role output attribute to arn
+043 | 076b2ad | 2026-06-10 | fix: final pre-launch audit remediation for irsa roles, operators, cursor scopes, and namespaces
+044 | c0ff440 | 2026-06-10 | fix: final pre-launch audit remediation for irsa roles, operators, cursor scopes, and namespaces
+045 | 0f4ac8e | 2026-06-10 | fix(terraform): revert github_actions_role_arn output to correct .arn attribute
+046 | 1ad22c8 | 2026-06-10 | ci: add GITHUB_TOKEN to tfsec step to bypass api rate limits
+047 | 0219a0a | 2026-06-10 | fix: use kubernetes_service_account instead of kubernetes_manifest for builder SA to prevent computed ARN error
+048 | 2efc79f | 2026-06-10 | fix: change platform_nodes instance type to t3.large to support AWS Learner Lab limits and prevent Pending pods
+049 | b3c5a81 | 2026-06-10 | ci: determine allowed instance type dynamically via aws ec2 run-instances --dry-run before terraform init to prevent Learner Lab pending node limits
+050 | 717479d | 2026-06-10 | ci: remove flawed dry-run test, fallback to t3.large as default instance type
+051 | fe8e93f | 2026-06-12 | fix: update instance type to c7i-flex.large, fix DNS routing, and update summary
+052 | 61100fc | 2026-06-12 | fix: update cluster addons to most_recent to support c7i-flex instance type ENI limits
+053 | fb645ae | 2026-06-12 | fix: unblock stuck terraform destroy by clearing webhooks and finalizers
+054 | 3731e35 | 2026-06-12 | fix: forcefully uninstall kyverno without hooks to bypass timeout
+055 | 4797615 | 2026-06-12 | fix: move webhook cleanup before terraform plan to prevent stale plan error
+056 | 6579569 | 2026-06-12 | fix: revert platform nodes to t3.medium with count 4 for learner lab compatibility
+057 | 3828196 | 2026-06-12 | fix: restore c7i-flex.large, reduce size to 2, remove broken addons, clear helm state
+058 | 34a7cdb | 2026-06-12 | chore: add debug workflow to query cluster state
+059 | fb702a4 | 2026-06-12 | fix: arn secrets
+060 | f0301bb | 2026-06-12 | fix: unpin hardcoded bitnami and kyverno versions
+061 | 819a0df | 2026-06-12 | fix: migrate to bitnami OCI registry and pin recent versions
+062 | 79a3982 | 2026-06-12 | fix: correct postgres release name in cleanup and use v1beta1 for ClusterSecretStore
+063 | 15dc3b4 | 2026-06-13 | fix: terraform namespace and webhook timing issues
+064 | 8348b04 | 2026-06-13 | fix: revert namespace and use depends_on
+065 | 79cb206 | 2026-06-13 | fix: kyverno webhook dependencies and stuck helm releases
+066 | ad27287 | 2026-06-13 | feat: grant jeneel-setup IAM user EKS access
+067 | fe76380 | 2026-06-13 | feat: output NLB URL in github action summary
+068 | 33ac2a4 | 2026-06-13 | fix: install Envoy Gateway and deploy gateway yaml
+069 | 270914f | 2026-06-13 | fix: apply ArgoCD apps using null_resource
+070 | a2f5c89 | 2026-06-13 | fix: Karpenter v1 schema, missing scale kustomization, and add Cloudflare secret
+071 | fcece5a | 2026-06-14 | fix(github-actions): make namespace deletion non-blocking in destroy pipeline
+072 | c053a21 | 2026-06-14 | fix(github-actions): resolve ALB cleanup and KEDA uninstall deadlocks
+073 | eae2e0e | 2026-06-14 | fix(github-actions): fix ALB wait script and SG cleanup queries
+074 | e58fe15 | 2026-06-14 | fix(github-actions): handle partially destroyed clusters
+075 | f8ae731 | 2026-06-14 | fix(github-actions): force delete orphaned ALBs and Target Groups
+076 | a7d9dc2 | 2026-06-14 | fix(github-actions): add nuclear cleanup step for guaranteed zero orphaned resources
+077 | d033fd1 | 2026-06-14 | fix(terraform): resolve deploy errors with secret caching and ALB webhook race
+078 | 58e33cf | 2026-06-14 | feat(deploy): automate Cloudflare token injection and TLS certificate verification
+079 | ca6d22a | 2026-06-14 | fix(destroy): use VPC-based resource discovery instead of name-based search
+080 | 85b001a | 2026-06-14 | fix(eks): grant GitHub Actions OIDC role cluster admin access
+081 | e87363e | 2026-06-14 | fix(deploy): bootstrap EKS access for GitHub Actions via AWS API
+082 | cef56f2 | 2026-06-14 | fix(destroy): handle Classic ELBs and retry terraform destroy
+083 | 15333df | 2026-06-15 | fix: resolve 21 architectural issues from ARCHITECTURE_REVIEW
+084 | ebdf24a | 2026-06-15 | fix: upgrade EKS module version to avoid resolve_conflicts deprecation
+085 | 8f53f98 | 2026-06-15 | fix: resolve remaining architectural issues from ARCHITECTURE_REVIEW
+086 | 759382a | 2026-06-15 | fix: explicitly define resolve_conflicts_on_create to bypass terraform deprecation warning
+087 | af5ebdc | 2026-06-15 | fix: remove hallucinated cloudflare record management from terraform
+088 | b783219 | 2026-06-15 | fix: remove github_actions access_entry from terraform to prevent 409 conflict with bootstrap script
+089 | 6bbcb53 | 2026-06-15 | fix: resolve hanging cert-manager cleanup in CI
+090 | 3562a93 | 2026-06-15 | feat: fully automate cloudflare DNS setup and wait for NLB inside CI pipeline
+091 | 72e4553 | 2026-06-15 | fix: use dynamic service lookup for NLB to prevent timeout
+092 | b18601c | 2026-06-15 | fix: increase NLB and TLS wait timeouts to 600s to account for AWS provisioning delays
+093 | 77d6ce2 | 2026-06-15 | fix: replace old ALB gateway with proper Envoy Gateway to correctly provision the NLB
+094 | 5181770 | 2026-06-15 | fix: configure EnvoyProxy to correctly pass AWS annotations to the generated LoadBalancer service
+095 | f527060 | 2026-06-15 | chore: force trigger pipeline
+096 | e96cdaa | 2026-06-15 | fix: forcefully clear namespace finalizers to prevent terraform destroy from hanging on stuck namespaces
+097 | 1e50e3b | 2026-06-15 | Initial plan
+098 | 22b81ac | 2026-06-15 | Improve destroy workflow pre-cleanup and debug logging
+099 | fe05379 | 2026-06-16 | Merge pull request #1 from jeneeldumasia/copilot/update-destroy-workflow
+100 | 987b190 | 2026-06-16 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+101 | c660045 | 2026-06-16 | Fix aggressive security group cleanup causing Terraform timeout
+102 | 1a8a546 | 2026-06-16 | Remove TF_LOG: DEBUG to prevent kubectl provider crash
+103 | f1e14f5 | 2026-06-16 | Fix namespace deletion getting stuck in terminating state during terraform destroy
+104 | e0b9127 | 2026-06-17 | fix(terraform): resolve ArgoCD race condition and remove obsolete gateway app
+105 | b287b19 | 2026-06-17 | fix(terraform): wait for ALB webhook to be ready before deploying monitoring and operators
+106 | 672ac6c | 2026-06-17 | fix(terraform): disable nodeExporter in kube-prometheus-stack to comply with Kyverno PSS
+107 | 02fd86e | 2026-06-17 | fix(infra): update EnvoyProxy apiVersion to gateway.envoyproxy.io/v1alpha1
+108 | b5e0a65 | 2026-06-17 | docs: update session summary and readme to reflect recent architecture and pipeline fixes
+109 | 3a536e7 | 2026-06-17 | ci: suppress Node 20 deprecation warning for older actions
+110 | 39e850d | 2026-06-17 | fix(ci): fix cloudflare zone and record name queries
+111 | ae21bd0 | 2026-06-17 | fix(networking): add apex domain support to gateway and cloudflare automation
+112 | bc591b7 | 2026-06-17 | feat(platform): implement ui deployment and build pipeline for platform components
+113 | b35ee1f | 2026-06-17 | chore(scale): add hard resource limits to karpenter nodepools
+114 | 1d74f55 | 2026-06-17 | chore(scale): drastically reduce karpenter limits to minimal free-tier compatible boundaries
+115 | b0548a8 | 2026-06-17 | ci: add cloudflare dns cleanup to destroy pipeline
+116 | cc2fd0b | 2026-06-17 | fix(ui): create public dir in dockerfile to prevent buildx cache errors
+117 | ec12dcd | 2026-06-17 | fix(ui): dynamic api url and overhaul aesthetics
+118 | 89256d9 | 2026-06-17 | feat: add out.yaml configuration file to project root
+119 | 7c029a0 | 2026-06-17 | feat(ui): implement stark vercel black and white aesthetic
+120 | bf13664 | 2026-06-17 | fix(ui): fix text legibility and server-side fetching
+121 | b339e65 | 2026-06-17 | fix(ui): add AUTH_TRUST_HOST to bypass NextAuth container host checks
+122 | adcb2bf | 2026-06-18 | Rename workflow from 'Destroy Platform' to 'Infra Teardown'
+123 | c73dbd8 | 2026-06-18 | Rename deploy workflow for clarity
+124 | af5c4c0 | 2026-06-18 | Rename DeployHub to ShipZen and revamp UI to Glassmorphism
+125 | 4a2c4bd | 2026-06-18 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+126 | 2c3b14f | 2026-06-18 | docs: add issue tracker and technical debt documentation
+127 | ee9bd58 | 2026-06-18 | Fix dark mode UI, preserve branch parameter in worker, and clean up docs/gitignore
+128 | 9656515 | 2026-06-18 | Remove out.yaml and eso_values.yaml from gitignore
+129 | 1d076a8 | 2026-06-18 | Fix active nav item text color with CSS variables
+130 | 4b4f1c7 | 2026-06-18 | Fix 5 structural bugs in worker and controller
+131 | 073a667 | 2026-06-18 | Fix brand text color in dark mode
+132 | b760598 | 2026-06-18 | Replace default Vercel favicon with ShipZen rocket logo
+133 | cf06d68 | 2026-06-18 | Auto-initialize DB schema on API startup
+134 | a9518ca | 2026-06-18 | Automate GitOps deployments with kustomization tagging
+135 | 2760b70 | 2026-06-18 | Fix Grafana dashboard UIDs and deploy via ArgoCD
+136 | 4ba9650 | 2026-06-18 | Fix builder autoscaling by duplicating secrets to shipzen-build namespace
+141 | 0c8d5e9 | 2026-06-18 | Remove unused gavinbunney/kubectl provider to fix GitHub 500 error
+146 | a85964b | 2026-06-18 | Create ISSUES_AND_RESOLUTIONS.md to document recently fixed infra and UI issues
+147 | 676a519 | 2026-06-18 | Add 21 historical deployment issues to ISSUES_AND_RESOLUTIONS.md
+148 | 13f5345 | 2026-06-18 | fix: initialize builder consumer group in worker so KEDA can monitor it
+149 | 2891863 | 2026-06-18 | docs: Add issue 7 - KEDA scale to zero deadlock
+154 | 96c09dc | 2026-06-18 | feat: complete v1 feature ports and ui auth screen
+155 | 0333015 | 2026-06-18 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+160 | af29f85 | 2026-06-18 | fix: register ecr-token-rotator in kustomization
+161 | 0aecb0e | 2026-06-18 | fix: enforce auth in ui and add logout button
+164 | ed7d8f3 | 2026-06-18 | fix: correct TS inference for credentials in auth.ts
+165 | 9363497 | 2026-06-18 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+170 | a62eb2f | 2026-06-18 | fix: add builder to CI matrix and fix scheduling constraints
+176 | 1dd61de | 2026-06-18 | fix: correct controller rbac and ecr provisioning failure
+182 | 1863a33 | 2026-06-18 | fix: use short format for sha docker tags to match kustomize
+188 | 2179d9e | 2026-06-18 | fix: correct auth0 fallback logic and auth_url for ui
+194 | db049af | 2026-06-18 | feat: database-backed RBAC and Admin UI
+197 | 632cb1f | 2026-06-18 | fix: resolve typescript error with session accessToken
+198 | ed8fdb4 | 2026-06-18 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+204 | 05c1801 | 2026-06-18 | fix: correct api STREAM_NAME to match builder queue
+205 | a70cf88 | 2026-06-18 | fix: add emptyDir volumes to builder for workspace and tmp
+206 | c519152 | 2026-06-18 | feat: switch authentication from Auth0 to GitHub OAuth
+207 | 21ea535 | 2026-06-18 | fix(terraform): delay kubernetes and helm providers for EKS access entry propagation
+210 | 08a3219 | 2026-06-18 | fix(terraform): replace provider host hack with direct dependencies on time_sleep
+211 | 4259d54 | 2026-06-18 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+215 | 8ce9533 | 2026-06-18 | fix(ui): import CredentialsProvider to fix build error
+216 | 7dc5476 | 2026-06-18 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+222 | e0778b6 | 2026-06-18 | fix: correctly route deployments to worker and fix pending message processing loop
+228 | f21a90e | 2026-06-19 | fix: handle xautoclaim returning 3 values instead of 2
+234 | 9d70aef | 2026-06-19 | fix: use proper api client to fetch logs instead of broken proxy route
+235 | d89dfa4 | 2026-06-19 | feat: add GitHub Actions OIDC role for securely deploying secrets
+241 | f56ecad | 2026-06-19 | fix: remove accidentally staged scratch_deployhub submodule gitlink
+242 | db93ba7 | 2026-06-19 | fix: remove invalid typescript property in LogViewer
+253 | 669f31c | 2026-06-19 | fix: add eks:DescribeCluster permission to GitHub actions role
+254 | 88e93b4 | 2026-06-19 | fix: use next/image for login background
+260 | 4ae21da | 2026-06-19 | fix: mount service account token for builder
+261 | 35d8eb9 | 2026-06-19 | docs: update session summary for June 18/19 fixes
+262 | 2d7e56e | 2026-06-19 | feat: handle failed deployments, enable node-exporter exception, clean scratch files
+263 | 03b9036 | 2026-06-19 | chore: update session summary, add static site builder heuristics, update UI Dockerfile
+264 | b7992ae | 2026-06-22 | feat: Implement 3-Tier Ephemeral Builder architecture
+265 | 2bcf239 | 2026-06-22 | fix: Add Kyverno namespace exclusions to terraform
+266 | a02f0c9 | 2026-06-22 | fix: Disable kyverno webhooks for observability and shipzen-build namespaces
+267 | b538201 | 2026-06-22 | fix: Correct helm value nesting for kyverno resourceFiltersExcludeNamespaces
+268 | ae3ee19 | 2026-06-22 | fix: Change Kyverno to Audit mode
+269 | 43766e4 | 2026-06-22 | fix: Add missing cachetools dependency to API
+270 | e8572df | 2026-06-22 | chore: Remove builder from build-push matrix
+275 | dd2056a | 2026-06-22 | fix: Enable automountServiceAccountToken on worker
+276 | f9d0338 | 2026-06-22 | fix: Update shipzen-build to privileged pod security
+277 | 1f140ae | 2026-06-22 | feat: Inject PORT environment variable into tenant deployments
+282 | 74dd5b0 | 2026-06-22 | fix: Pass auth token to status WebSocket to enable live auto-refresh
+287 | 8c0fa24 | 2026-06-22 | fix: Buildpacks container failing with StartError due to missing sh
+288 | c6042ad | 2026-06-22 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+293 | 425e115 | 2026-06-22 | fix: Pass S3_LOG_BUCKET to worker to ensure build logs are recorded properly
+294 | 0327810 | 2026-06-22 | fix: use docker:24-dind to support pack API version 1.38
+299 | d85a8cc | 2026-06-22 | fix: Worker S3 and Builder ECR permissions
+305 | bf7548f | 2026-06-22 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+310 | 48c19ee | 2026-06-22 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+311 | 2d7fe42 | 2026-06-22 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+316 | fbdb602 | 2026-06-23 | fix: inject ECR credentials and fix buildkit auth, update MAX_UPTIME_HOURS
+317 | 5c8472f | 2026-06-23 | chore: update auto-destroy cron schedule to every 8 hours
+318 | 293532f | 2026-06-23 | fix: move EnvoyProxy to envoy-gateway-system namespace
+319 | fc02bd8 | 2026-06-23 | feat: migrate to Cloudflare Origin CA certificates and remove cert-manager
+320 | b5c6ca7 | 2026-06-23 | fix: rename certificate_request to csr in origin_cert
+321 | a231ade | 2026-06-23 | fix: change JSON keys from tls.crt/tls.key to cert/key to prevent gjson parsing errors in ExternalSecrets
+322 | 77eea3d | 2026-06-23 | fix: update EnvoyProxy apiVersion for Envoy Gateway v1.1.2 and add debug dump
+323 | 3716be1 | 2026-06-23 | fix: increase NLB wait timer back to 10 minutes
+324 | dbc8f7c | 2026-06-23 | fix: resolve ArgoCD sync failures due to stuck cert-manager finalizers and EnvoyProxy namespace cross-reference
+325 | 4eabc27 | 2026-06-23 | chore: add debug dump to catch ArgoCD validation errors
+326 | 75e3ec3 | 2026-06-23 | chore: temporarily reduce wait timer to 60s for fast debugging
+327 | 166dc9a | 2026-06-23 | chore: remove tfsec and checkov from pipeline to reduce noise and speed up deployments
+328 | c59fc78 | 2026-06-23 | fix: update Kyverno PolicyException API version from v2alpha1 to v2
+329 | 6f54f32 | 2026-06-23 | fix(ui): inject NEXT_PUBLIC_API_URL at build time so browser uses correct API endpoint instead of localhost
+334 | d3ba75e | 2026-06-23 | feat: reduce ArgoCD polling interval to 15s for near-instant deployments
+335 | d8e99e6 | 2026-06-23 | refactor: flatten domain structure to first-level subdomains for Cloudflare proxying compatibility
+340 | c311bd0 | 2026-06-23 | fix: disable IAM role name prefixing in Karpenter to unblock EC2NodeClass readiness
+341 | 369c19d | 2026-06-23 | fix: typo in ClusterSecretStore name for alerts
+346 | 704025f | 2026-06-23 | fix: worker logging import
+351 | a120a44 | 2026-06-23 | fix: api base url domain flattening
+356 | 59f6efd | 2026-06-23 | fix: route api to same domain via path based routing
+361 | 594fae1 | 2026-06-23 | docs: update session summary with build failure root cause
+362 | 7361d73 | 2026-06-23 | ci: update auto-destroy to run hourly and trigger after 6 hours
+363 | a80a578 | 2026-06-23 | ci: track leftover VPCs in auto-destroy pipeline to prevent leaked resources
+364 | 9e1332a | 2026-06-23 | docs: update session summary with auto-destroy improvements
+365 | 4a333d2 | 2026-06-24 | fix(worker): inject IRSA tokens into worker deployment
+366 | 6b467f0 | 2026-06-24 | fix: resolve live-update issues for deployments
+371 | af01a74 | 2026-06-24 | fix: add S3 permissions and IRSA to worker/API for build logs
+372 | 8cf4214 | 2026-06-24 | fix: add redis dependency to controller requirements
+377 | d4f0b76 | 2026-06-24 | fix: build failures and grafana pod health no-data
+382 | 28bdcc4 | 2026-06-24 | fix: eliminate race condition in kustomization tag updates
+384 | af23a16 | 2026-06-24 | fix: create shipzen-build namespace -- root cause of all build failures
+386 | b3f892e | 2026-06-24 | fix: live status updates and build log fetch
+388 | fdbf487 | 2026-06-24 | fix: add BatchGetImage and GetDownloadUrlForLayer to ShipZenBuilderRole
+389 | b5971c4 | 2026-06-24 | fix: create per-project ECR repo before launching build job
+391 | ca2901c | 2026-06-24 | feat: implement live build logs streaming via WebSockets
+392 | c729483 | 2026-06-24 | fix: type mismatch in reconciliation loop
+393 | 15936ea | 2026-06-24 | fix: bump build timeout and limit Vite memory
+396 | c8bbce4 | 2026-06-24 | fix: correct NEXT_PUBLIC_API_URL so WebSockets connect
+397 | f4148f2 | 2026-06-24 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+398 | ce81f68 | 2026-06-24 | fix: update NEXT_PUBLIC_API_URL in github actions build arg
+400 | e8ea0e2 | 2026-06-24 | fix: add securityContext to deployment template to pass PodSecurity Admission restricted policy
+402 | 0761426 | 2026-06-24 | fix: use server.cjs for SPA server injection to support ES modules
+403 | 1166f2c | 2026-06-24 | fix: update ExternalSecret apiVersion to v1beta1
+404 | ffe10cd | 2026-06-24 | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+406 | 7f49367 | 2026-06-24 | fix: make secretRef optional in deployment template
+409 | 2020dd2 | 2026-06-25 | fix(ui): correct deployment url format to match httproute
+411 | e3fbcb3 | 2026-06-25 | fix(ui): add NODE_OPTIONS=--dns-result-order=ipv4first to fix nextauth EAI_AGAIN
+412 | b533416 | 2026-06-25 | chore(infra): migrate grafana database to postgresql
+413 | 377e29f | 2026-06-25 | feat(observability): update build performance dashboard
+414 | e1d390b | 2026-06-25 | fix(observability): add gridPos layout for grafana dashboard panels
+415 | e3d1b20 | 2026-06-25 | fix(observability): add correct metric units to dashboards
+416 | 9bcf230 | 2026-06-25 | fix(controller): verify existence of services and httproutes to improve resilience
+418 | 305b419 | 2026-06-25 | Fix 12 critical bugs across API and Worker
+420 | 8b093fb | 2026-06-25 | chore: ignore zip archives
+421 | 031013e | 2026-06-26 | fix: Disable grafana assertNoLeakedSecrets validation
+422 | 56ff900 | 2026-06-26 | security: Move grafana passwords to GitHub Secrets
+423 | 84030f5 | 2026-06-26 | fix: Secure Postgres password and point Grafana to shipzen db
+424 | e66fb75 | 2026-06-26 | fix: Return Queued instead of Deploying in rollback response
+425 | 77fbc99 | 2026-06-26 | fix: Add postgresql dependency and timeout to kube-prometheus-stack
+426 | ffb890f | 2026-06-26 | fix: Resolve Prometheus storageSpec and Grafana database password parsing bugs
+427 | 57da4ad | 2026-06-26 | fix: Bootstrap Kyverno exception before deploying kube-prometheus-stack to unblock node-exporter
+428 | 7e6c07f | 2026-06-26 | chore: Add cluster state debug dump to deploy.yaml for Terraform failures
+430 | e180e4b | 2026-06-27 | feat: add project RBAC, new metrics, and testcontainers integration
+432 | b03fc1c | 2026-06-27 | fix: ensure all endpoints use verify_project_access
+433 | d47f9d2 | 2026-06-27 | fix: enforce project owner requirement for deletion and strengthen ws auth
+436 | e9eaa58 | 2026-06-27 | fix: resolve terraform dependency cycle by explicitly creating observability namespace
+438 | f5df607 | 2026-06-27 | chore: migrate image registry from GHCR to ECR
+441 | 0164acc | 2026-06-27 | chore: remove policy_update.json from tracking
+442 | 1ec0f27 | 2026-06-27 | fix: URL-encode @ in postgres password for connection string
+443 | c497ced | 2026-06-27 | feat: dark mode revamp — amber accent, zinc base, glassmorphism
+445 | 9c9359d | 2026-06-27 | fix: add project_members table and is_admin property to User
+447 | aa3398e | 2026-06-27 | feat: branch dropdown with GitHub API integration
+449 | 0e7729a | 2026-06-27 | fix: kubernetes crd apply logic and enforce runAsUser 1000
+451 | f4ba8b4 | 2026-06-27 | feat: Auto-connect GitHub webhooks
+452 | 43d34a2 | 2026-06-27 | feat: migrate to GitHub App webhook architecture
+454 | 11d2a7d | 2026-06-27 | feat: add github branches endpoint to auto-populate UI
+456 | 6f91706 | 2026-06-27 | fix: resolve Grafana dashboard sprawl and pod health namespace routing
+458 | 43d13e9 | 2026-06-27 | chore: cleanup redundant endpoints and unused variables
+460 | 1d1bfe1 | 2026-06-27 | fix: enable foldersFromFilesStructure in grafana dashboards
+461 | 60b0111 | 2026-06-27 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+462 | 9756253 | 2026-06-27 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+463 | 35d98a2 | 2026-06-27 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+464 | 1036323 | 2026-06-27 | chore: production readiness & portfolio audit cleanup
+465 | cbfcc5c | 2026-06-27 | fix: resolve ide linter warnings and remove unused jwt import
+466 | 4a77b29 | 2026-06-27 | docs: consolidate historical bugs into issues log and update architecture review
+467 | 7974d44 | 2026-07-06 | feat: complete codebase security and stability improvements
+468 | 9750023 | 2026-07-06 | fix: use AWS_ROLE_ARN secret in deploy-secrets
+469 | 4de2b31 | 2026-07-06 | fix: resolve docker build failures and hardcoded aws role
+470 | 7bed054 | 2026-07-06 | fix: resolve Next.js TypeScript compilation errors
+472 | fa47e47 | 2026-07-06 | fix: remove duplicate ecr-token-rotator-sa.yaml from kustomization
+473 | 842e100 | 2026-07-06 | fix: disable image optimization for auth bg
+475 | 79a71f2 | 2026-07-06 | chore: add secrets refresh and pod restart to debug workflow
+476 | 09ef7f4 | 2026-07-06 | fix: add missing github external secret
+477 | 05f485a | 2026-07-06 | fix: revert incorrect external secret
+478 | e4487c0 | 2026-07-06 | fix: remove delete secret from debug workflow
+479 | 48a94d2 | 2026-07-06 | fix: allow auth_bg.png in middleware matcher
+481 | 093c6c7 | 2026-07-07 | fix: force dynamic rendering on login page to read GITHUB_CLIENT_ID at runtime
+482 | 48d9e40 | 2026-07-07 | style: fix login page background to flush across the area right of sidebar
+483 | ccf711e | 2026-07-07 | feat: use new DevOps-themed background image for login
+485 | 38746ef | 2026-07-07 | fix: allow devops background image in middleware
+487 | e415f5a | 2026-07-07 | fix: secure login page and permanent admin access
+488 | 94d73f2 | 2026-07-07 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+490 | 9af32b6 | 2026-07-07 | fix: resolve pkceCodeVerifier proxy bug
+492 | 903c4be | 2026-07-07 | style: replace cringe background with sleek modern design
+494 | cc2534f | 2026-07-07 | ci: fix IDE warnings for AWS_REGION context access
+495 | 272b885 | 2026-07-07 | ci: add GitHub App secret deployment step
+496 | 2b5335a | 2026-07-07 | feat(worker): implement github app token fetching for private repos
+497 | 60989eb | 2026-07-07 | fix(worker): fix requirements.txt UTF-16 encoding issue
+499 | a0914c5 | 2026-07-07 | design: replace cringe login image with sleek animated CSS gradient
+500 | 445f67e | 2026-07-07 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+502 | 4dd13d2 | 2026-07-07 | feat(api,ui): add pod restart capabilities for users and admins
+503 | 517ae11 | 2026-07-07 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+505 | 1d3224d | 2026-07-07 | fix(infra): increase api memory limits to prevent OOM on startup
+506 | 9a15558 | 2026-07-13 | chore: complete remediation sprint
+508 | adf10a3 | 2026-07-13 | feat: Zenith Redesign implementation
+509 | 546fdb0 | 2026-07-13 | fix: TypeScript error in project status check
+511 | d47bb2d | 2026-07-13 | fix: use github.sha to retain branch commit hash when checking out main in update-kustomization
+514 | c07244a | 2026-07-13 | fix: remove redundant ui-auth-external-secret that blocks ArgoCD sync
+515 | 5c9762e | 2026-07-13 | fix: resolve controller connection pool leak causing CrashLoopBackOff
+517 | 30d3d5f | 2026-07-13 | fix: deploy github app secret and add admin link to command palette
+518 | 2ac5f11 | 2026-07-13 | Merge branch 'zenith-redesign'
+519 | 56a2f23 | 2026-07-13 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+521 | 3def614 | 2026-07-13 | fix: update Karpenter EC2NodeClass AMI alias to latest
+522 | 44cd4fa | 2026-07-13 | feat: restore global navigation and enhance admin console visibility
+523 | 35fbf9b | 2026-07-13 | feat: light mode — floating pill + admin pages use semantic theme tokens
+524 | 31f8ced | 2026-07-13 | fix: add missing /admin/deployments endpoint, fix restart_deployment signatures, graceful avatar fallback
+525 | 3b79231 | 2026-07-13 | chore: final release sprint architecture and UI fixes
+526 | 4212db0 | 2026-07-13 | feat: redesign create project page and conditionally render admin link
+528 | 07dede5 | 2026-07-13 | feat: expose Argo CD UI via Gateway HTTPRoute
+529 | 1815251 | 2026-07-13 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+530 | dcfd29e | 2026-07-14 | fix: resolve critical v1 release blockers in worker
+531 | d9035a2 | 2026-07-14 | fix: address remaining stability and scale issues in control plane
+533 | 1585658 | 2026-07-15 | fix: update login page UI to Zenith Redesign brutalist style
+535 | 23a3dc9 | 2026-07-15 | fix: resolve github signin and apply Zen aesthetic to login page
+537 | 9a1e56d | 2026-07-15 | feat: implement split-screen landing page and redesign auth flow
+539 | 8a29510 | 2026-07-15 | style: refine landing page aesthetics and add smooth view transitions
+541 | 7605527 | 2026-07-15 | fix: bypass GitHub verification for local stub auth tokens
+543 | 23f46d7 | 2026-07-15 | fix: ensure local dev user exists in database to prevent foreign key errors
+545 | 1417c0e | 2026-07-15 | fix: secure authentication fallback and prevent stub token usage in production
+546 | 474eafc | 2026-07-15 | fix(ui): gracefully handle missing auth config during docker build and update login UI
+548 | 50cf305 | 2026-07-15 | feat: add support for SHIPZEN_ prefixed configuration environment variables
+550 | d7159af | 2026-07-15 | fix: make admin email matching case-insensitive
+552 | c0234ef | 2026-07-18 | chore: apply production readiness and security hardening fixes
+553 | 2ab916b | 2026-07-18 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+555 | c1f69d0 | 2026-07-18 | Fix production readiness audit issues and frontend auth config
+557 | 8d2b6c3 | 2026-07-18 | Fix terraform plan hanging on redis_password in CI
+558 | 967f3d9 | 2026-07-18 | Inject redis password into k8s deployments
+559 | 2ee36b9 | 2026-07-18 | Migrate redis password to AWS Secrets Manager
+560 | 96ec0cb | 2026-07-18 | Fix terraform apply errors
+562 | 0aa4084 | 2026-07-19 | fix: explicitly specify kyverno policies in exception to allow node-exporter
+563 | 6b09755 | 2026-07-19 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+564 | bbe0c55 | 2026-07-19 | fix: redis provisioner pipe and kyverno autogen rule names
+565 | 464e032 | 2026-07-19 | docs: add agent rules for auto-commits and infrastructure lessons
+566 | cac8368 | 2026-07-19 | docs: move agent rules to gemini.md per user request
+567 | 134f87b | 2026-07-19 | fix: terraform race condition between kyverno exception and prometheus helm release
+568 | d8139a8 | 2026-07-19 | fix: remove duplicate depends_on block from monitoring.tf
+569 | 9945c17 | 2026-07-19 | fix: replace wildcard with exact match in kyverno policy exception
+570 | 9575e46 | 2026-07-19 | fix: rely on kyverno auto-generation for daemonset exceptions
+571 | e35b8f7 | 2026-07-19 | fix: explicitly specify apps/v1/DaemonSet API group in Kyverno exception
+572 | 7cf4607 | 2026-07-19 | fix: include autogen rule names in kyverno exception and update rules
+573 | 8f14497 | 2026-07-19 | fix: use helm values for kyverno namespace exclusion instead of namespaced PolicyException
+574 | 0c324b8 | 2026-07-19 | fix: update deployments to use redis-auth secret
+575 | 04f170b | 2026-07-19 | trigger: run deploy pipeline to update cloudflare
+576 | 6eb24b0 | 2026-07-19 | fix: enable local stub auth in ui deployment
+577 | fa5c745 | 2026-07-19 | Revert "fix: enable local stub auth in ui deployment"
+578 | 586f452 | 2026-07-19 | feat: migrate github secrets to aws secrets manager
+579 | 2eb52f0 | 2026-07-19 | fix(worker): correct database import path
+581 | cabd2fe | 2026-07-19 | fix(api): fix UnboundLocalError for asyncio
+582 | 411ff18 | 2026-07-19 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+584 | 1b7ae3e | 2026-07-19 | Fix Trivy installation checksum validation filename
+585 | 1fe652f | 2026-07-19 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+586 | e194c84 | 2026-07-19 | Update Next.js to address vulnerabilities
+587 | eddf18d | 2026-07-19 | Fix incorrect import in worker main.py
+588 | 63e8fc0 | 2026-07-19 | Fix NameError in restart_system endpoint
+589 | 3bff7a2 | 2026-07-19 | Update eslint to v9 to satisfy eslint-config-next peer dependency
+591 | efbede5 | 2026-07-19 | Fix blank screen crash: await params in Next.js 15 dynamic routes
+593 | 7d80fda | 2026-07-19 | Fix NextAuth PKCE InvalidCheck error for GitHub provider
+595 | 8dcb228 | 2026-07-19 | Change GitHub Auth checks to state
+597 | a6200d5 | 2026-07-19 | Fix WebSocket auth by sending token in first message
+599 | 92bb616 | 2026-07-19 | Fix NextAuth cookie proxy issue by rewriting request protocol to https
+601 | 64fa437 | 2026-08-24 | fix: pre-deployment audit fixes (production-grade)
+602 | f0a141b | 2026-08-24 | fix: add missing IAM and CloudWatch permissions to GitHub Actions role
+603 | 4b3b50b | 2026-08-24 | fix: exclude observability namespace from kyverno webhook to allow prometheus node-exporter
+604 | 0b4b12f | 2026-08-24 | docs: establish persistent AI context and handoff system
+605 | f3ce455 | 2026-08-24 | chore: ignore .ai context directory
+606 | 7f49faa | 2026-08-24 | fix: move webhooks to root in kyverno helm values
+607 | a84f613 | 2026-08-24 | fix: disable prometheus node-exporter to bypass kyverno host policy constraint
+608 | 6c8e1e7 | 2026-08-24 | fix: correctly ignore observability namespace using resourceFiltersIncludeNamespaces
+609 | 0a10dc5 | 2026-08-24 | fix: explicitly override config.resourceFilters to bypass kyverno for observability namespace
+610 | 1246c02 | 2026-08-24 | fix: pass TF_VAR_aws_region and switch OIDC to data lookup
+612 | 632ec22 | 2026-08-24 | chore: revert destroy workflow back to OIDC auth
+613 | 5819e78 | 2026-08-24 | fix: resolve ap-south-1 instance type, webhook races, and access entry conflicts
+614 | f5f384c | 2026-08-24 | chore: revert instance type back to c7i-flex.large as requested
+615 | aac254c | 2026-08-24 | feat: add default_tags to AWS provider to tag all resources
+616 | 5cb014e | 2026-08-24 | fix: increase platform node count to 3 to resolve prometheus memory exhaustion
+617 | 56b7344 | 2026-08-24 | fix: revert grafana to sqlite to fix postgres connection crashloop
+618 | eb54475 | 2026-08-24 | fix: update ecr region to ap-south-1 in kustomize to fix ErrImagePull
+619 | fc3b84e | 2026-08-25 | fix: use dynamic AWS region in build pipeline to fix ErrImagePull
+621 | ce97538 | 2026-08-25 | fix: grant shipzen-worker-sa permissions to manage secrets in shipzen-build
+622 | 7cf9d8a | 2026-08-25 | Fix IAM role name mismatch
+623 | 2f3af02 | 2026-08-25 | Update gitignore with aws-nuke tools
+624 | 0879198 | 2026-08-25 | Updated Docs
+625 | b2e9483 | 2026-08-25 | Update hardcoded AWS account ID to new account
+626 | 78ae331 | 2026-08-25 | Switch Envoy Gateway from NLB to Classic ELB
+628 | f9b299b | 2026-08-25 | Rename NLB to Load Balancer in deploy action
+629 | a4b3c51 | 2026-08-25 | Dynamically resolve AWS region and Account ID in workflows
+630 | 21ccdb1 | 2026-08-25 | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+631 | 567a0b0 | 2026-08-25 | Fix application logic findings (DLQ atomicity, outbox pattern, race conditions)
+632 | 2600517 | 2026-08-25 | Fix AWS_REGION fallback in destroy workflows
+633 | d7e6ab7 | 2026-08-25 | Fix TF_VAR_aws_region in destroy workflow
+634 | 7302104 | 2026-08-25 | Fix ECR pull token rotation to use dynamic AWS region
+635 | 6c1217a | 2026-08-25 | Remove unused get_deployments_paginated function

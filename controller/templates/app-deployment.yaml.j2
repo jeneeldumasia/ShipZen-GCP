@@ -1,0 +1,142 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ deployment_name }}-secrets
+  namespace: {{ namespace }}
+  labels:
+    shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+spec:
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: {{ deployment_name }}-secrets-sync
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        # Assumes secrets in AWS SM are stored under a path scoped to the tenant/project
+        key: shipzen/{{ project_name }}/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ deployment_name }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ deployment_name }}
+    shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+spec:
+  replicas: {{ replicas | default(1) }}
+  selector:
+    matchLabels:
+      app: {{ deployment_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ deployment_name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ port | default(8080) }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Fix #5.4: toleration to schedule on the dedicated tenant NodePool.
+      # Tenant nodes are tainted shipzen.jeneeldumasia.codes/dedicated=tenant:NoSchedule
+      # so builder workloads cannot mix with tenant app pods.
+      tolerations:
+        - key: shipzen.jeneeldumasia.codes/dedicated
+          operator: Equal
+          value: tenant
+          effect: NoSchedule
+      # Fix #8.8: imagePullSecret so tenant pods can pull built images from ECR.
+      # The ecr-pull-secret is created per-namespace by the controller when
+      # provisioning the tenant namespace (via a Kubernetes Job that runs
+      # `aws ecr get-login-password` and creates the secret).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: app
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          image: {{ image_uri }}
+          env:
+            - name: PORT
+              value: "{{ port | default(8080) }}"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          envFrom:
+            - secretRef:
+                name: {{ deployment_name }}-secrets-sync
+                optional: true
+          ports:
+            - name: http
+              containerPort: {{ port | default(8080) }}
+          readinessProbe:
+            httpGet:
+              path: "{{ health_check_path | default('/') }}"
+              port: {{ port | default(8080) }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ deployment_name }}-svc
+  namespace: {{ namespace }}
+  labels:
+    app: {{ deployment_name }}
+    shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+spec:
+  selector:
+    app: {{ deployment_name }}
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: {{ port | default(8080) }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ deployment_name }}-route
+  namespace: {{ namespace }}
+  labels:
+    shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+spec:
+  parentRefs:
+    - name: shipzen-gateway
+      namespace: shipzen-system
+  hostnames:
+    - "{{ deployment_id[:8] }}-{{ project_name }}-shipzen.jeneeldumasia.codes"
+  rules:
+    - backendRefs:
+        - name: {{ deployment_name }}-svc
+          port: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ deployment_name }}-pdb
+  namespace: {{ namespace }}
+  labels:
+    shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+spec:
+  # Fix #19: minAvailable: 1 on a single-replica deployment makes the pod
+  # permanently un-evictable, blocking Karpenter consolidation and node drains.
+  # Use maxUnavailable: 1 instead — this allows voluntary evictions while
+  # still protecting multi-replica deployments from losing all pods at once.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: {{ deployment_name }}

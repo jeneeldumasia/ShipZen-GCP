@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipzen-api
+  namespace: shipzen-system
+  labels:
+    app: shipzen-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipzen-api
+  template:
+    metadata:
+      labels:
+        app: shipzen-api
+    spec:
+      serviceAccountName: shipzen-api-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: shipzen-api:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-db-credentials
+                  key: url
+            - name: REDIS_HOST
+              value: "redis-master.shipzen-system.svc.cluster.local"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: redis-password
+            - name: STREAM_NAME
+              value: "deploy_stream"
+            - name: UI_ORIGIN
+              value: "https://shipzen.jeneeldumasia.codes"
+            - name: ECR_REPOSITORY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-ecr-config
+                  key: repository_url
+            - name: GITHUB_ENABLED
+              value: "true"   # Set to "false" only in local development — disables auth entirely
+            - name: GITHUB_APP_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-github
+                  key: app_webhook_secret
+                  optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # HIGH-04 Fix: Add startupProbe to allow slow initialization without failing liveness
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
+          volumeMounts:
+      volumes:

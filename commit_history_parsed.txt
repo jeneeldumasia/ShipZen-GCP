@@ -1,0 +1,635 @@
+001 | b1e9bb9 | 2026-06-01 18:12:46 +0530 | Jeneel-Itara | feat: initial commit of DeployHub platform architecture
+002 | cc642f0 | 2026-06-01 18:24:31 +0530 | Jeneel-Itara | fix: pin helm provider version to resolve syntax error
+003 | b03cf97 | 2026-06-01 18:25:57 +0530 | Jeneel-Itara | fix: move argocd application into helm values to prevent REST client error during plan
+004 | d0e720f | 2026-06-01 18:32:59 +0530 | Jeneel-Itara | docs: add session summary and handoff notes
+005 | 3885649 | 2026-06-05 17:46:44 +0530 | Jeneel-Itara | feat: implement realtime deployments, ecr gates, and ui enhancements
+006 | 805d1a8 | 2026-06-05 17:52:36 +0530 | Jeneel-Itara | feat: implement realtime deployments, ecr gates, and ui enhancements
+007 | c58eee4 | 2026-06-05 18:15:33 +0530 | Jeneel-Itara | fix: resolve terraform output error and strengthen infrastructure teardown
+008 | 943bc09 | 2026-06-06 12:34:24 +0530 | Jeneel-Itara | ci: deploy configurations, gitignore, and cleanup
+009 | 04e76fd | 2026-06-06 12:39:43 +0530 | Jeneel-Itara | fix: terraform plan errors for route53 and kubernetes_manifest
+010 | 6ad9976 | 2026-06-06 12:47:31 +0530 | Jeneel-Itara | feat: switch dns and cert-manager to cloudflare
+011 | ff1fe8d | 2026-06-09 00:09:17 +0530 | Jeneel-Itara | chore: trigger deployment after manual route53 cleanup
+012 | 782981a | 2026-06-09 00:43:21 +0530 | Jeneel-Itara | feat: configure HCP Terraform cloud backend
+013 | a0f7c5a | 2026-06-09 01:08:30 +0530 | Jeneel-Itara | fix: explicit AL2 AMI and IRSA for Karpenter
+014 | 96bf0ff | 2026-06-09 02:06:14 +0530 | Jeneel-Itara | fix: switch to free-tier eligible t3.micro instances
+015 | c917f22 | 2026-06-09 02:08:27 +0530 | Jeneel-Itara | fix: switch to m7i-flex.large free tier instances
+016 | 36a4133 | 2026-06-09 02:45:32 +0530 | Jeneel-Itara | feat: DevSecOps transformation - EKS v1.36, Kyverno, Trivy, tfsec, checkov
+017 | c648fe5 | 2026-06-09 03:13:40 +0530 | Jeneel-Itara | fix: update AMI type to AL2023 for EKS 1.36
+018 | cc5ceeb | 2026-06-09 03:35:39 +0530 | Jeneel-Itara | fix: resolve ALBC webhook race condition and restore bitnami chart versions
+019 | 4d33591 | 2026-06-09 03:48:48 +0530 | Jeneel-Itara | fix: comprehensive race conditions, add ebs csi driver, upgrade nodes to c7i.large
+020 | d3aa9ad | 2026-06-09 04:25:33 +0530 | Jeneel-Itara | fix: revert to free-tier eligible m7i-flex.large
+021 | 8f86083 | 2026-06-09 04:32:32 +0530 | Jeneel-Itara | fix: bypass crd validation bug with local-exec and fix namespace collision
+022 | 8de5156 | 2026-06-09 04:41:07 +0530 | Jeneel-Itara | fix: resolve service account collision and add gp3 storageclass for postgres
+023 | 802e29c | 2026-06-09 04:50:32 +0530 | Jeneel-Itara | fix: resolve volume permissions for bitnami postgres and fix bash substitution syntax
+024 | 2222aa9 | 2026-06-09 05:06:52 +0530 | Jeneel-Itara | fix: resolve terraform interpolation string escaping for iam role and triggers
+025 | 5da6472 | 2026-06-09 05:20:14 +0530 | Jeneel-Itara | fix: explicit storage class mapping for postgres and increase crd wait time
+026 | 04f75e8 | 2026-06-09 05:36:38 +0530 | Jeneel-Itara | chore: add webhook cleanup to destroy pipeline to prevent deadlocks
+027 | 6469e2b | 2026-06-09 05:52:38 +0530 | Jeneel-Itara | chore: force uninstall kyverno without hooks to fix destroy timeout
+028 | 6d71b4e | 2026-06-09 06:14:33 +0530 | Jeneel-Itara | docs: update session summary for deep infrastructure teardown hardening
+029 | aff5265 | 2026-06-10 01:51:38 +0530 | Jeneel-Itara | fix: wait for ClusterSecretStore CRD and refresh api discovery cache
+030 | f5c26ac | 2026-06-10 01:57:35 +0530 | Jeneel-Itara | fix: move api discovery cache refresh after crd wait
+031 | c27d892 | 2026-06-10 02:15:49 +0530 | Jeneel-Itara | fix: explicit api server readiness check and postgres karpenter dependency
+032 | 9c1cea1 | 2026-06-10 02:20:10 +0530 | Jeneel-Itara | fix: unconditionally clear kubernetes discovery cache before apply
+033 | 041438f | 2026-06-10 02:42:47 +0530 | Jeneel-Itara | fix: use server-side apply for secret store and increase node count for postgres
+034 | 705daad | 2026-06-10 02:56:49 +0530 | Jeneel-Itara | fix: comprehensive infrastructure audit fixes for NodePool, Gateway API, and dual-default storage class
+035 | 5efab93 | 2026-06-10 03:27:12 +0530 | Jeneel-Itara | fix: Karpenter amiSelectorTerms and ClusterSecretStore cache race retry loop
+036 | b606219 | 2026-06-10 03:30:53 +0530 | Jeneel-Itara | fix: ClusterSecretStore apiVersion v1
+037 | f90df04 | 2026-06-10 03:31:15 +0530 | Jeneel-Itara | docs: update session summary with External Secrets lesson
+038 | 03a4ad7 | 2026-06-10 03:56:35 +0530 | Jeneel-Itara | fix: downgrade postgres storage class to gp2 to unblock AWS student account EBS constraints
+039 | 050d3e7 | 2026-06-10 04:11:10 +0530 | Jeneel-Itara | docs: update session summary with failed run and AWS Academy gp3 lesson
+040 | 62006ca | 2026-06-10 04:12:28 +0530 | Jeneel-Itara | docs: rephrase AWS Academy constraint to generic strict IAM boundary
+041 | 7c044d2 | 2026-06-10 04:29:57 +0530 | Jeneel-Itara | fix: comprehensive remediation of 20 critical architectural, auth, and infrastructure faults
+042 | 29aa812 | 2026-06-10 04:31:43 +0530 | Jeneel-Itara | fix: revert iam_github_oidc_role output attribute to arn
+043 | 076b2ad | 2026-06-10 04:56:32 +0530 | Jeneel-Itara | fix: final pre-launch audit remediation for irsa roles, operators, cursor scopes, and namespaces
+044 | c0ff440 | 2026-06-10 05:09:37 +0530 | Jeneel-Itara | fix: final pre-launch audit remediation for irsa roles, operators, cursor scopes, and namespaces
+045 | 0f4ac8e | 2026-06-10 05:15:03 +0530 | Jeneel-Itara | fix(terraform): revert github_actions_role_arn output to correct .arn attribute
+046 | 1ad22c8 | 2026-06-10 05:18:50 +0530 | Jeneel-Itara | ci: add GITHUB_TOKEN to tfsec step to bypass api rate limits
+047 | 0219a0a | 2026-06-10 05:20:58 +0530 | Jeneel-Itara | fix: use kubernetes_service_account instead of kubernetes_manifest for builder SA to prevent computed ARN error
+048 | 2efc79f | 2026-06-10 05:36:33 +0530 | Jeneel-Itara | fix: change platform_nodes instance type to t3.large to support AWS Learner Lab limits and prevent Pending pods
+049 | b3c5a81 | 2026-06-10 05:59:31 +0530 | Jeneel-Itara | ci: determine allowed instance type dynamically via aws ec2 run-instances --dry-run before terraform init to prevent Learner Lab pending node limits
+050 | 717479d | 2026-06-10 06:01:37 +0530 | Jeneel-Itara | ci: remove flawed dry-run test, fallback to t3.large as default instance type
+051 | fe8e93f | 2026-06-12 16:57:38 +0530 | Jeneel Dumasia | fix: update instance type to c7i-flex.large, fix DNS routing, and update summary
+052 | 61100fc | 2026-06-12 17:35:13 +0530 | Jeneel Dumasia | fix: update cluster addons to most_recent to support c7i-flex instance type ENI limits
+053 | fb645ae | 2026-06-12 17:51:33 +0530 | Jeneel Dumasia | fix: unblock stuck terraform destroy by clearing webhooks and finalizers
+054 | 3731e35 | 2026-06-12 18:03:34 +0530 | Jeneel Dumasia | fix: forcefully uninstall kyverno without hooks to bypass timeout
+055 | 4797615 | 2026-06-12 18:09:00 +0530 | Jeneel Dumasia | fix: move webhook cleanup before terraform plan to prevent stale plan error
+056 | 6579569 | 2026-06-12 18:56:15 +0530 | Jeneel Dumasia | fix: revert platform nodes to t3.medium with count 4 for learner lab compatibility
+057 | 3828196 | 2026-06-12 19:09:48 +0530 | Jeneel Dumasia | fix: restore c7i-flex.large, reduce size to 2, remove broken addons, clear helm state
+058 | 34a7cdb | 2026-06-12 19:26:23 +0530 | Jeneel Dumasia | chore: add debug workflow to query cluster state
+059 | fb702a4 | 2026-06-12 19:34:47 +0530 | Jeneel Dumasia | fix: arn secrets
+060 | f0301bb | 2026-06-12 19:39:13 +0530 | Jeneel Dumasia | fix: unpin hardcoded bitnami and kyverno versions
+061 | 819a0df | 2026-06-12 19:46:31 +0530 | Jeneel Dumasia | fix: migrate to bitnami OCI registry and pin recent versions
+062 | 79a3982 | 2026-06-12 19:52:53 +0530 | Jeneel Dumasia | fix: correct postgres release name in cleanup and use v1beta1 for ClusterSecretStore
+063 | 15dc3b4 | 2026-06-13 12:05:19 +0530 | Jeneel Dumasia | fix: terraform namespace and webhook timing issues
+064 | 8348b04 | 2026-06-13 12:13:03 +0530 | Jeneel Dumasia | fix: revert namespace and use depends_on
+065 | 79cb206 | 2026-06-13 12:17:10 +0530 | Jeneel Dumasia | fix: kyverno webhook dependencies and stuck helm releases
+066 | ad27287 | 2026-06-13 12:31:16 +0530 | Jeneel Dumasia | feat: grant jeneel-setup IAM user EKS access
+067 | fe76380 | 2026-06-13 12:33:57 +0530 | Jeneel Dumasia | feat: output NLB URL in github action summary
+068 | 33ac2a4 | 2026-06-13 12:49:34 +0530 | Jeneel Dumasia | fix: install Envoy Gateway and deploy gateway yaml
+069 | 270914f | 2026-06-13 12:58:06 +0530 | Jeneel Dumasia | fix: apply ArgoCD apps using null_resource
+070 | a2f5c89 | 2026-06-13 14:48:59 +0530 | Jeneel Dumasia | fix: Karpenter v1 schema, missing scale kustomization, and add Cloudflare secret
+071 | fcece5a | 2026-06-14 15:58:24 +0530 | Jeneel Dumasia | fix(github-actions): make namespace deletion non-blocking in destroy pipeline
+072 | c053a21 | 2026-06-14 16:12:54 +0530 | Jeneel Dumasia | fix(github-actions): resolve ALB cleanup and KEDA uninstall deadlocks
+073 | eae2e0e | 2026-06-14 16:53:56 +0530 | Jeneel Dumasia | fix(github-actions): fix ALB wait script and SG cleanup queries
+074 | e58fe15 | 2026-06-14 16:55:48 +0530 | Jeneel Dumasia | fix(github-actions): handle partially destroyed clusters
+075 | f8ae731 | 2026-06-14 17:57:54 +0530 | Jeneel Dumasia | fix(github-actions): force delete orphaned ALBs and Target Groups
+076 | a7d9dc2 | 2026-06-14 18:11:32 +0530 | Jeneel Dumasia | fix(github-actions): add nuclear cleanup step for guaranteed zero orphaned resources
+077 | d033fd1 | 2026-06-14 18:53:22 +0530 | Jeneel Dumasia | fix(terraform): resolve deploy errors with secret caching and ALB webhook race
+078 | 58e33cf | 2026-06-14 20:54:56 +0530 | Jeneel Dumasia | feat(deploy): automate Cloudflare token injection and TLS certificate verification
+079 | ca6d22a | 2026-06-14 21:24:08 +0530 | Jeneel Dumasia | fix(destroy): use VPC-based resource discovery instead of name-based search
+080 | 85b001a | 2026-06-14 21:45:29 +0530 | Jeneel Dumasia | fix(eks): grant GitHub Actions OIDC role cluster admin access
+081 | e87363e | 2026-06-14 21:46:43 +0530 | Jeneel Dumasia | fix(deploy): bootstrap EKS access for GitHub Actions via AWS API
+082 | cef56f2 | 2026-06-14 22:20:47 +0530 | Jeneel Dumasia | fix(destroy): handle Classic ELBs and retry terraform destroy
+083 | 15333df | 2026-06-15 16:27:01 +0530 | Jeneel Dumasia | fix: resolve 21 architectural issues from ARCHITECTURE_REVIEW
+084 | ebdf24a | 2026-06-15 16:36:40 +0530 | Jeneel Dumasia | fix: upgrade EKS module version to avoid resolve_conflicts deprecation
+085 | 8f53f98 | 2026-06-15 16:39:42 +0530 | Jeneel Dumasia | fix: resolve remaining architectural issues from ARCHITECTURE_REVIEW
+086 | 759382a | 2026-06-15 16:54:58 +0530 | Jeneel Dumasia | fix: explicitly define resolve_conflicts_on_create to bypass terraform deprecation warning
+087 | af5ebdc | 2026-06-15 17:02:50 +0530 | Jeneel Dumasia | fix: remove hallucinated cloudflare record management from terraform
+088 | b783219 | 2026-06-15 17:21:03 +0530 | Jeneel Dumasia | fix: remove github_actions access_entry from terraform to prevent 409 conflict with bootstrap script
+089 | 6bbcb53 | 2026-06-15 18:08:28 +0530 | Jeneel Dumasia | fix: resolve hanging cert-manager cleanup in CI
+090 | 3562a93 | 2026-06-15 18:46:06 +0530 | Jeneel Dumasia | feat: fully automate cloudflare DNS setup and wait for NLB inside CI pipeline
+091 | 72e4553 | 2026-06-15 20:44:58 +0530 | Jeneel Dumasia | fix: use dynamic service lookup for NLB to prevent timeout
+092 | b18601c | 2026-06-15 20:58:43 +0530 | Jeneel Dumasia | fix: increase NLB and TLS wait timeouts to 600s to account for AWS provisioning delays
+093 | 77d6ce2 | 2026-06-15 21:14:06 +0530 | Jeneel Dumasia | fix: replace old ALB gateway with proper Envoy Gateway to correctly provision the NLB
+094 | 5181770 | 2026-06-15 21:33:17 +0530 | Jeneel Dumasia | fix: configure EnvoyProxy to correctly pass AWS annotations to the generated LoadBalancer service
+095 | f527060 | 2026-06-15 21:35:14 +0530 | Jeneel Dumasia | chore: force trigger pipeline
+096 | e96cdaa | 2026-06-15 22:42:11 +0530 | Jeneel Dumasia | fix: forcefully clear namespace finalizers to prevent terraform destroy from hanging on stuck namespaces
+097 | 1e50e3b | 2026-06-15 22:31:28 +0000 | copilot-swe-agent[bot] | Initial plan
+098 | 22b81ac | 2026-06-15 22:33:26 +0000 | copilot-swe-agent[bot] | Improve destroy workflow pre-cleanup and debug logging
+099 | fe05379 | 2026-06-16 04:05:24 +0530 | jeneeldumasia | Merge pull request #1 from jeneeldumasia/copilot/update-destroy-workflow
+100 | 987b190 | 2026-06-16 14:10:42 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+101 | c660045 | 2026-06-16 14:18:08 +0530 | Jeneel Dumasia | Fix aggressive security group cleanup causing Terraform timeout
+102 | 1a8a546 | 2026-06-16 14:41:08 +0530 | Jeneel Dumasia | Remove TF_LOG: DEBUG to prevent kubectl provider crash
+103 | f1e14f5 | 2026-06-16 15:34:26 +0530 | Jeneel Dumasia | Fix namespace deletion getting stuck in terminating state during terraform destroy
+104 | e0b9127 | 2026-06-17 16:17:15 +0530 | Jeneel Dumasia | fix(terraform): resolve ArgoCD race condition and remove obsolete gateway app
+105 | b287b19 | 2026-06-17 16:38:37 +0530 | Jeneel Dumasia | fix(terraform): wait for ALB webhook to be ready before deploying monitoring and operators
+106 | 672ac6c | 2026-06-17 16:43:20 +0530 | Jeneel Dumasia | fix(terraform): disable nodeExporter in kube-prometheus-stack to comply with Kyverno PSS
+107 | 02fd86e | 2026-06-17 17:09:10 +0530 | Jeneel Dumasia | fix(infra): update EnvoyProxy apiVersion to gateway.envoyproxy.io/v1alpha1
+108 | b5e0a65 | 2026-06-17 17:13:46 +0530 | Jeneel Dumasia | docs: update session summary and readme to reflect recent architecture and pipeline fixes
+109 | 3a536e7 | 2026-06-17 17:24:48 +0530 | Jeneel Dumasia | ci: suppress Node 20 deprecation warning for older actions
+110 | 39e850d | 2026-06-17 17:33:51 +0530 | Jeneel Dumasia | fix(ci): fix cloudflare zone and record name queries
+111 | ae21bd0 | 2026-06-17 17:38:41 +0530 | Jeneel Dumasia | fix(networking): add apex domain support to gateway and cloudflare automation
+112 | bc591b7 | 2026-06-17 17:46:23 +0530 | Jeneel Dumasia | feat(platform): implement ui deployment and build pipeline for platform components
+113 | b35ee1f | 2026-06-17 17:48:33 +0530 | Jeneel Dumasia | chore(scale): add hard resource limits to karpenter nodepools
+114 | 1d74f55 | 2026-06-17 17:50:36 +0530 | Jeneel Dumasia | chore(scale): drastically reduce karpenter limits to minimal free-tier compatible boundaries
+115 | b0548a8 | 2026-06-17 17:55:23 +0530 | Jeneel Dumasia | ci: add cloudflare dns cleanup to destroy pipeline
+116 | cc2fd0b | 2026-06-17 18:05:46 +0530 | Jeneel Dumasia | fix(ui): create public dir in dockerfile to prevent buildx cache errors
+117 | ec12dcd | 2026-06-17 18:30:13 +0530 | Jeneel Dumasia | fix(ui): dynamic api url and overhaul aesthetics
+118 | 89256d9 | 2026-06-17 18:43:28 +0530 | Jeneel Dumasia | feat: add out.yaml configuration file to project root
+119 | 7c029a0 | 2026-06-17 18:44:57 +0530 | Jeneel Dumasia | feat(ui): implement stark vercel black and white aesthetic
+120 | bf13664 | 2026-06-17 18:56:14 +0530 | Jeneel Dumasia | fix(ui): fix text legibility and server-side fetching
+121 | b339e65 | 2026-06-17 19:07:47 +0530 | Jeneel Dumasia | fix(ui): add AUTH_TRUST_HOST to bypass NextAuth container host checks
+122 | adcb2bf | 2026-06-18 11:11:00 +0530 | Jeneel-Itara | Rename workflow from 'Destroy Platform' to 'Infra Teardown'
+123 | c73dbd8 | 2026-06-18 11:11:39 +0530 | Jeneel-Itara | Rename deploy workflow for clarity
+124 | af5c4c0 | 2026-06-18 11:49:30 +0530 | Jeneel Dumasia | Rename DeployHub to ShipZen and revamp UI to Glassmorphism
+125 | 4a2c4bd | 2026-06-18 12:00:24 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+126 | 2c3b14f | 2026-06-18 12:20:34 +0530 | Jeneel Dumasia | docs: add issue tracker and technical debt documentation
+127 | ee9bd58 | 2026-06-18 12:50:09 +0530 | Jeneel Dumasia | Fix dark mode UI, preserve branch parameter in worker, and clean up docs/gitignore
+128 | 9656515 | 2026-06-18 12:53:46 +0530 | Jeneel Dumasia | Remove out.yaml and eso_values.yaml from gitignore
+129 | 1d076a8 | 2026-06-18 12:55:46 +0530 | Jeneel Dumasia | Fix active nav item text color with CSS variables
+130 | 4b4f1c7 | 2026-06-18 13:00:10 +0530 | Jeneel Dumasia | Fix 5 structural bugs in worker and controller
+131 | 073a667 | 2026-06-18 13:04:45 +0530 | Jeneel Dumasia | Fix brand text color in dark mode
+132 | b760598 | 2026-06-18 13:11:28 +0530 | Jeneel Dumasia | Replace default Vercel favicon with ShipZen rocket logo
+133 | cf06d68 | 2026-06-18 13:16:46 +0530 | Jeneel Dumasia | Auto-initialize DB schema on API startup
+134 | a9518ca | 2026-06-18 13:21:21 +0530 | Jeneel Dumasia | Automate GitOps deployments with kustomization tagging
+135 | 2760b70 | 2026-06-18 13:28:19 +0530 | Jeneel Dumasia | Fix Grafana dashboard UIDs and deploy via ArgoCD
+136 | 4ba9650 | 2026-06-18 13:29:49 +0530 | Jeneel Dumasia | Fix builder autoscaling by duplicating secrets to shipzen-build namespace
+137 | bb4c227 | 2026-06-18 08:01:09 +0000 | GitHub Actions Bot | Update api image to sha-4ba9650 [skip ci]
+138 | ec019fb | 2026-06-18 08:01:40 +0000 | GitHub Actions Bot | Update ui image to sha-4ba9650 [skip ci]
+139 | d5ef78b | 2026-06-18 08:01:51 +0000 | GitHub Actions Bot | Update worker image to sha-4ba9650 [skip ci]
+140 | 8bc6657 | 2026-06-18 08:02:00 +0000 | GitHub Actions Bot | Update controller image to sha-4ba9650 [skip ci]
+141 | 0c8d5e9 | 2026-06-18 14:15:29 +0530 | Jeneel Dumasia | Remove unused gavinbunney/kubectl provider to fix GitHub 500 error
+142 | 18a61a2 | 2026-06-18 08:58:29 +0000 | GitHub Actions Bot | Update controller image to sha-0c8d5e9 [skip ci]
+143 | e67d31f | 2026-06-18 08:58:31 +0000 | GitHub Actions Bot | Update worker image to sha-0c8d5e9 [skip ci]
+144 | 1f08f12 | 2026-06-18 08:58:44 +0000 | GitHub Actions Bot | Update api image to sha-0c8d5e9 [skip ci]
+145 | 4805a57 | 2026-06-18 08:59:10 +0000 | GitHub Actions Bot | Update ui image to sha-0c8d5e9 [skip ci]
+146 | a85964b | 2026-06-18 14:17:35 +0530 | Jeneel Dumasia | Create ISSUES_AND_RESOLUTIONS.md to document recently fixed infra and UI issues
+147 | 676a519 | 2026-06-18 14:29:29 +0530 | Jeneel Dumasia | Add 21 historical deployment issues to ISSUES_AND_RESOLUTIONS.md
+148 | 13f5345 | 2026-06-18 14:42:12 +0530 | Jeneel Dumasia | fix: initialize builder consumer group in worker so KEDA can monitor it
+149 | 2891863 | 2026-06-18 14:43:04 +0530 | Jeneel Dumasia | docs: Add issue 7 - KEDA scale to zero deadlock
+150 | 5b5cf7d | 2026-06-18 09:16:05 +0000 | GitHub Actions Bot | Update controller image to sha-2891863 [skip ci]
+151 | 9bbf463 | 2026-06-18 09:16:45 +0000 | GitHub Actions Bot | Update ui image to sha-2891863 [skip ci]
+152 | 070fc56 | 2026-06-18 09:16:57 +0000 | GitHub Actions Bot | Update worker image to sha-2891863 [skip ci]
+153 | c599b27 | 2026-06-18 09:17:12 +0000 | GitHub Actions Bot | Update api image to sha-2891863 [skip ci]
+154 | 96c09dc | 2026-06-18 15:18:57 +0530 | Jeneel Dumasia | feat: complete v1 feature ports and ui auth screen
+155 | 0333015 | 2026-06-18 15:19:16 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+156 | a7d1304 | 2026-06-18 09:50:13 +0000 | GitHub Actions Bot | Update worker image to sha-0333015 [skip ci]
+157 | 582063c | 2026-06-18 09:50:24 +0000 | GitHub Actions Bot | Update controller image to sha-0333015 [skip ci]
+158 | f4180d0 | 2026-06-18 09:50:31 +0000 | GitHub Actions Bot | Update api image to sha-0333015 [skip ci]
+159 | deb2db0 | 2026-06-18 09:50:55 +0000 | GitHub Actions Bot | Update ui image to sha-0333015 [skip ci]
+160 | af29f85 | 2026-06-18 15:29:57 +0530 | Jeneel Dumasia | fix: register ecr-token-rotator in kustomization
+161 | 0aecb0e | 2026-06-18 16:12:37 +0530 | Jeneel Dumasia | fix: enforce auth in ui and add logout button
+162 | c765995 | 2026-06-18 10:46:11 +0000 | GitHub Actions Bot | Update worker image to sha-0aecb0e [skip ci]
+163 | 517859b | 2026-06-18 10:46:26 +0000 | GitHub Actions Bot | Update api image to sha-0aecb0e [skip ci]
+164 | ed7d8f3 | 2026-06-18 16:22:52 +0530 | Jeneel Dumasia | fix: correct TS inference for credentials in auth.ts
+165 | 9363497 | 2026-06-18 16:29:51 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+166 | e236387 | 2026-06-18 11:01:07 +0000 | GitHub Actions Bot | Update api image to sha-9363497 [skip ci]
+167 | de0ce51 | 2026-06-18 11:01:38 +0000 | GitHub Actions Bot | Update ui image to sha-9363497 [skip ci]
+168 | d9d04a9 | 2026-06-18 11:01:44 +0000 | GitHub Actions Bot | Update worker image to sha-9363497 [skip ci]
+169 | f94cb04 | 2026-06-18 11:02:08 +0000 | GitHub Actions Bot | Update controller image to sha-9363497 [skip ci]
+170 | a62eb2f | 2026-06-18 16:52:16 +0530 | Jeneel Dumasia | fix: add builder to CI matrix and fix scheduling constraints
+171 | 473857b | 2026-06-18 11:23:47 +0000 | GitHub Actions Bot | Update controller image to sha-a62eb2f [skip ci]
+172 | ad168ee | 2026-06-18 11:24:16 +0000 | GitHub Actions Bot | Update ui image to sha-a62eb2f [skip ci]
+173 | b7dfb0d | 2026-06-18 11:24:27 +0000 | GitHub Actions Bot | Update builder image to sha-a62eb2f [skip ci]
+174 | e40ba62 | 2026-06-18 11:24:35 +0000 | GitHub Actions Bot | Update worker image to sha-a62eb2f [skip ci]
+175 | df487b2 | 2026-06-18 11:24:45 +0000 | GitHub Actions Bot | Update api image to sha-a62eb2f [skip ci]
+176 | 1dd61de | 2026-06-18 17:04:30 +0530 | Jeneel Dumasia | fix: correct controller rbac and ecr provisioning failure
+177 | 87dc8c5 | 2026-06-18 11:36:15 +0000 | GitHub Actions Bot | Update api image to sha-1dd61de [skip ci]
+178 | 450d04a | 2026-06-18 11:36:20 +0000 | GitHub Actions Bot | Update controller image to sha-1dd61de [skip ci]
+179 | 9b271ba | 2026-06-18 11:36:54 +0000 | GitHub Actions Bot | Update ui image to sha-1dd61de [skip ci]
+180 | 0212b03 | 2026-06-18 11:37:03 +0000 | GitHub Actions Bot | Update worker image to sha-1dd61de [skip ci]
+181 | 6033a54 | 2026-06-18 11:37:34 +0000 | GitHub Actions Bot | Update builder image to sha-1dd61de [skip ci]
+182 | 1863a33 | 2026-06-18 17:18:15 +0530 | Jeneel Dumasia | fix: use short format for sha docker tags to match kustomize
+183 | e821b0b | 2026-06-18 11:50:04 +0000 | GitHub Actions Bot | Update worker image to sha-1863a33 [skip ci]
+184 | 7d84482 | 2026-06-18 11:50:11 +0000 | GitHub Actions Bot | Update controller image to sha-1863a33 [skip ci]
+185 | eb140a4 | 2026-06-18 11:50:58 +0000 | GitHub Actions Bot | Update ui image to sha-1863a33 [skip ci]
+186 | b33c4e0 | 2026-06-18 11:51:11 +0000 | GitHub Actions Bot | Update api image to sha-1863a33 [skip ci]
+187 | 14d08f3 | 2026-06-18 11:51:37 +0000 | GitHub Actions Bot | Update builder image to sha-1863a33 [skip ci]
+188 | 2179d9e | 2026-06-18 17:28:22 +0530 | Jeneel Dumasia | fix: correct auth0 fallback logic and auth_url for ui
+189 | 728d04e | 2026-06-18 12:02:07 +0000 | GitHub Actions Bot | Update worker image to sha-2179d9e [skip ci]
+190 | be71131 | 2026-06-18 12:02:36 +0000 | GitHub Actions Bot | Update api image to sha-2179d9e [skip ci]
+191 | aa646a2 | 2026-06-18 12:02:48 +0000 | GitHub Actions Bot | Update ui image to sha-2179d9e [skip ci]
+192 | dd5c8ce | 2026-06-18 12:03:09 +0000 | GitHub Actions Bot | Update controller image to sha-2179d9e [skip ci]
+193 | b49dc3c | 2026-06-18 12:03:43 +0000 | GitHub Actions Bot | Update builder image to sha-2179d9e [skip ci]
+194 | db049af | 2026-06-18 17:54:17 +0530 | Jeneel Dumasia | feat: database-backed RBAC and Admin UI
+195 | b38b9a3 | 2026-06-18 12:26:54 +0000 | GitHub Actions Bot | Update api image to sha-db049af [skip ci]
+196 | ad6ef02 | 2026-06-18 12:26:55 +0000 | GitHub Actions Bot | Update controller image to sha-db049af [skip ci]
+197 | 632cb1f | 2026-06-18 17:58:23 +0530 | Jeneel Dumasia | fix: resolve typescript error with session accessToken
+198 | ed8fdb4 | 2026-06-18 17:58:45 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+199 | 1cd39a3 | 2026-06-18 12:29:31 +0000 | GitHub Actions Bot | Update worker image to sha-ed8fdb4 [skip ci]
+200 | e58d481 | 2026-06-18 12:29:55 +0000 | GitHub Actions Bot | Update api image to sha-ed8fdb4 [skip ci]
+201 | 70c012a | 2026-06-18 12:30:26 +0000 | GitHub Actions Bot | Update ui image to sha-ed8fdb4 [skip ci]
+202 | 2beaf58 | 2026-06-18 12:30:27 +0000 | GitHub Actions Bot | Update builder image to sha-ed8fdb4 [skip ci]
+203 | 7dc17e8 | 2026-06-18 12:30:51 +0000 | GitHub Actions Bot | Update controller image to sha-ed8fdb4 [skip ci]
+204 | 05c1801 | 2026-06-18 18:16:40 +0530 | Jeneel Dumasia | fix: correct api STREAM_NAME to match builder queue
+205 | a70cf88 | 2026-06-18 18:18:20 +0530 | Jeneel Dumasia | fix: add emptyDir volumes to builder for workspace and tmp
+206 | c519152 | 2026-06-18 18:32:53 +0530 | Jeneel Dumasia | feat: switch authentication from Auth0 to GitHub OAuth
+207 | 21ea535 | 2026-06-18 23:22:29 +0530 | Jeneel Dumasia | fix(terraform): delay kubernetes and helm providers for EKS access entry propagation
+208 | 3070db3 | 2026-06-18 17:56:58 +0000 | GitHub Actions Bot | Update worker image to sha-21ea535 [skip ci]
+209 | a3ee053 | 2026-06-18 17:57:10 +0000 | GitHub Actions Bot | Update api image to sha-21ea535 [skip ci]
+210 | 08a3219 | 2026-06-18 23:32:17 +0530 | Jeneel Dumasia | fix(terraform): replace provider host hack with direct dependencies on time_sleep
+211 | 4259d54 | 2026-06-18 23:32:46 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+212 | 4c4cb3a | 2026-06-18 18:06:56 +0000 | GitHub Actions Bot | Update worker image to sha-4259d54 [skip ci]
+213 | b5df70a | 2026-06-18 18:07:10 +0000 | GitHub Actions Bot | Update controller image to sha-4259d54 [skip ci]
+214 | 3095a7e | 2026-06-18 18:07:13 +0000 | GitHub Actions Bot | Update api image to sha-4259d54 [skip ci]
+215 | 8ce9533 | 2026-06-18 23:39:14 +0530 | Jeneel Dumasia | fix(ui): import CredentialsProvider to fix build error
+216 | 7dc5476 | 2026-06-18 23:40:00 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+217 | 64d5541 | 2026-06-18 18:10:51 +0000 | GitHub Actions Bot | Update worker image to sha-7dc5476 [skip ci]
+218 | 142ce24 | 2026-06-18 18:11:03 +0000 | GitHub Actions Bot | Update api image to sha-7dc5476 [skip ci]
+219 | 263a79d | 2026-06-18 18:11:27 +0000 | GitHub Actions Bot | Update builder image to sha-7dc5476 [skip ci]
+220 | 3f495d7 | 2026-06-18 18:11:45 +0000 | GitHub Actions Bot | Update ui image to sha-7dc5476 [skip ci]
+221 | bf6fa0e | 2026-06-18 18:12:07 +0000 | GitHub Actions Bot | Update controller image to sha-7dc5476 [skip ci]
+222 | e0778b6 | 2026-06-18 23:51:28 +0530 | Jeneel Dumasia | fix: correctly route deployments to worker and fix pending message processing loop
+223 | b19bbca | 2026-06-18 18:22:43 +0000 | GitHub Actions Bot | Update worker image to sha-e0778b6 [skip ci]
+224 | c4be0a6 | 2026-06-18 18:22:56 +0000 | GitHub Actions Bot | Update api image to sha-e0778b6 [skip ci]
+225 | a094ee7 | 2026-06-18 18:23:01 +0000 | GitHub Actions Bot | Update controller image to sha-e0778b6 [skip ci]
+226 | a8a6442 | 2026-06-18 18:23:44 +0000 | GitHub Actions Bot | Update ui image to sha-e0778b6 [skip ci]
+227 | 17254c5 | 2026-06-18 18:24:21 +0000 | GitHub Actions Bot | Update builder image to sha-e0778b6 [skip ci]
+228 | f21a90e | 2026-06-19 00:41:51 +0530 | Jeneel Dumasia | fix: handle xautoclaim returning 3 values instead of 2
+229 | 846a073 | 2026-06-18 19:14:31 +0000 | GitHub Actions Bot | Update controller image to sha-f21a90e [skip ci]
+230 | 950bf6a | 2026-06-18 19:15:03 +0000 | GitHub Actions Bot | Update builder image to sha-f21a90e [skip ci]
+231 | 0936cd9 | 2026-06-18 19:15:19 +0000 | GitHub Actions Bot | Update worker image to sha-f21a90e [skip ci]
+232 | dfaec4a | 2026-06-18 19:15:20 +0000 | GitHub Actions Bot | Update ui image to sha-f21a90e [skip ci]
+233 | 30dae53 | 2026-06-18 19:16:31 +0000 | GitHub Actions Bot | Update api image to sha-f21a90e [skip ci]
+234 | 9d70aef | 2026-06-19 00:50:38 +0530 | Jeneel Dumasia | fix: use proper api client to fetch logs instead of broken proxy route
+235 | d89dfa4 | 2026-06-19 00:56:38 +0530 | Jeneel Dumasia | feat: add GitHub Actions OIDC role for securely deploying secrets
+236 | 9b96d12 | 2026-06-18 19:28:12 +0000 | GitHub Actions Bot | Update worker image to sha-d89dfa4 [skip ci]
+237 | 0a9522b | 2026-06-18 19:28:25 +0000 | GitHub Actions Bot | Update controller image to sha-d89dfa4 [skip ci]
+238 | cac8b92 | 2026-06-18 19:28:31 +0000 | GitHub Actions Bot | Update api image to sha-d89dfa4 [skip ci]
+239 | adc3e43 | 2026-06-18 19:44:17 +0000 | GitHub Actions Bot | Update worker image to sha-cac8b92 [skip ci]
+240 | 92d72a9 | 2026-06-18 19:44:23 +0000 | GitHub Actions Bot | Update controller image to sha-cac8b92 [skip ci]
+241 | f56ecad | 2026-06-19 01:15:17 +0530 | Jeneel Dumasia | fix: remove accidentally staged scratch_deployhub submodule gitlink
+242 | db93ba7 | 2026-06-19 01:16:21 +0530 | Jeneel Dumasia | fix: remove invalid typescript property in LogViewer
+243 | 8676fb5 | 2026-06-18 19:48:25 +0000 | GitHub Actions Bot | Update api image to sha-db93ba7 [skip ci]
+244 | 1c1c62f | 2026-06-18 19:48:28 +0000 | GitHub Actions Bot | Update controller image to sha-db93ba7 [skip ci]
+245 | 486761a | 2026-06-18 19:48:45 +0000 | GitHub Actions Bot | Update builder image to sha-db93ba7 [skip ci]
+246 | bb10957 | 2026-06-18 19:48:57 +0000 | GitHub Actions Bot | Update ui image to sha-db93ba7 [skip ci]
+247 | 8de93da | 2026-06-18 19:49:16 +0000 | GitHub Actions Bot | Update worker image to sha-db93ba7 [skip ci]
+248 | adf89cb | 2026-06-18 19:58:12 +0000 | GitHub Actions Bot | Update worker image to sha-8de93da [skip ci]
+249 | 9651c0d | 2026-06-18 19:58:17 +0000 | GitHub Actions Bot | Update api image to sha-8de93da [skip ci]
+250 | 5f94d2f | 2026-06-18 19:58:53 +0000 | GitHub Actions Bot | Update builder image to sha-8de93da [skip ci]
+251 | b4e6a93 | 2026-06-18 19:59:04 +0000 | GitHub Actions Bot | Update ui image to sha-8de93da [skip ci]
+252 | 4b94813 | 2026-06-18 19:59:20 +0000 | GitHub Actions Bot | Update controller image to sha-8de93da [skip ci]
+253 | 669f31c | 2026-06-19 01:32:43 +0530 | Jeneel Dumasia | fix: add eks:DescribeCluster permission to GitHub actions role
+254 | 88e93b4 | 2026-06-19 01:42:05 +0530 | Jeneel Dumasia | fix: use next/image for login background
+255 | c2fc9df | 2026-06-18 20:13:37 +0000 | GitHub Actions Bot | Update worker image to sha-88e93b4 [skip ci]
+256 | b93cd6a | 2026-06-18 20:13:40 +0000 | GitHub Actions Bot | Update api image to sha-88e93b4 [skip ci]
+257 | bd1698a | 2026-06-18 20:13:42 +0000 | GitHub Actions Bot | Update controller image to sha-88e93b4 [skip ci]
+258 | b694f8d | 2026-06-18 20:13:59 +0000 | GitHub Actions Bot | Update builder image to sha-88e93b4 [skip ci]
+259 | f75f6f3 | 2026-06-18 20:14:24 +0000 | GitHub Actions Bot | Update ui image to sha-88e93b4 [skip ci]
+260 | 4ae21da | 2026-06-19 02:18:29 +0530 | Jeneel Dumasia | fix: mount service account token for builder
+261 | 35d8eb9 | 2026-06-19 02:22:13 +0530 | Jeneel Dumasia | docs: update session summary for June 18/19 fixes
+262 | 2d7e56e | 2026-06-19 11:12:34 +0530 | Jeneel Dumasia | feat: handle failed deployments, enable node-exporter exception, clean scratch files
+263 | 03b9036 | 2026-06-19 15:28:15 +0530 | Jeneel Dumasia | chore: update session summary, add static site builder heuristics, update UI Dockerfile
+264 | b7992ae | 2026-06-22 00:52:47 +0530 | Jeneel Dumasia | feat: Implement 3-Tier Ephemeral Builder architecture
+265 | 2bcf239 | 2026-06-22 00:56:07 +0530 | Jeneel Dumasia | fix: Add Kyverno namespace exclusions to terraform
+266 | a02f0c9 | 2026-06-22 01:01:44 +0530 | Jeneel Dumasia | fix: Disable kyverno webhooks for observability and shipzen-build namespaces
+267 | b538201 | 2026-06-22 01:05:22 +0530 | Jeneel Dumasia | fix: Correct helm value nesting for kyverno resourceFiltersExcludeNamespaces
+268 | ae3ee19 | 2026-06-22 01:09:03 +0530 | Jeneel Dumasia | fix: Change Kyverno to Audit mode
+269 | 43766e4 | 2026-06-22 01:15:11 +0530 | Jeneel Dumasia | fix: Add missing cachetools dependency to API
+270 | e8572df | 2026-06-22 01:17:28 +0530 | Jeneel Dumasia | chore: Remove builder from build-push matrix
+271 | 4e13dfa | 2026-06-21 19:49:45 +0000 | GitHub Actions Bot | Update worker image to sha-e8572df [skip ci]
+272 | e42d038 | 2026-06-21 19:50:13 +0000 | GitHub Actions Bot | Update ui image to sha-e8572df [skip ci]
+273 | 70da898 | 2026-06-21 19:50:32 +0000 | GitHub Actions Bot | Update api image to sha-e8572df [skip ci]
+274 | 3b2c524 | 2026-06-21 19:50:33 +0000 | GitHub Actions Bot | Update controller image to sha-e8572df [skip ci]
+275 | dd2056a | 2026-06-22 01:29:42 +0530 | Jeneel Dumasia | fix: Enable automountServiceAccountToken on worker
+276 | f9d0338 | 2026-06-22 01:47:05 +0530 | Jeneel Dumasia | fix: Update shipzen-build to privileged pod security
+277 | 1f140ae | 2026-06-22 01:49:24 +0530 | Jeneel Dumasia | feat: Inject PORT environment variable into tenant deployments
+278 | 3a982c5 | 2026-06-21 20:22:51 +0000 | GitHub Actions Bot | Update controller image to sha-1f140ae [skip ci]
+279 | d96cf06 | 2026-06-21 20:23:01 +0000 | GitHub Actions Bot | Update api image to sha-1f140ae [skip ci]
+280 | 790d121 | 2026-06-21 20:23:07 +0000 | GitHub Actions Bot | Update worker image to sha-1f140ae [skip ci]
+281 | e183451 | 2026-06-21 20:23:34 +0000 | GitHub Actions Bot | Update ui image to sha-1f140ae [skip ci]
+282 | 74dd5b0 | 2026-06-22 02:03:30 +0530 | Jeneel Dumasia | fix: Pass auth token to status WebSocket to enable live auto-refresh
+283 | 5e40a6b | 2026-06-21 20:35:02 +0000 | GitHub Actions Bot | Update api image to sha-74dd5b0 [skip ci]
+284 | 259ab98 | 2026-06-21 20:35:03 +0000 | GitHub Actions Bot | Update controller image to sha-74dd5b0 [skip ci]
+285 | 48cc217 | 2026-06-21 20:35:49 +0000 | GitHub Actions Bot | Update ui image to sha-74dd5b0 [skip ci]
+286 | 2ef3422 | 2026-06-21 20:36:07 +0000 | GitHub Actions Bot | Update worker image to sha-74dd5b0 [skip ci]
+287 | 8c0fa24 | 2026-06-22 02:07:15 +0530 | Jeneel Dumasia | fix: Buildpacks container failing with StartError due to missing sh
+288 | c6042ad | 2026-06-22 02:08:47 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+289 | 8c972e5 | 2026-06-21 20:39:53 +0000 | GitHub Actions Bot | Update worker image to sha-c6042ad [skip ci]
+290 | d698e34 | 2026-06-21 20:40:31 +0000 | GitHub Actions Bot | Update ui image to sha-c6042ad [skip ci]
+291 | 24fbbbe | 2026-06-21 20:40:44 +0000 | GitHub Actions Bot | Update api image to sha-c6042ad [skip ci]
+292 | cdadebb | 2026-06-21 20:40:51 +0000 | GitHub Actions Bot | Update controller image to sha-c6042ad [skip ci]
+293 | 425e115 | 2026-06-22 03:10:28 +0530 | Jeneel Dumasia | fix: Pass S3_LOG_BUCKET to worker to ensure build logs are recorded properly
+294 | 0327810 | 2026-06-22 03:14:17 +0530 | Jeneel Dumasia | fix: use docker:24-dind to support pack API version 1.38
+295 | 96d45ac | 2026-06-21 22:27:17 +0000 | GitHub Actions Bot | Update controller image to sha-0327810 [skip ci]
+296 | f80446b | 2026-06-21 22:28:24 +0000 | GitHub Actions Bot | Update worker image to sha-0327810 [skip ci]
+297 | aa0853e | 2026-06-21 22:28:58 +0000 | GitHub Actions Bot | Update ui image to sha-0327810 [skip ci]
+298 | 5a0914b | 2026-06-21 22:29:22 +0000 | GitHub Actions Bot | Update api image to sha-0327810 [skip ci]
+299 | d85a8cc | 2026-06-22 04:12:43 +0530 | Jeneel Dumasia | fix: Worker S3 and Builder ECR permissions
+300 | 8ca2798 | 2026-06-21 22:44:25 +0000 | GitHub Actions Bot | Update controller image to sha-d85a8cc [skip ci]
+301 | 3bc0735 | 2026-06-21 22:45:01 +0000 | GitHub Actions Bot | Update ui image to sha-d85a8cc [skip ci]
+302 | 38602b2 | 2026-06-21 22:45:19 +0000 | GitHub Actions Bot | Update api image to sha-d85a8cc [skip ci]
+303 | 8db08be | 2026-06-21 22:45:23 +0000 | GitHub Actions Bot | Update worker image to sha-d85a8cc [skip ci]
+304 | d7e03de | 2026-06-21 22:45:23 +0000 | GitHub Actions Bot | Update worker image to sha-d85a8cc [skip ci]
+305 | bf7548f | 2026-06-22 04:26:52 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+306 | 0cd6652 | 2026-06-21 22:58:07 +0000 | GitHub Actions Bot | Update controller image to sha-bf7548f [skip ci]
+307 | 0271a10 | 2026-06-21 22:58:11 +0000 | GitHub Actions Bot | Update api image to sha-bf7548f [skip ci]
+308 | 54ae7c8 | 2026-06-21 22:58:30 +0000 | GitHub Actions Bot | Update ui image to sha-bf7548f [skip ci]
+309 | 552ebe5 | 2026-06-21 22:59:01 +0000 | GitHub Actions Bot | Update worker image to sha-bf7548f [skip ci]
+310 | 48c19ee | 2026-06-22 04:26:52 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+311 | 2d7fe42 | 2026-06-22 05:06:48 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+312 | ffbcf1a | 2026-06-21 23:37:50 +0000 | GitHub Actions Bot | Update api image to sha-2d7fe42 [skip ci]
+313 | 1ff4ce9 | 2026-06-21 23:37:58 +0000 | GitHub Actions Bot | Update controller image to sha-2d7fe42 [skip ci]
+314 | 2b6d8eb | 2026-06-21 23:38:08 +0000 | GitHub Actions Bot | Update worker image to sha-2d7fe42 [skip ci]
+315 | 2fc36e8 | 2026-06-21 23:39:28 +0000 | GitHub Actions Bot | Update ui image to sha-2d7fe42 [skip ci]
+316 | fbdb602 | 2026-06-23 02:56:13 +0530 | Jeneel Dumasia | fix: inject ECR credentials and fix buildkit auth, update MAX_UPTIME_HOURS
+317 | 5c8472f | 2026-06-23 03:00:01 +0530 | Jeneel Dumasia | chore: update auto-destroy cron schedule to every 8 hours
+318 | 293532f | 2026-06-23 03:05:14 +0530 | Jeneel Dumasia | fix: move EnvoyProxy to envoy-gateway-system namespace
+319 | fc02bd8 | 2026-06-23 03:21:50 +0530 | Jeneel Dumasia | feat: migrate to Cloudflare Origin CA certificates and remove cert-manager
+320 | b5c6ca7 | 2026-06-23 03:24:22 +0530 | Jeneel Dumasia | fix: rename certificate_request to csr in origin_cert
+321 | a231ade | 2026-06-23 03:46:37 +0530 | Jeneel Dumasia | fix: change JSON keys from tls.crt/tls.key to cert/key to prevent gjson parsing errors in ExternalSecrets
+322 | 77eea3d | 2026-06-23 04:03:47 +0530 | Jeneel Dumasia | fix: update EnvoyProxy apiVersion for Envoy Gateway v1.1.2 and add debug dump
+323 | 3716be1 | 2026-06-23 04:11:25 +0530 | Jeneel Dumasia | fix: increase NLB wait timer back to 10 minutes
+324 | dbc8f7c | 2026-06-23 04:28:16 +0530 | Jeneel Dumasia | fix: resolve ArgoCD sync failures due to stuck cert-manager finalizers and EnvoyProxy namespace cross-reference
+325 | 4eabc27 | 2026-06-23 04:45:16 +0530 | Jeneel Dumasia | chore: add debug dump to catch ArgoCD validation errors
+326 | 75e3ec3 | 2026-06-23 04:47:50 +0530 | Jeneel Dumasia | chore: temporarily reduce wait timer to 60s for fast debugging
+327 | 166dc9a | 2026-06-23 04:50:03 +0530 | Jeneel Dumasia | chore: remove tfsec and checkov from pipeline to reduce noise and speed up deployments
+328 | c59fc78 | 2026-06-23 04:54:07 +0530 | Jeneel Dumasia | fix: update Kyverno PolicyException API version from v2alpha1 to v2
+329 | 6f54f32 | 2026-06-23 05:07:03 +0530 | Jeneel Dumasia | fix(ui): inject NEXT_PUBLIC_API_URL at build time so browser uses correct API endpoint instead of localhost
+330 | 8008c90 | 2026-06-22 23:38:46 +0000 | GitHub Actions Bot | Update controller image to sha-6f54f32 [skip ci]
+331 | 9850172 | 2026-06-22 23:38:48 +0000 | GitHub Actions Bot | Update worker image to sha-6f54f32 [skip ci]
+332 | 82bc847 | 2026-06-22 23:38:52 +0000 | GitHub Actions Bot | Update api image to sha-6f54f32 [skip ci]
+333 | abcae28 | 2026-06-22 23:39:24 +0000 | GitHub Actions Bot | Update ui image to sha-6f54f32 [skip ci]
+334 | d3ba75e | 2026-06-23 05:13:46 +0530 | Jeneel Dumasia | feat: reduce ArgoCD polling interval to 15s for near-instant deployments
+335 | d8e99e6 | 2026-06-23 05:22:49 +0530 | Jeneel Dumasia | refactor: flatten domain structure to first-level subdomains for Cloudflare proxying compatibility
+336 | 7440c3b | 2026-06-22 23:54:06 +0000 | GitHub Actions Bot | Update controller image to sha-d8e99e6 [skip ci]
+337 | 3999e24 | 2026-06-22 23:54:12 +0000 | GitHub Actions Bot | Update api image to sha-d8e99e6 [skip ci]
+338 | 26c2530 | 2026-06-22 23:54:52 +0000 | GitHub Actions Bot | Update ui image to sha-d8e99e6 [skip ci]
+339 | edc6141 | 2026-06-22 23:55:21 +0000 | GitHub Actions Bot | Update worker image to sha-d8e99e6 [skip ci]
+340 | c311bd0 | 2026-06-23 05:31:29 +0530 | Jeneel Dumasia | fix: disable IAM role name prefixing in Karpenter to unblock EC2NodeClass readiness
+341 | 369c19d | 2026-06-23 05:51:33 +0530 | Jeneel Dumasia | fix: typo in ClusterSecretStore name for alerts
+342 | d3356a5 | 2026-06-23 00:22:55 +0000 | GitHub Actions Bot | Update api image to sha-369c19d [skip ci]
+343 | b69c811 | 2026-06-23 00:23:05 +0000 | GitHub Actions Bot | Update worker image to sha-369c19d [skip ci]
+344 | 061f783 | 2026-06-23 00:23:17 +0000 | GitHub Actions Bot | Update ui image to sha-369c19d [skip ci]
+345 | b0234b1 | 2026-06-23 00:23:44 +0000 | GitHub Actions Bot | Update controller image to sha-369c19d [skip ci]
+346 | 704025f | 2026-06-23 05:55:59 +0530 | Jeneel Dumasia | fix: worker logging import
+347 | e91fc53 | 2026-06-23 00:27:08 +0000 | GitHub Actions Bot | Update controller image to sha-704025f [skip ci]
+348 | fc57996 | 2026-06-23 00:27:58 +0000 | GitHub Actions Bot | Update api image to sha-704025f [skip ci]
+349 | 9b5f6c8 | 2026-06-23 00:28:16 +0000 | GitHub Actions Bot | Update worker image to sha-704025f [skip ci]
+350 | 135a302 | 2026-06-23 00:28:42 +0000 | GitHub Actions Bot | Update ui image to sha-704025f [skip ci]
+351 | a120a44 | 2026-06-23 05:59:49 +0530 | Jeneel Dumasia | fix: api base url domain flattening
+352 | 40db663 | 2026-06-23 00:31:03 +0000 | GitHub Actions Bot | Update controller image to sha-a120a44 [skip ci]
+353 | 687f25a | 2026-06-23 00:31:11 +0000 | GitHub Actions Bot | Update worker image to sha-a120a44 [skip ci]
+354 | f7c36cd | 2026-06-23 00:31:40 +0000 | GitHub Actions Bot | Update ui image to sha-a120a44 [skip ci]
+355 | 557350d | 2026-06-23 00:32:01 +0000 | GitHub Actions Bot | Update api image to sha-a120a44 [skip ci]
+356 | 59f6efd | 2026-06-23 06:18:25 +0530 | Jeneel Dumasia | fix: route api to same domain via path based routing
+357 | 1aebd21 | 2026-06-23 00:49:24 +0000 | GitHub Actions Bot | Update api image to sha-59f6efd [skip ci]
+358 | 3e36580 | 2026-06-23 00:49:31 +0000 | GitHub Actions Bot | Update controller image to sha-59f6efd [skip ci]
+359 | b0f594e | 2026-06-23 00:49:34 +0000 | GitHub Actions Bot | Update worker image to sha-59f6efd [skip ci]
+360 | 9804ad5 | 2026-06-23 00:50:08 +0000 | GitHub Actions Bot | Update ui image to sha-59f6efd [skip ci]
+361 | 594fae1 | 2026-06-23 06:29:14 +0530 | Jeneel Dumasia | docs: update session summary with build failure root cause
+362 | 7361d73 | 2026-06-23 06:32:13 +0530 | Jeneel Dumasia | ci: update auto-destroy to run hourly and trigger after 6 hours
+363 | a80a578 | 2026-06-23 06:34:04 +0530 | Jeneel Dumasia | ci: track leftover VPCs in auto-destroy pipeline to prevent leaked resources
+364 | 9e1332a | 2026-06-23 06:38:08 +0530 | Jeneel Dumasia | docs: update session summary with auto-destroy improvements
+365 | 4a333d2 | 2026-06-24 00:56:11 +0530 | Jeneel Dumasia | fix(worker): inject IRSA tokens into worker deployment
+366 | 6b467f0 | 2026-06-24 01:44:37 +0530 | Jeneel Dumasia | fix: resolve live-update issues for deployments
+367 | a127ec9 | 2026-06-23 20:52:43 +0000 | GitHub Actions Bot | Update api image to sha-6b467f0 [skip ci]
+368 | a7933e0 | 2026-06-23 20:52:47 +0000 | GitHub Actions Bot | Update controller image to sha-6b467f0 [skip ci]
+369 | 6950c9d | 2026-06-23 20:52:51 +0000 | GitHub Actions Bot | Update worker image to sha-6b467f0 [skip ci]
+370 | 5cf3dba | 2026-06-23 20:54:11 +0000 | GitHub Actions Bot | Update ui image to sha-6b467f0 [skip ci]
+371 | af01a74 | 2026-06-24 02:47:26 +0530 | Jeneel Dumasia | fix: add S3 permissions and IRSA to worker/API for build logs
+372 | 8cf4214 | 2026-06-24 03:24:47 +0530 | Jeneel Dumasia | fix: add redis dependency to controller requirements
+373 | 515dc3d | 2026-06-23 21:57:01 +0000 | GitHub Actions Bot | Update controller image to sha-8cf4214 [skip ci]
+374 | 6f7125f | 2026-06-23 21:57:43 +0000 | GitHub Actions Bot | Update ui image to sha-8cf4214 [skip ci]
+375 | 4437b0d | 2026-06-23 21:57:54 +0000 | GitHub Actions Bot | Update api image to sha-8cf4214 [skip ci]
+376 | 85d65e4 | 2026-06-23 21:58:03 +0000 | GitHub Actions Bot | Update worker image to sha-8cf4214 [skip ci]
+377 | d4f0b76 | 2026-06-24 03:36:33 +0530 | Jeneel Dumasia | fix: build failures and grafana pod health no-data
+378 | e223d0f | 2026-06-23 22:07:47 +0000 | GitHub Actions Bot | Update controller image to sha-d4f0b76 [skip ci]
+379 | 221259c | 2026-06-23 22:07:59 +0000 | GitHub Actions Bot | Update api image to sha-d4f0b76 [skip ci]
+380 | 4f77bc2 | 2026-06-23 22:08:34 +0000 | GitHub Actions Bot | Update ui image to sha-d4f0b76 [skip ci]
+381 | 09223d0 | 2026-06-23 22:09:10 +0000 | GitHub Actions Bot | Update worker image to sha-d4f0b76 [skip ci]
+382 | 28bdcc4 | 2026-06-24 03:45:40 +0530 | Jeneel Dumasia | fix: eliminate race condition in kustomization tag updates
+383 | e9c3986 | 2026-06-23 22:18:34 +0000 | GitHub Actions Bot | chore: update platform images to sha-28bdcc4 [skip ci]
+384 | af23a16 | 2026-06-24 04:25:25 +0530 | Jeneel Dumasia | fix: create shipzen-build namespace -- root cause of all build failures
+385 | f9b0498 | 2026-06-23 22:58:10 +0000 | GitHub Actions Bot | chore: update platform images to sha-af23a16 [skip ci]
+386 | b3f892e | 2026-06-24 04:56:46 +0530 | Jeneel Dumasia | fix: live status updates and build log fetch
+387 | 4f8d83d | 2026-06-23 23:30:21 +0000 | GitHub Actions Bot | chore: update platform images to sha-b3f892e [skip ci]
+388 | fdbf487 | 2026-06-24 05:04:08 +0530 | Jeneel Dumasia | fix: add BatchGetImage and GetDownloadUrlForLayer to ShipZenBuilderRole
+389 | b5971c4 | 2026-06-24 05:10:42 +0530 | Jeneel Dumasia | fix: create per-project ECR repo before launching build job
+390 | 2fad0b9 | 2026-06-23 23:43:22 +0000 | GitHub Actions Bot | chore: update platform images to sha-b5971c4 [skip ci]
+391 | ca2901c | 2026-06-24 05:27:47 +0530 | Jeneel Dumasia | feat: implement live build logs streaming via WebSockets
+392 | c729483 | 2026-06-24 05:30:14 +0530 | Jeneel Dumasia | fix: type mismatch in reconciliation loop
+393 | 15936ea | 2026-06-24 05:32:06 +0530 | Jeneel Dumasia | fix: bump build timeout and limit Vite memory
+394 | af35c95 | 2026-06-24 00:04:05 +0000 | GitHub Actions Bot | chore: update platform images to sha-15936ea [skip ci]
+395 | 5feb71b | 2026-06-24 00:05:30 +0000 | GitHub Actions Bot | chore: update platform images to sha-af35c95 [skip ci]
+396 | c8bbce4 | 2026-06-24 05:39:29 +0530 | Jeneel Dumasia | fix: correct NEXT_PUBLIC_API_URL so WebSockets connect
+397 | f4148f2 | 2026-06-24 05:40:00 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+398 | ce81f68 | 2026-06-24 05:44:46 +0530 | Jeneel Dumasia | fix: update NEXT_PUBLIC_API_URL in github actions build arg
+399 | a671118 | 2026-06-24 00:21:08 +0000 | GitHub Actions Bot | chore: update platform images to sha-ce81f68 [skip ci]
+400 | e8ea0e2 | 2026-06-24 06:24:50 +0530 | Jeneel Dumasia | fix: add securityContext to deployment template to pass PodSecurity Admission restricted policy
+401 | f4f5637 | 2026-06-24 01:07:43 +0000 | GitHub Actions Bot | chore: update platform images to sha-e8ea0e2 [skip ci]
+402 | 0761426 | 2026-06-24 06:43:40 +0530 | Jeneel Dumasia | fix: use server.cjs for SPA server injection to support ES modules
+403 | 1166f2c | 2026-06-24 06:44:43 +0530 | Jeneel Dumasia | fix: update ExternalSecret apiVersion to v1beta1
+404 | ffe10cd | 2026-06-24 06:45:02 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/DeployHub
+405 | a1c0612 | 2026-06-24 01:17:12 +0000 | GitHub Actions Bot | chore: update platform images to sha-ffe10cd [skip ci]
+406 | 7f49367 | 2026-06-24 06:56:05 +0530 | Jeneel Dumasia | fix: make secretRef optional in deployment template
+407 | f49e3ea | 2026-06-24 01:28:25 +0000 | GitHub Actions Bot | chore: update platform images to sha-7f49367 [skip ci]
+408 | 4de26d0 | 2026-06-24 18:42:54 +0000 | GitHub Actions Bot | chore: update platform images to sha-f49e3ea [skip ci]
+409 | 2020dd2 | 2026-06-25 00:23:21 +0530 | Jeneel Dumasia | fix(ui): correct deployment url format to match httproute
+410 | f03b625 | 2026-06-24 19:03:42 +0000 | GitHub Actions Bot | chore: update platform images to sha-2020dd2 [skip ci]
+411 | e3fbcb3 | 2026-06-25 00:47:22 +0530 | Jeneel Dumasia | fix(ui): add NODE_OPTIONS=--dns-result-order=ipv4first to fix nextauth EAI_AGAIN
+412 | b533416 | 2026-06-25 01:02:20 +0530 | Jeneel Dumasia | chore(infra): migrate grafana database to postgresql
+413 | 377e29f | 2026-06-25 01:10:38 +0530 | Jeneel Dumasia | feat(observability): update build performance dashboard
+414 | e1d390b | 2026-06-25 01:15:38 +0530 | Jeneel Dumasia | fix(observability): add gridPos layout for grafana dashboard panels
+415 | e3d1b20 | 2026-06-25 01:18:42 +0530 | Jeneel Dumasia | fix(observability): add correct metric units to dashboards
+416 | 9bcf230 | 2026-06-25 01:42:24 +0530 | Jeneel Dumasia | fix(controller): verify existence of services and httproutes to improve resilience
+417 | ebfeb5d | 2026-06-24 20:18:14 +0000 | GitHub Actions Bot | chore: update platform images to sha-9bcf230 [skip ci]
+418 | 305b419 | 2026-06-25 04:53:22 +0530 | Jeneel Dumasia | Fix 12 critical bugs across API and Worker
+419 | 14dd8c3 | 2026-06-25 00:16:49 +0000 | GitHub Actions Bot | chore: update platform images to sha-305b419 [skip ci]
+420 | 8b093fb | 2026-06-25 05:47:28 +0530 | Jeneel Dumasia | chore: ignore zip archives
+421 | 031013e | 2026-06-26 01:59:17 +0530 | Jeneel Dumasia | fix: Disable grafana assertNoLeakedSecrets validation
+422 | 56ff900 | 2026-06-26 02:05:13 +0530 | Jeneel Dumasia | security: Move grafana passwords to GitHub Secrets
+423 | 84030f5 | 2026-06-26 02:43:11 +0530 | Jeneel Dumasia | fix: Secure Postgres password and point Grafana to shipzen db
+424 | e66fb75 | 2026-06-26 02:45:07 +0530 | Jeneel Dumasia | fix: Return Queued instead of Deploying in rollback response
+425 | 77fbc99 | 2026-06-26 02:55:20 +0530 | Jeneel Dumasia | fix: Add postgresql dependency and timeout to kube-prometheus-stack
+426 | ffb890f | 2026-06-26 03:16:20 +0530 | Jeneel Dumasia | fix: Resolve Prometheus storageSpec and Grafana database password parsing bugs
+427 | 57da4ad | 2026-06-26 03:50:14 +0530 | Jeneel Dumasia | fix: Bootstrap Kyverno exception before deploying kube-prometheus-stack to unblock node-exporter
+428 | 7e6c07f | 2026-06-26 04:15:47 +0530 | Jeneel Dumasia | chore: Add cluster state debug dump to deploy.yaml for Terraform failures
+429 | b786541 | 2026-06-25 22:57:15 +0000 | GitHub Actions Bot | chore: update platform images to sha-7e6c07f [skip ci]
+430 | e180e4b | 2026-06-27 06:44:44 +0530 | Jeneel Dumasia | feat: add project RBAC, new metrics, and testcontainers integration
+431 | eea3cd2 | 2026-06-27 01:17:24 +0000 | GitHub Actions Bot | chore: update platform images to sha-e180e4b [skip ci]
+432 | b03fc1c | 2026-06-27 06:50:17 +0530 | Jeneel Dumasia | fix: ensure all endpoints use verify_project_access
+433 | d47f9d2 | 2026-06-27 06:52:28 +0530 | Jeneel Dumasia | fix: enforce project owner requirement for deletion and strengthen ws auth
+434 | ccfdbfd | 2026-06-27 01:23:15 +0000 | GitHub Actions Bot | chore: update platform images to sha-b03fc1c [skip ci]
+435 | 7803689 | 2026-06-27 01:25:03 +0000 | GitHub Actions Bot | chore: update platform images to sha-ccfdbfd [skip ci]
+436 | e9eaa58 | 2026-06-27 07:07:39 +0530 | Jeneel Dumasia | fix: resolve terraform dependency cycle by explicitly creating observability namespace
+437 | 719ed5b | 2026-06-27 01:48:21 +0000 | GitHub Actions Bot | chore: update platform images to sha-e9eaa58 [skip ci]
+438 | f5df607 | 2026-06-27 07:41:18 +0530 | Jeneel Dumasia | chore: migrate image registry from GHCR to ECR
+439 | 8f3b1d9 | 2026-06-27 02:13:49 +0000 | GitHub Actions Bot | chore: update platform images to sha-f5df607 [skip ci]
+440 | 3b40c34 | 2026-06-27 02:19:03 +0000 | GitHub Actions Bot | chore: update platform images to sha-8f3b1d9 [skip ci]
+441 | 0164acc | 2026-06-27 07:47:39 +0530 | Jeneel Dumasia | chore: remove policy_update.json from tracking
+442 | 1ec0f27 | 2026-06-27 07:58:38 +0530 | Jeneel Dumasia | fix: URL-encode @ in postgres password for connection string
+443 | c497ced | 2026-06-27 08:10:19 +0530 | Jeneel Dumasia | feat: dark mode revamp — amber accent, zinc base, glassmorphism
+444 | 486bfb0 | 2026-06-27 02:42:38 +0000 | GitHub Actions Bot | chore: update platform images to sha-c497ced [skip ci]
+445 | 9c9359d | 2026-06-27 08:16:33 +0530 | Jeneel Dumasia | fix: add project_members table and is_admin property to User
+446 | 96b5d44 | 2026-06-27 02:48:40 +0000 | GitHub Actions Bot | chore: update platform images to sha-9c9359d [skip ci]
+447 | aa3398e | 2026-06-27 08:27:55 +0530 | Jeneel Dumasia | feat: branch dropdown with GitHub API integration
+448 | b8e5790 | 2026-06-27 03:00:02 +0000 | GitHub Actions Bot | chore: update platform images to sha-aa3398e [skip ci]
+449 | 0e7729a | 2026-06-27 08:42:05 +0530 | Jeneel Dumasia | fix: kubernetes crd apply logic and enforce runAsUser 1000
+450 | b5f9cec | 2026-06-27 03:14:33 +0000 | GitHub Actions Bot | chore: update platform images to sha-0e7729a [skip ci]
+451 | f4ba8b4 | 2026-06-27 09:44:43 +0530 | Jeneel Dumasia | feat: Auto-connect GitHub webhooks
+452 | 43d34a2 | 2026-06-27 10:24:47 +0530 | Jeneel Dumasia | feat: migrate to GitHub App webhook architecture
+453 | f2d35bf | 2026-06-27 04:56:48 +0000 | GitHub Actions Bot | chore: update platform images to sha-43d34a2 [skip ci]
+454 | 11d2a7d | 2026-06-27 10:41:32 +0530 | Jeneel Dumasia | feat: add github branches endpoint to auto-populate UI
+455 | 0caccf7 | 2026-06-27 05:13:32 +0000 | GitHub Actions Bot | chore: update platform images to sha-11d2a7d [skip ci]
+456 | 6f91706 | 2026-06-27 11:48:24 +0530 | Jeneel Dumasia | fix: resolve Grafana dashboard sprawl and pod health namespace routing
+457 | 9354a21 | 2026-06-27 06:27:21 +0000 | GitHub Actions Bot | chore: update platform images to sha-6f91706 [skip ci]
+458 | 43d13e9 | 2026-06-27 12:09:24 +0530 | Jeneel Dumasia | chore: cleanup redundant endpoints and unused variables
+459 | 8f7a6de | 2026-06-27 06:41:27 +0000 | GitHub Actions Bot | chore: update platform images to sha-43d13e9 [skip ci]
+460 | 1d1bfe1 | 2026-06-27 12:13:56 +0530 | Jeneel Dumasia | fix: enable foldersFromFilesStructure in grafana dashboards
+461 | 60b0111 | 2026-06-27 12:17:40 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+462 | 9756253 | 2026-06-27 12:17:40 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+463 | 35d98a2 | 2026-06-27 12:25:18 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+464 | 1036323 | 2026-06-27 13:30:21 +0530 | Jeneel Dumasia | chore: production readiness & portfolio audit cleanup
+465 | cbfcc5c | 2026-06-27 13:55:14 +0530 | Jeneel Dumasia | fix: resolve ide linter warnings and remove unused jwt import
+466 | 4a77b29 | 2026-06-27 14:26:47 +0530 | Jeneel Dumasia | docs: consolidate historical bugs into issues log and update architecture review
+467 | 7974d44 | 2026-07-06 12:23:15 +0530 | Jeneel Dumasia | feat: complete codebase security and stability improvements
+468 | 9750023 | 2026-07-06 12:37:42 +0530 | Jeneel Dumasia | fix: use AWS_ROLE_ARN secret in deploy-secrets
+469 | 4de2b31 | 2026-07-06 12:57:50 +0530 | Jeneel Dumasia | fix: resolve docker build failures and hardcoded aws role
+470 | 7bed054 | 2026-07-06 13:09:20 +0530 | Jeneel Dumasia | fix: resolve Next.js TypeScript compilation errors
+471 | 7fd60e7 | 2026-07-06 07:55:00 +0000 | GitHub Actions Bot | chore: update platform images to sha-7bed054 [skip ci]
+472 | fa47e47 | 2026-07-06 14:16:33 +0530 | Jeneel Dumasia | fix: remove duplicate ecr-token-rotator-sa.yaml from kustomization
+473 | 842e100 | 2026-07-06 15:27:07 +0530 | Jeneel Dumasia | fix: disable image optimization for auth bg
+474 | 94f4660 | 2026-07-06 10:01:09 +0000 | GitHub Actions Bot | chore: update platform images to sha-842e100 [skip ci]
+475 | 79a71f2 | 2026-07-06 15:41:14 +0530 | Jeneel Dumasia | chore: add secrets refresh and pod restart to debug workflow
+476 | 09ef7f4 | 2026-07-06 16:06:50 +0530 | Jeneel Dumasia | fix: add missing github external secret
+477 | 05f485a | 2026-07-06 16:10:49 +0530 | Jeneel Dumasia | fix: revert incorrect external secret
+478 | e4487c0 | 2026-07-06 16:20:47 +0530 | Jeneel Dumasia | fix: remove delete secret from debug workflow
+479 | 48a94d2 | 2026-07-06 16:40:29 +0530 | Jeneel Dumasia | fix: allow auth_bg.png in middleware matcher
+480 | 12536e1 | 2026-07-06 11:12:02 +0000 | GitHub Actions Bot | chore: update platform images to sha-48a94d2 [skip ci]
+481 | 093c6c7 | 2026-07-07 12:57:14 +0530 | Jeneel Dumasia | fix: force dynamic rendering on login page to read GITHUB_CLIENT_ID at runtime
+482 | 48d9e40 | 2026-07-07 13:04:38 +0530 | Jeneel Dumasia | style: fix login page background to flush across the area right of sidebar
+483 | ccf711e | 2026-07-07 13:05:57 +0530 | Jeneel Dumasia | feat: use new DevOps-themed background image for login
+484 | 30909f4 | 2026-07-07 07:38:12 +0000 | GitHub Actions Bot | chore: update platform images to sha-ccf711e [skip ci]
+485 | 38746ef | 2026-07-07 13:25:17 +0530 | Jeneel Dumasia | fix: allow devops background image in middleware
+486 | b059db0 | 2026-07-07 07:56:54 +0000 | GitHub Actions Bot | chore: update platform images to sha-38746ef [skip ci]
+487 | e415f5a | 2026-07-07 13:30:53 +0530 | Jeneel Dumasia | fix: secure login page and permanent admin access
+488 | 94d73f2 | 2026-07-07 13:31:00 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+489 | 3f912cd | 2026-07-07 08:02:40 +0000 | GitHub Actions Bot | chore: update platform images to sha-94d73f2 [skip ci]
+490 | 9af32b6 | 2026-07-07 13:55:59 +0530 | Jeneel Dumasia | fix: resolve pkceCodeVerifier proxy bug
+491 | 320bb78 | 2026-07-07 08:27:24 +0000 | GitHub Actions Bot | chore: update platform images to sha-9af32b6 [skip ci]
+492 | 903c4be | 2026-07-07 14:16:15 +0530 | Jeneel Dumasia | style: replace cringe background with sleek modern design
+493 | bf9b0a4 | 2026-07-07 08:49:42 +0000 | GitHub Actions Bot | chore: update platform images to sha-903c4be [skip ci]
+494 | cc2534f | 2026-07-07 15:24:24 +0530 | Jeneel Dumasia | ci: fix IDE warnings for AWS_REGION context access
+495 | 272b885 | 2026-07-07 16:34:05 +0530 | Jeneel Dumasia | ci: add GitHub App secret deployment step
+496 | 2b5335a | 2026-07-07 16:39:34 +0530 | Jeneel Dumasia | feat(worker): implement github app token fetching for private repos
+497 | 60989eb | 2026-07-07 16:43:26 +0530 | Jeneel Dumasia | fix(worker): fix requirements.txt UTF-16 encoding issue
+498 | 20bf557 | 2026-07-07 11:15:02 +0000 | GitHub Actions Bot | chore: update platform images to sha-60989eb [skip ci]
+499 | a0914c5 | 2026-07-07 16:46:34 +0530 | Jeneel Dumasia | design: replace cringe login image with sleek animated CSS gradient
+500 | 445f67e | 2026-07-07 16:47:53 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+501 | 5227be5 | 2026-07-07 11:19:14 +0000 | GitHub Actions Bot | chore: update platform images to sha-445f67e [skip ci]
+502 | 4dd13d2 | 2026-07-07 16:58:57 +0530 | Jeneel Dumasia | feat(api,ui): add pod restart capabilities for users and admins
+503 | 517ae11 | 2026-07-07 16:59:26 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+504 | 57b467c | 2026-07-07 11:31:00 +0000 | GitHub Actions Bot | chore: update platform images to sha-517ae11 [skip ci]
+505 | 1d3224d | 2026-07-07 17:13:51 +0530 | Jeneel Dumasia | fix(infra): increase api memory limits to prevent OOM on startup
+506 | 9a15558 | 2026-07-13 00:00:06 +0530 | Jeneel Dumasia | chore: complete remediation sprint
+507 | 48e48f9 | 2026-07-12 18:31:44 +0000 | GitHub Actions Bot | chore: update platform images to sha-9a15558 [skip ci]
+508 | adf10a3 | 2026-07-13 01:02:38 +0530 | Jeneel Dumasia | feat: Zenith Redesign implementation
+509 | 546fdb0 | 2026-07-13 01:06:43 +0530 | Jeneel Dumasia | fix: TypeScript error in project status check
+510 | 5839038 | 2026-07-12 19:38:49 +0000 | GitHub Actions Bot | chore: update platform images to sha-48e48f9 [skip ci]
+511 | d47bb2d | 2026-07-13 01:13:08 +0530 | Jeneel Dumasia | fix: use github.sha to retain branch commit hash when checking out main in update-kustomization
+512 | 9f5a733 | 2026-07-12 19:45:33 +0000 | GitHub Actions Bot | chore: update platform images to sha-5839038 [skip ci]
+513 | 3cfc172 | 2026-07-12 19:54:39 +0000 | GitHub Actions Bot | chore: update platform images to sha-d47bb2d [skip ci]
+514 | c07244a | 2026-07-13 01:33:29 +0530 | Jeneel Dumasia | fix: remove redundant ui-auth-external-secret that blocks ArgoCD sync
+515 | 5c9762e | 2026-07-13 01:38:17 +0530 | Jeneel Dumasia | fix: resolve controller connection pool leak causing CrashLoopBackOff
+516 | 82daae7 | 2026-07-12 20:10:41 +0000 | GitHub Actions Bot | chore: update platform images to sha-5c9762e [skip ci]
+517 | 30d3d5f | 2026-07-13 01:43:34 +0530 | Jeneel Dumasia | fix: deploy github app secret and add admin link to command palette
+518 | 2ac5f11 | 2026-07-13 01:43:59 +0530 | Jeneel Dumasia | Merge branch 'zenith-redesign'
+519 | 56a2f23 | 2026-07-13 01:44:25 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+520 | 67ac834 | 2026-07-12 20:15:54 +0000 | GitHub Actions Bot | chore: update platform images to sha-56a2f23 [skip ci]
+521 | 3def614 | 2026-07-13 01:50:48 +0530 | Jeneel Dumasia | fix: update Karpenter EC2NodeClass AMI alias to latest
+522 | 44cd4fa | 2026-07-13 02:52:18 +0530 | Jeneel Dumasia | feat: restore global navigation and enhance admin console visibility
+523 | 35fbf9b | 2026-07-13 03:26:46 +0530 | Jeneel Dumasia | feat: light mode — floating pill + admin pages use semantic theme tokens
+524 | 31f8ced | 2026-07-13 03:32:06 +0530 | Jeneel Dumasia | fix: add missing /admin/deployments endpoint, fix restart_deployment signatures, graceful avatar fallback
+525 | 3b79231 | 2026-07-13 04:51:56 +0530 | Jeneel Dumasia | chore: final release sprint architecture and UI fixes
+526 | 4212db0 | 2026-07-13 05:28:46 +0530 | Jeneel Dumasia | feat: redesign create project page and conditionally render admin link
+527 | c78852b | 2026-07-13 00:03:55 +0000 | GitHub Actions Bot | chore: update platform images to sha-4212db0 [skip ci]
+528 | 07dede5 | 2026-07-13 05:38:29 +0530 | Jeneel Dumasia | feat: expose Argo CD UI via Gateway HTTPRoute
+529 | 1815251 | 2026-07-13 05:38:48 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+530 | dcfd29e | 2026-07-14 04:48:28 +0530 | Jeneel Dumasia | fix: resolve critical v1 release blockers in worker
+531 | d9035a2 | 2026-07-14 04:51:55 +0530 | Jeneel Dumasia | fix: address remaining stability and scale issues in control plane
+532 | d5be6cc | 2026-07-14 18:24:09 +0000 | GitHub Actions Bot | chore: update platform images to sha-d9035a2 [skip ci]
+533 | 1585658 | 2026-07-15 00:42:05 +0530 | Jeneel Dumasia | fix: update login page UI to Zenith Redesign brutalist style
+534 | 1f270f3 | 2026-07-14 19:16:05 +0000 | GitHub Actions Bot | chore: update platform images to sha-1585658 [skip ci]
+535 | 23a3dc9 | 2026-07-15 01:03:45 +0530 | Jeneel Dumasia | fix: resolve github signin and apply Zen aesthetic to login page
+536 | 066eb04 | 2026-07-14 19:35:33 +0000 | GitHub Actions Bot | chore: update platform images to sha-23a3dc9 [skip ci]
+537 | 9a1e56d | 2026-07-15 01:24:27 +0530 | Jeneel Dumasia | feat: implement split-screen landing page and redesign auth flow
+538 | 805d9cf | 2026-07-14 19:56:33 +0000 | GitHub Actions Bot | chore: update platform images to sha-9a1e56d [skip ci]
+539 | 8a29510 | 2026-07-15 02:24:09 +0530 | Jeneel Dumasia | style: refine landing page aesthetics and add smooth view transitions
+540 | 74e35b0 | 2026-07-14 20:56:05 +0000 | GitHub Actions Bot | chore: update platform images to sha-8a29510 [skip ci]
+541 | 7605527 | 2026-07-15 02:42:04 +0530 | Jeneel Dumasia | fix: bypass GitHub verification for local stub auth tokens
+542 | 95273fe | 2026-07-14 21:13:48 +0000 | GitHub Actions Bot | chore: update platform images to sha-7605527 [skip ci]
+543 | 23f46d7 | 2026-07-15 03:43:29 +0530 | Jeneel Dumasia | fix: ensure local dev user exists in database to prevent foreign key errors
+544 | 107ea85 | 2026-07-14 22:15:18 +0000 | GitHub Actions Bot | chore: update platform images to sha-23f46d7 [skip ci]
+545 | 1417c0e | 2026-07-15 03:58:11 +0530 | Jeneel Dumasia | fix: secure authentication fallback and prevent stub token usage in production
+546 | 474eafc | 2026-07-15 04:35:57 +0530 | Jeneel Dumasia | fix(ui): gracefully handle missing auth config during docker build and update login UI
+547 | 4c7cad2 | 2026-07-14 23:07:48 +0000 | GitHub Actions Bot | chore: update platform images to sha-474eafc [skip ci]
+548 | 50cf305 | 2026-07-15 05:03:37 +0530 | Jeneel Dumasia | feat: add support for SHIPZEN_ prefixed configuration environment variables
+549 | 343cb4b | 2026-07-14 23:46:58 +0000 | GitHub Actions Bot | chore: update platform images to sha-50cf305 [skip ci]
+550 | d7159af | 2026-07-15 05:39:12 +0530 | Jeneel Dumasia | fix: make admin email matching case-insensitive
+551 | 490ead8 | 2026-07-15 00:11:04 +0000 | GitHub Actions Bot | chore: update platform images to sha-d7159af [skip ci]
+552 | c0234ef | 2026-07-18 17:36:33 +0530 | Jeneel Dumasia | chore: apply production readiness and security hardening fixes
+553 | 2ab916b | 2026-07-18 17:36:49 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+554 | 63bafef | 2026-07-18 12:08:40 +0000 | GitHub Actions Bot | chore: update platform images to sha-2ab916b [skip ci]
+555 | c1f69d0 | 2026-07-18 18:44:13 +0530 | Jeneel Dumasia | Fix production readiness audit issues and frontend auth config
+556 | 1fd82ca | 2026-07-18 13:16:08 +0000 | GitHub Actions Bot | chore: update platform images to sha-c1f69d0 [skip ci]
+557 | 8d2b6c3 | 2026-07-18 19:20:33 +0530 | Jeneel Dumasia | Fix terraform plan hanging on redis_password in CI
+558 | 967f3d9 | 2026-07-18 19:22:49 +0530 | Jeneel Dumasia | Inject redis password into k8s deployments
+559 | 2ee36b9 | 2026-07-18 19:36:50 +0530 | Jeneel Dumasia | Migrate redis password to AWS Secrets Manager
+560 | 96ec0cb | 2026-07-18 19:55:16 +0530 | Jeneel Dumasia | Fix terraform apply errors
+561 | 74ee126 | 2026-07-19 00:20:20 +0000 | GitHub Actions Bot | chore: update platform images to sha-96ec0cb [skip ci]
+562 | 0aa4084 | 2026-07-19 06:17:38 +0530 | Jeneel Dumasia | fix: explicitly specify kyverno policies in exception to allow node-exporter
+563 | 6b09755 | 2026-07-19 06:17:54 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+564 | bbe0c55 | 2026-07-19 06:25:06 +0530 | Jeneel Dumasia | fix: redis provisioner pipe and kyverno autogen rule names
+565 | 464e032 | 2026-07-19 06:26:34 +0530 | Jeneel Dumasia | docs: add agent rules for auto-commits and infrastructure lessons
+566 | cac8368 | 2026-07-19 06:26:54 +0530 | Jeneel Dumasia | docs: move agent rules to gemini.md per user request
+567 | 134f87b | 2026-07-19 06:34:36 +0530 | Jeneel Dumasia | fix: terraform race condition between kyverno exception and prometheus helm release
+568 | d8139a8 | 2026-07-19 06:38:37 +0530 | Jeneel Dumasia | fix: remove duplicate depends_on block from monitoring.tf
+569 | 9945c17 | 2026-07-19 06:43:46 +0530 | Jeneel Dumasia | fix: replace wildcard with exact match in kyverno policy exception
+570 | 9575e46 | 2026-07-19 06:50:39 +0530 | Jeneel Dumasia | fix: rely on kyverno auto-generation for daemonset exceptions
+571 | e35b8f7 | 2026-07-19 06:57:13 +0530 | Jeneel Dumasia | fix: explicitly specify apps/v1/DaemonSet API group in Kyverno exception
+572 | 7cf4607 | 2026-07-19 07:02:11 +0530 | Jeneel Dumasia | fix: include autogen rule names in kyverno exception and update rules
+573 | 8f14497 | 2026-07-19 07:47:18 +0530 | Jeneel Dumasia | fix: use helm values for kyverno namespace exclusion instead of namespaced PolicyException
+574 | 0c324b8 | 2026-07-19 07:58:06 +0530 | Jeneel Dumasia | fix: update deployments to use redis-auth secret
+575 | 04f170b | 2026-07-19 08:02:10 +0530 | Jeneel Dumasia | trigger: run deploy pipeline to update cloudflare
+576 | 6eb24b0 | 2026-07-19 08:06:39 +0530 | Jeneel Dumasia | fix: enable local stub auth in ui deployment
+577 | fa5c745 | 2026-07-19 08:09:29 +0530 | Jeneel Dumasia | Revert "fix: enable local stub auth in ui deployment"
+578 | 586f452 | 2026-07-19 08:12:51 +0530 | Jeneel Dumasia | feat: migrate github secrets to aws secrets manager
+579 | 2eb52f0 | 2026-07-19 08:22:02 +0530 | Jeneel Dumasia | fix(worker): correct database import path
+580 | 0861072 | 2026-07-19 02:54:07 +0000 | GitHub Actions Bot | chore: update platform images to sha-2eb52f0 [skip ci]
+581 | cabd2fe | 2026-07-19 08:25:05 +0530 | Jeneel Dumasia | fix(api): fix UnboundLocalError for asyncio
+582 | 411ff18 | 2026-07-19 08:25:34 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+583 | c967438 | 2026-07-19 02:57:12 +0000 | GitHub Actions Bot | chore: update platform images to sha-411ff18 [skip ci]
+584 | 1b7ae3e | 2026-07-19 11:09:22 +0530 | Jeneel Dumasia | Fix Trivy installation checksum validation filename
+585 | 1fe652f | 2026-07-19 11:11:32 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+586 | e194c84 | 2026-07-19 11:24:53 +0530 | Jeneel Dumasia | Update Next.js to address vulnerabilities
+587 | eddf18d | 2026-07-19 11:34:02 +0530 | Jeneel Dumasia | Fix incorrect import in worker main.py
+588 | 63e8fc0 | 2026-07-19 11:36:25 +0530 | Jeneel Dumasia | Fix NameError in restart_system endpoint
+589 | 3bff7a2 | 2026-07-19 11:39:43 +0530 | Jeneel Dumasia | Update eslint to v9 to satisfy eslint-config-next peer dependency
+590 | 47ee1dc | 2026-07-19 06:11:05 +0000 | GitHub Actions Bot | chore: update platform images to sha-3bff7a2 [skip ci]
+591 | efbede5 | 2026-07-19 11:45:41 +0530 | Jeneel Dumasia | Fix blank screen crash: await params in Next.js 15 dynamic routes
+592 | f0ce888 | 2026-07-19 06:17:42 +0000 | GitHub Actions Bot | chore: update platform images to sha-efbede5 [skip ci]
+593 | 7d80fda | 2026-07-19 12:02:38 +0530 | Jeneel Dumasia | Fix NextAuth PKCE InvalidCheck error for GitHub provider
+594 | 167fa5e | 2026-07-19 06:34:40 +0000 | GitHub Actions Bot | chore: update platform images to sha-7d80fda [skip ci]
+595 | 8dcb228 | 2026-07-19 12:14:58 +0530 | Jeneel Dumasia | Change GitHub Auth checks to state
+596 | 7d0406a | 2026-07-19 06:46:09 +0000 | GitHub Actions Bot | chore: update platform images to sha-8dcb228 [skip ci]
+597 | a6200d5 | 2026-07-19 12:19:47 +0530 | Jeneel Dumasia | Fix WebSocket auth by sending token in first message
+598 | 37dbe9c | 2026-07-19 06:51:42 +0000 | GitHub Actions Bot | chore: update platform images to sha-a6200d5 [skip ci]
+599 | 92bb616 | 2026-07-19 12:26:04 +0530 | Jeneel Dumasia | Fix NextAuth cookie proxy issue by rewriting request protocol to https
+600 | 1d5b98f | 2026-07-19 06:57:35 +0000 | GitHub Actions Bot | chore: update platform images to sha-92bb616 [skip ci]
+601 | 64fa437 | 2026-08-24 12:50:15 +0530 | Jeneel Dumasia | fix: pre-deployment audit fixes (production-grade)
+602 | f0a141b | 2026-08-24 12:55:22 +0530 | Jeneel Dumasia | fix: add missing IAM and CloudWatch permissions to GitHub Actions role
+603 | 4b3b50b | 2026-08-24 13:26:20 +0530 | Jeneel Dumasia | fix: exclude observability namespace from kyverno webhook to allow prometheus node-exporter
+604 | 0b4b12f | 2026-08-24 14:13:22 +0530 | Jeneel Dumasia | docs: establish persistent AI context and handoff system
+605 | f3ce455 | 2026-08-24 14:19:28 +0530 | Jeneel Dumasia | chore: ignore .ai context directory
+606 | 7f49faa | 2026-08-24 14:26:50 +0530 | Jeneel Dumasia | fix: move webhooks to root in kyverno helm values
+607 | a84f613 | 2026-08-24 14:34:07 +0530 | Jeneel Dumasia | fix: disable prometheus node-exporter to bypass kyverno host policy constraint
+608 | 6c8e1e7 | 2026-08-24 14:36:37 +0530 | Jeneel Dumasia | fix: correctly ignore observability namespace using resourceFiltersIncludeNamespaces
+609 | 0a10dc5 | 2026-08-24 14:44:24 +0530 | Jeneel Dumasia | fix: explicitly override config.resourceFilters to bypass kyverno for observability namespace
+610 | 1246c02 | 2026-08-24 15:28:26 +0530 | Jeneel Dumasia | fix: pass TF_VAR_aws_region and switch OIDC to data lookup
+611 | 1c87ba2 | 2026-08-24 15:39:25 +0530 | Jeneel Dumasia | chore: switch teardown to use static AWS keys temporarily [skip ci]
+612 | 632ec22 | 2026-08-24 15:55:34 +0530 | Jeneel Dumasia | chore: revert destroy workflow back to OIDC auth
+613 | 5819e78 | 2026-08-24 17:00:26 +0530 | Jeneel Dumasia | fix: resolve ap-south-1 instance type, webhook races, and access entry conflicts
+614 | f5f384c | 2026-08-24 17:06:08 +0530 | Jeneel Dumasia | chore: revert instance type back to c7i-flex.large as requested
+615 | aac254c | 2026-08-24 17:09:56 +0530 | Jeneel Dumasia | feat: add default_tags to AWS provider to tag all resources
+616 | 5cb014e | 2026-08-24 17:29:52 +0530 | Jeneel Dumasia | fix: increase platform node count to 3 to resolve prometheus memory exhaustion
+617 | 56b7344 | 2026-08-24 17:35:41 +0530 | Jeneel Dumasia | fix: revert grafana to sqlite to fix postgres connection crashloop
+618 | eb54475 | 2026-08-24 18:02:17 +0530 | Jeneel Dumasia | fix: update ecr region to ap-south-1 in kustomize to fix ErrImagePull
+619 | fc3b84e | 2026-08-25 11:15:28 +0530 | Jeneel Dumasia | fix: use dynamic AWS region in build pipeline to fix ErrImagePull
+620 | d124fa9 | 2026-08-25 05:47:27 +0000 | GitHub Actions Bot | chore: update platform images to sha-fc3b84e [skip ci]
+621 | ce97538 | 2026-08-25 11:21:25 +0530 | Jeneel Dumasia | fix: grant shipzen-worker-sa permissions to manage secrets in shipzen-build
+622 | 7cf9d8a | 2026-08-25 13:16:27 +0530 | Jeneel Dumasia | Fix IAM role name mismatch
+623 | 2f3af02 | 2026-08-25 13:19:35 +0530 | Jeneel Dumasia | Update gitignore with aws-nuke tools
+624 | 0879198 | 2026-08-25 13:20:02 +0530 | Jeneel Dumasia | Updated Docs
+625 | b2e9483 | 2026-08-25 13:58:58 +0530 | Jeneel Dumasia | Update hardcoded AWS account ID to new account
+626 | 78ae331 | 2026-08-25 15:19:26 +0530 | Jeneel Dumasia | Switch Envoy Gateway from NLB to Classic ELB
+627 | 5f2e0b5 | 2026-08-25 09:52:24 +0000 | GitHub Actions Bot | chore: update platform images to sha-78ae331 [skip ci]
+628 | f9b299b | 2026-08-25 15:25:54 +0530 | Jeneel Dumasia | Rename NLB to Load Balancer in deploy action
+629 | a4b3c51 | 2026-08-25 15:35:13 +0530 | Jeneel Dumasia | Dynamically resolve AWS region and Account ID in workflows
+630 | 21ccdb1 | 2026-08-25 15:39:18 +0530 | Jeneel Dumasia | Merge branch 'main' of https://github.com/jeneeldumasia/ShipZen
+631 | 567a0b0 | 2026-08-25 16:03:31 +0530 | Jeneel Dumasia | Fix application logic findings (DLQ atomicity, outbox pattern, race conditions)
+632 | 2600517 | 2026-08-25 17:09:16 +0530 | Jeneel Dumasia | Fix AWS_REGION fallback in destroy workflows
+633 | d7e6ab7 | 2026-08-25 17:22:47 +0530 | Jeneel Dumasia | Fix TF_VAR_aws_region in destroy workflow
+634 | 7302104 | 2026-08-25 17:52:14 +0530 | Jeneel Dumasia | Fix ECR pull token rotation to use dynamic AWS region
+635 | 6c1217a | 2026-08-25 17:59:06 +0530 | Jeneel Dumasia | Remove unused get_deployments_paginated function

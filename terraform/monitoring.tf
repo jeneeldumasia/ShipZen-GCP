@@ -1,0 +1,158 @@
+# Task 4 — kube-prometheus-stack
+# Installs Prometheus, Alertmanager, and Grafana.
+# Persistence disabled — student account, data lost on pod restart is acceptable.
+# PrometheusRule and ServiceMonitor CRDs are installed by this chart,
+# which activates all resources in observability/.
+
+resource "random_password" "grafana_password" {
+  length  = 32
+  special = false
+}
+
+locals {
+  grafana_password = var.grafana_password != "" ? var.grafana_password : random_password.grafana_password.result
+}
+
+resource "kubernetes_namespace" "observability" {
+  metadata {
+    name = "observability"
+  }
+  depends_on = [time_sleep.wait_for_cluster_auth]
+}
+
+
+
+resource "helm_release" "kube_prometheus_stack" {
+  name             = "kube-prometheus-stack"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  namespace        = kubernetes_namespace.observability.metadata[0].name
+  create_namespace = false
+
+  # Scan all namespaces for ServiceMonitor resources, not just observability
+  set {
+    name  = "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues"
+    value = "false"
+  }
+
+  # Disable persistence (cost) - omitted storageSpec to default to emptyDir
+
+  set {
+    name  = "grafana.persistence.enabled"
+    value = "false" # Disabled here, but enabled at the bottom via FIX-6
+  }
+
+  set {
+    name  = "grafana.assertNoLeakedSecrets"
+    value = "false"
+  }
+
+  # Grafana admin password — change before exposing externally
+  set {
+    name  = "grafana.adminPassword"
+    value = local.grafana_password
+  }
+
+  set {
+    name  = "grafana.grafana\\.ini.server.domain"
+    value = "grafana-shipzen.jeneeldumasia.codes"
+  }
+
+  set {
+    name  = "grafana.grafana\\.ini.server.root_url"
+    value = "https://grafana-shipzen.jeneeldumasia.codes"
+  }
+
+  set {
+    name  = "grafana.grafana\\.ini.security.allow_embedding"
+    value = "true"
+  }
+
+  set {
+    name  = "grafana.grafana\\.ini.auth\\.anonymous.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "grafana.grafana\\.ini.auth\\.anonymous.org_role"
+    value = "Viewer"
+  }
+
+  # Enable the Grafana sidecar to pick up ConfigMap-based dashboards
+  # (observability/dashboards/grafana-dashboards.yaml uses label grafana_dashboard: "1")
+  # FIX-6: Grafana persistence (2Gi standard PVC)
+  set {
+    name  = "grafana.persistence.enabled"
+    value = "true"
+  }
+  set {
+    name  = "grafana.persistence.storageClassName"
+    value = "standard"
+  }
+  set {
+    name  = "grafana.persistence.size"
+    value = "2Gi"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.defaultFolderName"
+    value = "Infrastructure (Advanced)"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.folderAnnotation"
+    value = "grafana_folder"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.provider.folder"
+    value = "Infrastructure (Advanced)"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.searchNamespace"
+    value = "ALL"
+  }
+
+  # Enable nodeExporter. Exception added via Kyverno PolicyException.
+  set {
+    name  = "nodeExporter.enabled"
+    value = "true"
+  }
+
+  # FIX-10: Prometheus persistence (10Gi standard PVC) and 30d retention
+  set {
+    name  = "prometheus.prometheusSpec.retention"
+    value = "30d"
+  }
+  set {
+    name  = "prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName"
+    value = "standard"
+  }
+  set {
+    name  = "prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.accessModes[0]"
+    value = "ReadWriteOnce"
+  }
+  set {
+    name  = "prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage"
+    value = "10Gi"
+  }
+
+  timeout = 900
+  depends_on = [time_sleep.wait_for_cluster_auth, helm_release.postgresql, helm_release.kyverno_policies]
+}

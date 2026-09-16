@@ -1,0 +1,25 @@
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: node-exporter-exception
+  namespace: observability
+spec:
+  exceptions:
+  - policyName: "disallow-host-namespaces"
+    ruleNames:
+    - "host-namespaces"
+    - "autogen-host-namespaces"
+  - policyName: "disallow-host-path"
+    ruleNames:
+    - "host-path"
+    - "autogen-host-path"
+  match:
+    any:
+    - resources:
+        kinds:
+        - Pod
+        - apps/v1/DaemonSet
+        namespaces:
+        - observability
+        names:
+        - "*node-exporter*"

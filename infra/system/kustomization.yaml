@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - build-namespace.yaml
+  - schema-configmap.yaml
+  - schema-job.yaml
+  - servicemonitors.yaml
+  - alertmanager-config.yaml
+  - shipzen-tls-cert.yaml
+  - shipzen-auth-secret.yaml
+  - gateway.yaml
+  - grafana-route.yaml
+  - argocd-route.yaml
+  - kyverno-exception.yaml
+  - build-namespace-exception.yaml
+  - grafana-dashboards.yaml
+  - github-app-secret.yaml
+  - github-secret.yaml

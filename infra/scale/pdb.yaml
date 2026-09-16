@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shipzen-controller-pdb
+  namespace: shipzen-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: shipzen-controller
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shipzen-worker-pdb
+  namespace: shipzen-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: shipzen-worker

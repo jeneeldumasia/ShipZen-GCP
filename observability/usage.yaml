@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shipzen-tenant-usage
+  namespace: observability
+spec:
+  groups:
+    - name: tenant-cost-usage
+      rules:
+        # Aggregate Tenant CPU Usage (Cores)
+        - record: tenant:cpu_usage_cores:sum
+          expr: |
+            sum by (namespace) (
+              rate(container_cpu_usage_seconds_total{container!="POD", container!=""}[5m])
+            )
+            * on (namespace) group_left() 
+            kube_namespace_labels{label_shipzen_io_tenant="true"}
+
+        # Aggregate Tenant Memory Usage (Bytes)
+        - record: tenant:memory_usage_bytes:sum
+          expr: |
+            sum by (namespace) (
+              container_memory_working_set_bytes{container!="POD", container!=""}
+            )
+            * on (namespace) group_left() 
+            kube_namespace_labels{label_shipzen_io_tenant="true"}
+
+        # Tenant Resource Quota Saturation (CPU)
+        - record: tenant:cpu_quota_saturation:ratio
+          expr: |
+            kube_resourcequota{resource="requests.cpu", type="used"}
+            /
+            kube_resourcequota{resource="requests.cpu", type="hard"}
+            
+        # Tenant Resource Quota Saturation (Memory)
+        - record: tenant:memory_quota_saturation:ratio
+          expr: |
+            kube_resourcequota{resource="requests.memory", type="used"}
+            /
+            kube_resourcequota{resource="requests.memory", type="hard"}

@@ -1,0 +1,26 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shipzen-api
+  namespace: shipzen-system
+spec:
+  hostnames:
+  - "shipzen.jeneeldumasia.codes"
+  parentRefs:
+  - name: shipzen-gateway
+    namespace: shipzen-system
+    sectionName: https
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: shipzen-api
+      port: 80

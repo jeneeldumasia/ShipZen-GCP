@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipzen-controller
+  namespace: shipzen-system
+  labels:
+    app: shipzen-controller
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipzen-controller
+  template:
+    metadata:
+      labels:
+        app: shipzen-controller
+    spec:
+      serviceAccountName: shipzen-controller-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: shipzen-controller:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-db-credentials
+                  key: url
+            - name: RECONCILIATION_INTERVAL
+              value: "60"
+            - name: REDIS_HOST
+              value: "redis-master.shipzen-system.svc.cluster.local"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: redis-password
+            - name: ECR_REGISTRY
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-ecr-config
+                  key: registry_hostname
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
