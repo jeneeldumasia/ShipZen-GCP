@@ -1,4 +1,10 @@
 terraform {
+  cloud {
+    organization = "jeneel-shipzen"
+    workspaces {
+      name = "ShipZen-GCP"
+    }
+  }
   required_providers {
     google = {
       source  = "hashicorp/google"
