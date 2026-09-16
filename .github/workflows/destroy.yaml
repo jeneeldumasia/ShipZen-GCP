@@ -113,6 +113,8 @@ jobs:
       - name: Terraform Destroy
         working-directory: ./terraform
         env:
+          TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
