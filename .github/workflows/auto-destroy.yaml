@@ -1,6 +1,6 @@
 name: Auto-Destroy (Deadman Switch)
 
-# Runs every hour. If the EKS cluster has been alive for more than MAX_UPTIME_HOURS,
+# Runs every hour. If the GKE cluster has been alive for more than MAX_UPTIME_HOURS,
 # it triggers the destroy workflow automatically to protect credits.
 # Adjust MAX_UPTIME_HOURS to your preference.
 
@@ -17,39 +17,29 @@ permissions:
 env:
   MAX_UPTIME_HOURS: 6
   CLUSTER_NAME: shipzen-cluster
-  AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
 jobs:
   check-and-destroy:
     runs-on: ubuntu-latest
     steps:
-      - name: Configure AWS Credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Check Cluster Uptime
         id: check
         run: |
           # Check if the cluster exists at all
-          CREATED_AT=$(aws eks describe-cluster \
-            --name "$CLUSTER_NAME" \
-            --query "cluster.createdAt" \
-            --output text 2>/dev/null || echo "")
-
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=shipzen-vpc" --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "None")
-
-          if [ "$VPC_ID" != "None" ] && ([ -z "$CREATED_AT" ] || [ "$CREATED_AT" = "None" ]); then
-            echo "⚠️ Cluster is missing but VPC ($VPC_ID) still exists! This means a partial destroy occurred."
-            echo "Triggering auto-destroy to clean up lingering resources."
-            echo "should_destroy=true" >> $GITHUB_OUTPUT
-            echo "uptime_hours=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          CREATED_AT=$(gcloud container clusters describe "$CLUSTER_NAME" --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} --format="value(createTime)" 2>/dev/null || echo "")
 
           if [ -z "$CREATED_AT" ] || [ "$CREATED_AT" = "None" ]; then
-            echo "Cluster and VPC not found. Nothing to destroy."
+            echo "Cluster not found. Nothing to destroy."
             echo "should_destroy=false" >> $GITHUB_OUTPUT
             exit 0
           fi

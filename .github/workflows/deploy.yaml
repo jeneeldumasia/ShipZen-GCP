@@ -18,17 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-      NLB_URL: ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION || 'us-east-1' }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
 
       - name: Setup Terraform
@@ -52,33 +54,7 @@ jobs:
           kubectl delete validatingwebhookconfigurations shipzen-platform-webhook --ignore-not-found || true
           # Add further names here with an inline comment explaining why each is targeted.
 
-      # Bootstrap: Ensure the GitHub Actions OIDC role has EKS cluster admin access.
-      # This uses the AWS API (not the Kubernetes API), so it works even when
-      # the role has zero Kubernetes RBAC permissions. Idempotent — safe to run
-      # on every deploy. Solves the chicken-and-egg problem where Terraform's
-      # kubernetes/helm providers need RBAC access that only Terraform can grant.
-      - name: Bootstrap EKS Access for GitHub Actions Role
-        run: |
-          ROLE_ARN="${{ secrets.AWS_ROLE_ARN }}"
-          CLUSTER="shipzen-cluster"
-          REGION="${{ env.AWS_REGION || 'us-east-1' }}"
 
-          echo "Ensuring EKS access entry exists for $ROLE_ARN..."
-          aws eks create-access-entry \
-            --cluster-name "$CLUSTER" \
-            --principal-arn "$ROLE_ARN" \
-            --type STANDARD \
-            --region "$REGION" 2>/dev/null || echo "Access entry already exists."
-
-          echo "Associating cluster admin policy..."
-          aws eks associate-access-policy \
-            --cluster-name "$CLUSTER" \
-            --principal-arn "$ROLE_ARN" \
-            --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
-            --access-scope type=cluster \
-            --region "$REGION" 2>/dev/null || echo "Policy already associated."
-
-          echo "EKS access bootstrap complete."
 
       - name: Terraform Plan
         working-directory: ./terraform
@@ -86,7 +62,6 @@ jobs:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
-          TF_VAR_aws_region: ${{ env.AWS_REGION }}
         run: terraform plan -out=tfplan
 
       - name: Configure kubectl
@@ -99,7 +74,6 @@ jobs:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
-          TF_VAR_aws_region: ${{ env.AWS_REGION }}
         run: |
           if ! terraform apply -auto-approve tfplan; then
             echo "::error::Terraform Apply failed! Dumping observability cluster state for debugging..."
@@ -109,23 +83,23 @@ jobs:
             exit 1
           fi
 
-      - name: Push Secrets to AWS Secrets Manager
+      - name: Push Secrets to GCP Secret Manager
         run: |
           echo "Pushing GitHub OAuth Secret..."
-          aws secretsmanager put-secret-value --secret-id "shipzen/github" --secret-string "{\"client_id\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" --region ${{ env.AWS_REGION }} 2>/dev/null || \
-          aws secretsmanager create-secret --name "shipzen/github" --description "GitHub OAuth secrets" --secret-string "{\"client_id\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" --region ${{ env.AWS_REGION }}
+          gcloud secrets create shipzen-github --replication-policy="automatic" 2>/dev/null || true
+          echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | gcloud secrets versions add shipzen-github --data-file=-
 
           echo "Pushing GitHub Backend App Secret..."
-          aws secretsmanager put-secret-value --secret-id "shipzen/github-app" --secret-string "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" --region ${{ env.AWS_REGION }} 2>/dev/null || \
-          aws secretsmanager create-secret --name "shipzen/github-app" --description "GitHub App private key" --secret-string "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" --region ${{ env.AWS_REGION }}
+          gcloud secrets create shipzen-github-app --replication-policy="automatic" 2>/dev/null || true
+          echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | gcloud secrets versions add shipzen-github-app --data-file=-
 
           echo "Pushing AUTH_SECRET..."
-          aws secretsmanager put-secret-value --secret-id "shipzen/auth-secret" --secret-string "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" --region ${{ env.AWS_REGION }} 2>/dev/null || \
-          aws secretsmanager create-secret --name "shipzen/auth-secret" --description "NextAuth AUTH_SECRET for ShipZen UI" --secret-string "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" --region ${{ env.AWS_REGION }}
+          gcloud secrets create shipzen-auth-secret --replication-policy="automatic" 2>/dev/null || true
+          echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | gcloud secrets versions add shipzen-auth-secret --data-file=-
 
           echo "Pushing Alerts Stub Secret..."
-          aws secretsmanager put-secret-value --secret-id "shipzen/alerts" --secret-string "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" --region ${{ env.AWS_REGION }} 2>/dev/null || \
-          aws secretsmanager create-secret --name "shipzen/alerts" --description "Alertmanager destination secrets" --secret-string "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" --region ${{ env.AWS_REGION }}
+          gcloud secrets create shipzen-alerts --replication-policy="automatic" 2>/dev/null || true
+          echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | gcloud secrets versions add shipzen-alerts --data-file=-
 
           echo "Triggering ArgoCD sync..."
           kubectl patch application shipzen-platform -n argocd -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge 2>/dev/null || true
@@ -134,13 +108,13 @@ jobs:
 
       - name: Wait for Load Balancer
         run: |
-          echo "Waiting for Load Balancer to be provisioned by AWS..."
+          echo "Waiting for Load Balancer to be provisioned by GCP..."
           ELAPSED=0
           MAX_WAIT=600
           NLB_URL=""
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            # Scan all namespaces for the LoadBalancer service instead of hardcoding the dynamically generated name
-            NLB_URL=$(kubectl get svc -A -o jsonpath="{.items[?(@.spec.type=='LoadBalancer')].status.loadBalancer.ingress[0].hostname}" 2>/dev/null | awk '{print $1}')
+            # Scan all namespaces for the LoadBalancer service. GCP LB uses .ip instead of .hostname
+            NLB_URL=$(kubectl get svc -A -o jsonpath="{.items[?(@.spec.type=='LoadBalancer')].status.loadBalancer.ingress[0].ip}" 2>/dev/null | awk '{print $1}')
             if [ -n "$NLB_URL" ]; then
               echo "Load Balancer is ready: $NLB_URL"
               break
