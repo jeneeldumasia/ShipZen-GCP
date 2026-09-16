@@ -50,10 +50,10 @@ spec:
               value: "deploy_stream"
             - name: UI_ORIGIN
               value: "https://shipzen.jeneeldumasia.codes"
-            - name: ECR_REPOSITORY_URL
+            - name: GAR_REPOSITORY_URL
               valueFrom:
                 secretKeyRef:
-                  name: shipzen-ecr-config
+                  name: shipzen-gar-config
                   key: repository_url
             - name: GITHUB_ENABLED
               value: "true"   # Set to "false" only in local development — disables auth entirely

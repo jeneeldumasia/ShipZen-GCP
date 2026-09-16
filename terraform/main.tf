@@ -107,21 +107,29 @@ resource "google_container_node_pool" "platform_nodes" {
   name       = "platform-nodes"
   location   = var.gcp_region
   cluster    = google_container_cluster.primary.name
-  node_count = 1
+  node_count = 1  # Per zone, so 3 total across us-central1-a, b, c
 
   autoscaling {
-    min_node_count = 1
-    max_node_count = 5
+    min_node_count = 1  # Per zone
+    max_node_count = 3  # Per zone, max 9 nodes total
   }
 
   node_config {
     machine_type = var.platform_machine_type
+    disk_size_gb = 50  # Smaller disk to save costs
+    disk_type    = "pd-standard"  # Standard HDD instead of SSD
+    
     labels = {
       "shipzen.jeneeldumasia.codes/node-type" = "platform"
     }
+    
+    # Enable Workload Identity
     workload_metadata_config {
       mode = "GKE_METADATA"
     }
+    
+    # Use spot instances for even more savings (optional, can be preempted)
+    # spot = true
   }
 }
 
