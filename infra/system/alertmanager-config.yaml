@@ -74,9 +74,9 @@ spec:
   data:
     - secretKey: slack-webhook-url
       remoteRef:
-        key: shipzen/alerts
+        key: shipzen-alerts
         property: slack-webhook-url
     - secretKey: pagerduty-routing-key
       remoteRef:
-        key: shipzen/alerts
+        key: shipzen-alerts
         property: pagerduty-routing-key
