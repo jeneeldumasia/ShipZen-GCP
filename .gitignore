@@ -19,6 +19,9 @@ node_modules/
 dist/
 .env
 .env.local
+.secrets.env
+*.secrets*
+secrets/
 
 # Python
 __pycache__/
