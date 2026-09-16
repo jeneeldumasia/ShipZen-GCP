@@ -81,7 +81,7 @@ resource "google_compute_router_nat" "nat" {
 # ── GKE ───────────────────────────────────────────────────────────────────────
 resource "google_container_cluster" "primary" {
   name     = "shipzen-cluster"
-  location = var.gcp_region
+  location = "${var.gcp_region}-a"
   network    = google_compute_network.vpc.name
   subnetwork = google_compute_subnetwork.subnet.name
 
@@ -98,7 +98,7 @@ resource "google_container_cluster" "primary" {
 
 resource "google_container_node_pool" "platform_nodes" {
   name       = "platform-nodes"
-  location   = var.gcp_region
+  location   = "${var.gcp_region}-a"
   cluster    = google_container_cluster.primary.name
   node_count = 1
 
