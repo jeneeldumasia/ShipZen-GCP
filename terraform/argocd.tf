@@ -26,25 +26,6 @@ resource "helm_release" "argocd" {
   depends_on = [time_sleep.wait_for_cluster_auth, helm_release.kube_prometheus_stack]
 }
 
-# Configure ArgoCD repository credentials via kubectl after ArgoCD is installed
-resource "null_resource" "argocd_repo_credentials" {
-  count = var.github_token != "" ? 1 : 0
-  
-  provisioner "local-exec" {
-    command = <<EOT
-      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
-      kubectl create secret generic repo-credentials -n argocd \
-        --from-literal=url=https://github.com/jeneeldumasia \
-        --from-literal=password=${var.github_token} \
-        --from-literal=username=not-used \
-        --dry-run=client -o yaml | kubectl apply -f -
-      kubectl label secret repo-credentials -n argocd argocd.argoproj.io/secret-type=repository --overwrite
-    EOT
-  }
-  
-  depends_on = [helm_release.argocd]
-}
-
 resource "null_resource" "argocd_apps" {
   triggers = {
     always_run = "${timestamp()}"
@@ -61,7 +42,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: "https://github.com/jeneeldumasia/ShipZen-GCP.git"
+    repoURL: "git@github.com:jeneeldumasia/ShipZen-GCP.git"
     targetRevision: HEAD
     path: infra
   destination:
