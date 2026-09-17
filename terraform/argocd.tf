@@ -34,23 +34,25 @@ resource "null_resource" "argocd_github_app" {
     command = <<EOT
       gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
       
+      # Create temporary file with private key
+      cat > /tmp/github-app-key.pem <<'KEYEOF'
+${var.github_app_private_key}
+KEYEOF
+      
       # Create GitHub App credentials secret for ArgoCD
-      cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: github-app-repo-creds
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repo-creds
-stringData:
-  type: git
-  url: https://github.com/jeneeldumasia
-  githubAppID: "${var.github_app_id}"
-  githubAppInstallationID: "${var.github_app_installation_id}"
-  githubAppPrivateKey: |
-${indent(4, var.github_app_private_key)}
-EOF
+      kubectl create secret generic github-app-repo-creds -n argocd \
+        --from-literal=type=git \
+        --from-literal=url=https://github.com/jeneeldumasia \
+        --from-literal=githubAppID=${var.github_app_id} \
+        --from-literal=githubAppInstallationID=${var.github_app_installation_id} \
+        --from-file=githubAppPrivateKey=/tmp/github-app-key.pem \
+        --dry-run=client -o yaml | kubectl apply -f -
+      
+      kubectl label secret github-app-repo-creds -n argocd \
+        argocd.argoproj.io/secret-type=repo-creds --overwrite
+      
+      # Clean up temp file
+      rm -f /tmp/github-app-key.pem
     EOT
   }
   
