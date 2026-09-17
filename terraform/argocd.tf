@@ -34,16 +34,23 @@ resource "null_resource" "argocd_github_app" {
     command = <<EOT
       gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
       
-      # Create GitHub App credentials for ArgoCD
-      kubectl create secret generic github-app-shipzen -n argocd \
-        --from-literal=type=git \
-        --from-literal=url=https://github.com/jeneeldumasia \
-        --from-literal=githubAppID=${var.github_app_id} \
-        --from-literal=githubAppInstallationID=${var.github_app_installation_id} \
-        --from-literal=githubAppPrivateKey="${var.github_app_private_key}" \
-        --dry-run=client -o yaml | kubectl apply -f -
-      
-      kubectl label secret github-app-shipzen -n argocd argocd.argoproj.io/secret-type=repository --overwrite
+      # Create GitHub App credentials secret for ArgoCD
+      cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-app-repo-creds
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repo-creds
+stringData:
+  type: git
+  url: https://github.com/jeneeldumasia
+  githubAppID: "${var.github_app_id}"
+  githubAppInstallationID: "${var.github_app_installation_id}"
+  githubAppPrivateKey: |
+${indent(4, var.github_app_private_key)}
+EOF
     EOT
   }
   
@@ -66,7 +73,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: "git@github.com:jeneeldumasia/ShipZen-GCP.git"
+    repoURL: "https://github.com/jeneeldumasia/ShipZen-GCP.git"
     targetRevision: HEAD
     path: infra
   destination:
