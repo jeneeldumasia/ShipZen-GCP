@@ -29,7 +29,7 @@ resource "kubernetes_secret" "redis_auth" {
   data = {
     "redis-password" = local.redis_password
   }
-  depends_on = [time_sleep.wait_for_cluster_auth]
+  depends_on = [kubernetes_namespace.shipzen_system, time_sleep.wait_for_cluster_auth]
 }
 
 resource "helm_release" "redis" {

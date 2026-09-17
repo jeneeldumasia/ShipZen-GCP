@@ -7,6 +7,14 @@ locals {
   gar_repository_url    = "${var.gcp_region}-docker.pkg.dev/${var.gcp_project}/${google_artifact_registry_repository.shipzen_builds.repository_id}"
 }
 
+# Create shipzen-system namespace if it doesn't exist
+resource "kubernetes_namespace" "shipzen_system" {
+  depends_on = [time_sleep.wait_for_cluster_auth]
+  metadata {
+    name = "shipzen-system"
+  }
+}
+
 # Secret for shipzen-system namespace (API & Controller)
 resource "kubernetes_secret" "gar_config" {
   metadata {
@@ -20,7 +28,7 @@ resource "kubernetes_secret" "gar_config" {
     project_id        = var.gcp_project
   }
 
-  depends_on = [time_sleep.wait_for_cluster_auth]
+  depends_on = [kubernetes_namespace.shipzen_system, time_sleep.wait_for_cluster_auth]
 }
 
 # Duplicate GAR config into the shipzen-build namespace for builder pods
@@ -52,7 +60,7 @@ resource "kubernetes_secret" "gcs_config" {
     bucket_name = google_storage_bucket.build_logs.name
   }
 
-  depends_on = [time_sleep.wait_for_cluster_auth]
+  depends_on = [kubernetes_namespace.shipzen_system, time_sleep.wait_for_cluster_auth]
 }
 
 # Duplicate GCS config into the shipzen-build namespace for builder pods
