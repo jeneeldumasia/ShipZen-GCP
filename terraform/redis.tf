@@ -81,6 +81,5 @@ resource "helm_release" "redis" {
     value = "redis-master"
   }
 
-  timeout = 900
   depends_on = [time_sleep.wait_for_cluster_auth, kubernetes_secret.redis_auth]
 }
