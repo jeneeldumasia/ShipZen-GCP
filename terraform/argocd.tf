@@ -42,7 +42,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: "https://github.com/jeneeldumasia/ShipZen.git"
+    repoURL: "https://github.com/jeneeldumasia/ShipZen-GCP.git"
     targetRevision: HEAD
     path: infra
   destination:
