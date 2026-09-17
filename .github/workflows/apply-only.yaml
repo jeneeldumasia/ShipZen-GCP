@@ -62,7 +62,14 @@ jobs:
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
-        run: terraform apply -auto-approve tfplan
+        run: |
+          if ! terraform apply -auto-approve tfplan; then
+            echo "::error::Terraform Apply failed! Dumping cluster state for debugging..."
+            kubectl get pods -n shipzen-system || true
+            kubectl describe pods -n shipzen-system || true
+            kubectl get events -n shipzen-system || true
+            exit 1
+          fi
 
       - name: Configure kubectl
         run: |
@@ -70,118 +77,143 @@ jobs:
             --region us-central1 \
             --project ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Cleanup Stuck Webhooks
+        run: |
+          # Only delete specific webhooks known to cause stuck ArgoCD syncs.
+          # Do NOT wipe all webhooks — that would remove Kyverno and other critical ones.
+          kubectl delete validatingwebhookconfigurations shipzen-platform-webhook --ignore-not-found || true
+
       - name: Push Secrets to GCP Secret Manager
         run: |
-          echo "Ensuring secrets exist in GCP Secret Manager..."
-          
+          echo "Pushing GitHub OAuth Secret..."
           gcloud secrets create shipzen-github --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_GITHUB_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | \
             gcloud secrets versions add shipzen-github --data-file=-
 
+          echo "Pushing GitHub Backend App Secret..."
           gcloud secrets create shipzen-github-app --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | \
             gcloud secrets versions add shipzen-github-app --data-file=-
 
+          echo "Pushing AUTH_SECRET..."
           gcloud secrets create shipzen-auth-secret --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | \
             gcloud secrets versions add shipzen-auth-secret --data-file=-
 
+          echo "Pushing Alerts Stub Secret..."
           gcloud secrets create shipzen-alerts --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | \
             gcloud secrets versions add shipzen-alerts --data-file=-
 
       - name: Trigger ArgoCD Sync
         run: |
+          echo "Triggering ArgoCD sync..."
           kubectl patch application shipzen-platform -n argocd \
-            -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge || true
+            -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge 2>/dev/null || true
+          sleep 10
 
       - name: Wait for ArgoCD Sync
         run: |
           echo "Waiting for ArgoCD to sync..."
           for i in {1..30}; do
-            STATUS=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
-            HEALTH=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+            STATUS=$(kubectl get application shipzen-platform -n argocd \
+              -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+            HEALTH=$(kubectl get application shipzen-platform -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
             echo "Sync: $STATUS, Health: $HEALTH"
-            
+
             if [ "$STATUS" == "Synced" ] && [ "$HEALTH" == "Healthy" ]; then
               echo "✅ ArgoCD sync completed successfully!"
               break
             fi
-            
+
             if [ $i -eq 30 ]; then
-              echo "⚠️ ArgoCD sync taking longer than expected, but continuing..."
+              echo "⚠️ ArgoCD sync taking longer than expected, continuing to next step..."
               kubectl describe application shipzen-platform -n argocd || true
             fi
-            
+
             sleep 10
           done
 
       - name: Wait for Load Balancer
         run: |
-          echo "Waiting for Load Balancer to be provisioned..."
+          echo "Waiting for Load Balancer to be provisioned by GCP..."
           ELAPSED=0
-          MAX_WAIT=300
+          MAX_WAIT=600
           NLB_URL=""
-          
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            NLB_URL=$(kubectl get svc -A -o jsonpath="{.items[?(@.spec.type=='LoadBalancer')].status.loadBalancer.ingress[0].ip}" 2>/dev/null | awk '{print $1}')
-            
+            # GCP NLB uses .ip (not .hostname like AWS ALB)
+            NLB_URL=$(kubectl get svc -A \
+              -o jsonpath="{.items[?(@.spec.type=='LoadBalancer')].status.loadBalancer.ingress[0].ip}" \
+              2>/dev/null | awk '{print $1}')
             if [ -n "$NLB_URL" ]; then
               echo "✅ Load Balancer is ready: $NLB_URL"
               break
             fi
-            
-            if [ $ELAPSED -eq 0 ]; then
-              echo "Checking if LoadBalancer service exists..."
-              kubectl get gateway -A || true
-            fi
-            
             echo "Load Balancer not ready yet (${ELAPSED}s/${MAX_WAIT}s)..."
             sleep 10
             ELAPSED=$((ELAPSED+10))
           done
-          
-          if [ -z "$NLB_URL" ]; then
-            echo "⚠️ Load Balancer not ready yet, but deployment may still succeed"
-            echo "Check manually: kubectl get svc -A | grep LoadBalancer"
-            kubectl get application shipzen-platform -n argocd || true
-            kubectl get gateway -A -o yaml || true
-          else
-            echo "NLB_URL=$NLB_URL" >> $GITHUB_ENV
-          fi
 
-      - name: Update Cloudflare DNS (if LoadBalancer ready)
-        if: env.NLB_URL != ''
+          if [ -z "$NLB_URL" ]; then
+            echo "::error::Load Balancer was not provisioned in time. Dumping cluster state..."
+            kubectl get svc -A || true
+            kubectl get gatewayclass -A || true
+            kubectl get gateway -A -o yaml || true
+            kubectl get externalsecret -A -o yaml || true
+            kubectl get secret shipzen-tls-cert -n shipzen-system || true
+            echo "--- ArgoCD App Status ---"
+            kubectl describe application shipzen-platform -n argocd || true
+            echo "--- Kustomize Dry Run ---"
+            kubectl apply -k infra/system --dry-run=server || true
+            kubectl get events -A --sort-by='.lastTimestamp' | tail -n 50 || true
+            exit 1
+          fi
+          echo "NLB_URL=$NLB_URL" >> $GITHUB_ENV
+
+      - name: Automate Cloudflare CNAME
         run: |
-          echo "Updating Cloudflare DNS..."
+          echo "Updating Cloudflare DNS to point to ${{ env.NLB_URL }}..."
           ZONE_NAME="jeneeldumasia.codes"
           RECORDS=("*" "shipzen")
-          
+
           ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
-               -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-               -H "Content-Type: application/json" | jq -r '.result[0].id')
-               
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" | jq -r '.result[0].id')
+
+          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ]; then
+            echo "::error::Could not retrieve Cloudflare Zone ID for $ZONE_NAME"
+            exit 1
+          fi
+
           for RECORD_NAME in "${RECORDS[@]}"; do
             if [ "$RECORD_NAME" == "*" ]; then
               FULL_RECORD_NAME="*.jeneeldumasia.codes"
             else
               FULL_RECORD_NAME="shipzen.jeneeldumasia.codes"
             fi
-            
-            RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$FULL_RECORD_NAME&type=CNAME" \
-                 -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-                 -H "Content-Type: application/json" | jq -r '.result[0].id')
+
+            echo "Processing: $FULL_RECORD_NAME → ${{ env.NLB_URL }}"
+
+            RECORD_ID=$(curl -s -X GET \
+              "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$FULL_RECORD_NAME&type=CNAME" \
+              -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+              -H "Content-Type: application/json" | jq -r '.result[0].id')
+
+            PAYLOAD="{\"type\":\"CNAME\",\"name\":\"${RECORD_NAME}\",\"content\":\"${{ env.NLB_URL }}\",\"ttl\":1,\"proxied\":true}"
 
             if [ -z "$RECORD_ID" ] || [ "$RECORD_ID" == "null" ]; then
               curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-                   -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-                   -H "Content-Type: application/json" \
-                   --data '{"type":"CNAME","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
+                -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+                -H "Content-Type: application/json" \
+                --data "$PAYLOAD"
+              echo "✅ Created CNAME: $RECORD_NAME"
             else
               curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
-                   -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-                   -H "Content-Type: application/json" \
-                   --data '{"type":"CNAME","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
+                -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+                -H "Content-Type: application/json" \
+                --data "$PAYLOAD"
+              echo "✅ Updated CNAME: $RECORD_NAME"
             fi
           done
 
@@ -190,10 +222,7 @@ jobs:
           echo "### Deployment Complete 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Cluster:** shipzen-cluster (us-central1)" >> $GITHUB_STEP_SUMMARY
-          echo "**ArgoCD:** Check sync status with \`kubectl get application shipzen-platform -n argocd\`" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ env.NLB_URL }}" ]; then
-            echo "**Load Balancer:** ${{ env.NLB_URL }}" >> $GITHUB_STEP_SUMMARY
-            echo "**DNS:** shipzen.jeneeldumasia.codes" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**Load Balancer:** Still provisioning, check with \`kubectl get svc -A\`" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "**ArgoCD:** \`kubectl get application shipzen-platform -n argocd\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Load Balancer:** \`${{ env.NLB_URL }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **DNS:** shipzen.jeneeldumasia.codes → ${{ env.NLB_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **TLS:** Cloudflare Origin CA via ESO" >> $GITHUB_STEP_SUMMARY
