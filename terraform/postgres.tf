@@ -120,7 +120,7 @@ resource "kubernetes_secret" "db_credentials" {
     url = "postgresql://${local.pg_username}:${replace(local.pg_password, "@", "%40")}@${local.pg_host}:${local.pg_port}/${local.pg_database}"
   }
 
-  depends_on = [time_sleep.wait_for_cluster_auth]
+  depends_on = [kubernetes_namespace.shipzen_system, time_sleep.wait_for_cluster_auth]
 }
 
 # Duplicate DB credentials into the shipzen-build namespace for the builder pods

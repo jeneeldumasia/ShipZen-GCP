@@ -88,7 +88,7 @@ resource "google_compute_router_nat" "nat" {
 resource "google_container_cluster" "primary" {
   name     = "shipzen-cluster"
   location = var.gcp_region
-  node_locations = ["us-central1-a", "us-central1-b", "us-central1-c"]
+  node_locations = ["us-central1-a"]  # Single zone for dev (was 3 zones)
   network    = google_compute_network.vpc.name
   subnetwork = google_compute_subnetwork.subnet.name
 
@@ -107,11 +107,11 @@ resource "google_container_node_pool" "platform_nodes" {
   name       = "platform-nodes"
   location   = var.gcp_region
   cluster    = google_container_cluster.primary.name
-  node_count = 1  # Per zone, so 3 total across us-central1-a, b, c
+  node_count = 1  # Single zone, 1 node total for dev
 
   autoscaling {
-    min_node_count = 1  # Per zone
-    max_node_count = 3  # Per zone, max 9 nodes total
+    min_node_count = 1  # Single zone
+    max_node_count = 3  # Single zone, max 3 nodes total for burst
   }
 
   node_config {
