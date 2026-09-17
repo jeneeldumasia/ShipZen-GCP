@@ -45,7 +45,7 @@ jobs:
         env:
           GAR_REGISTRY: "us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}"
         run: |
-          IMAGE=$GAR_REGISTRY/shipzen/${{ matrix.component }}
+          IMAGE=$GAR_REGISTRY/shipzen-platform/${{ matrix.component }}
           TAG=$(git rev-parse --short HEAD)
           docker build \
             -t $IMAGE:sha-$TAG \
@@ -104,7 +104,7 @@ jobs:
           for c in ["api", "ui", "controller", "worker", "builder"]:
               content = re.sub(
                   rf'(name: shipzen-{c}\n\s+newName:) [^\n]+',
-                  rf'\1 {registry}/shipzen/{c}',
+                  rf'\1 {registry}/shipzen-platform/{c}',
                   content
               )
 
