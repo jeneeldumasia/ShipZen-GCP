@@ -1,12 +1,6 @@
 name: Deploy Platform Infra
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/deploy.yaml'
   workflow_dispatch:
 
 permissions:
