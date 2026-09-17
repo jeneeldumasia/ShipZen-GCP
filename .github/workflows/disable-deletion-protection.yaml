@@ -1,0 +1,68 @@
+name: Disable Deletion Protection
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  disable-protection:
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Disable Deletion Protection
+        working-directory: ./terraform
+        env:
+          TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_gcp_region: us-central1
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Applying terraform to update deletion_protection to false..."
+          terraform apply -auto-approve \
+            -target=google_container_cluster.primary \
+            -var="gcp_project=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="gcp_region=us-central1"
+
+      - name: Verify Protection Disabled
+        run: |
+          gcloud container clusters describe shipzen-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }} \
+            --format="get(deletionProtection)"
+
+      - name: Summary
+        run: |
+          echo "### Deletion Protection Disabled ✅" >> $GITHUB_STEP_SUMMARY
+          echo "You can now run the **Destroy and Redeploy Cluster** workflow." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Go to: https://github.com/${{ github.repository }}/actions/workflows/destroy-and-deploy.yaml" >> $GITHUB_STEP_SUMMARY
