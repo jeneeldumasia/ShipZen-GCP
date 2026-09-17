@@ -42,6 +42,14 @@ resource "helm_release" "redis" {
   version          = "27.0.8"
   namespace        = "shipzen-system"
   create_namespace = true
+  
+  # Add retries for transient API server errors
+  wait          = true
+  wait_for_jobs = true
+  timeout       = 900
+  
+  # Disable hooks that can fail during high load
+  disable_webhooks = true
 
   set {
     name  = "architecture"
@@ -73,5 +81,6 @@ resource "helm_release" "redis" {
     value = "redis-master"
   }
 
+  timeout = 900
   depends_on = [time_sleep.wait_for_cluster_auth, kubernetes_secret.redis_auth]
 }
