@@ -36,6 +36,13 @@ variable "cloudflare_api_token" {
   sensitive   = true
 }
 
+variable "github_token" {
+  description = "GitHub Personal Access Token for ArgoCD to access private repositories. Needs 'repo' scope."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "platform_machine_type" {
   description = "GCE machine type for the platform node pool"
   type        = string

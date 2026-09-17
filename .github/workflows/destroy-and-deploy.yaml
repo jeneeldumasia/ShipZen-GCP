@@ -1,21 +1,21 @@
-name: Deploy Platform Infra
+name: Destroy and Redeploy Cluster
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/deploy.yaml'
   workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm cluster destruction'
+        required: true
+        type: string
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  terraform-deploy:
+  destroy-and-deploy:
     runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_destroy == 'DESTROY'
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
@@ -34,7 +34,6 @@ jobs:
         with:
           install_components: 'gke-gcloud-auth-plugin'
 
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -44,21 +43,7 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
-
-
-      - name: Cleanup Stuck Webhooks
-        working-directory: ./terraform
-        run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} || true
-          # Only delete specific webhooks known to cause stuck ArgoCD syncs.
-          # Do NOT use --all: that would delete Kyverno and cert-manager webhooks too.
-          # shipzen-platform-webhook: ArgoCD application webhook that sometimes sticks post-deploy.
-          kubectl delete validatingwebhookconfigurations shipzen-platform-webhook --ignore-not-found || true
-          # Add further names here with an inline comment explaining why each is targeted.
-
-
-
-      - name: Terraform Plan
+      - name: Terraform Destroy
         working-directory: ./terraform
         env:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
@@ -67,13 +52,12 @@ jobs:
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
           TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
-        run: terraform plan -out=tfplan
+        run: terraform destroy -auto-approve
 
-      - name: Configure kubectl
-        run: gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
-        continue-on-error: true
+      - name: Wait for cleanup
+        run: sleep 30
 
-      - name: Terraform Apply
+      - name: Terraform Apply (Recreate)
         working-directory: ./terraform
         env:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
@@ -83,13 +67,8 @@ jobs:
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
           TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! terraform apply -auto-approve tfplan; then
-            echo "::error::Terraform Apply failed! Dumping observability cluster state for debugging..."
-            kubectl get pods -n observability || true
-            kubectl describe pods -n observability || true
-            kubectl get events -n observability || true
-            exit 1
-          fi
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan
 
       - name: Push Secrets to GCP Secret Manager
         run: |
@@ -109,10 +88,14 @@ jobs:
           gcloud secrets create shipzen-alerts --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | gcloud secrets versions add shipzen-alerts --data-file=-
 
+      - name: Configure kubectl
+        run: gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Trigger ArgoCD Sync
+        run: |
           echo "Triggering ArgoCD sync..."
           kubectl patch application shipzen-platform -n argocd -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge 2>/dev/null || true
           sleep 10
-
 
       - name: Wait for Load Balancer
         run: |
@@ -121,7 +104,6 @@ jobs:
           MAX_WAIT=600
           NLB_URL=""
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            # Scan all namespaces for the LoadBalancer service. GCP LB uses .ip instead of .hostname
             NLB_URL=$(kubectl get svc -A -o jsonpath="{.items[?(@.spec.type=='LoadBalancer')].status.loadBalancer.ingress[0].ip}" 2>/dev/null | awk '{print $1}')
             if [ -n "$NLB_URL" ]; then
               echo "Load Balancer is ready: $NLB_URL"
@@ -132,37 +114,23 @@ jobs:
             ELAPSED=$((ELAPSED+10))
           done
           if [ -z "$NLB_URL" ]; then
-            echo "Error: Load Balancer was not provisioned in time. Dumping cluster state for debugging..."
+            echo "Error: Load Balancer was not provisioned in time."
             kubectl get svc -A || true
-            kubectl get gatewayclass -A || true
-            kubectl get gateway -A -o yaml || true
-            kubectl get externalsecret -A -o yaml || true
-            kubectl get secret shipzen-tls-cert -n shipzen-system || true
-            echo "--- DESCRIBING ARGOCD APP TO FIND SYNC ERRORS ---"
             kubectl describe application shipzen-platform -n argocd || true
-            echo "--- DRY RUNNING KUSTOMIZE TO FIND VALIDATION ERRORS ---"
-            kubectl apply -k infra/system --dry-run=server || true
-            kubectl get events -A --sort-by='.lastTimestamp' | tail -n 50 || true
             exit 1
           fi
           echo "NLB_URL=$NLB_URL" >> $GITHUB_ENV
 
-      - name: Automate Cloudflare CNAME
+      - name: Update Cloudflare DNS
         run: |
           echo "Updating Cloudflare DNS..."
           ZONE_NAME="jeneeldumasia.codes"
           RECORDS=("*" "shipzen")
           
-          # Get Zone ID
           ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
                -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                -H "Content-Type: application/json" | jq -r '.result[0].id')
                
-          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ]; then
-            echo "Error: Could not retrieve Zone ID for $ZONE_NAME. Please check your Cloudflare API token permissions."
-            exit 1
-          fi
-
           for RECORD_NAME in "${RECORDS[@]}"; do
             if [ "$RECORD_NAME" == "*" ]; then
               FULL_RECORD_NAME="*.jeneeldumasia.codes"
@@ -170,9 +138,6 @@ jobs:
               FULL_RECORD_NAME="shipzen.jeneeldumasia.codes"
             fi
             
-            echo "Processing record: $FULL_RECORD_NAME"
-            
-            # Check if record exists
             RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$FULL_RECORD_NAME&type=CNAME" \
                  -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                  -H "Content-Type: application/json" | jq -r '.result[0].id')
@@ -182,19 +147,15 @@ jobs:
                    -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                    -H "Content-Type: application/json" \
                    --data '{"type":"CNAME","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
-              echo "Created new CNAME record $RECORD_NAME."
             else
               curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
                    -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                    -H "Content-Type: application/json" \
                    --data '{"type":"CNAME","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
-              echo "Updated existing CNAME record $RECORD_NAME."
             fi
           done
 
-          echo "### Deployment Fully Automated :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "### Cluster Rebuilt Successfully :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "**Network Load Balancer:** \`${{ env.NLB_URL }}\`" >> $GITHUB_STEP_SUMMARY
-          echo ":white_check_mark: **DNS Record:** Automated via Cloudflare API" >> $GITHUB_STEP_SUMMARY
-          echo ":white_check_mark: **TLS Certificate:** Cloudflare Origin CA synced via ESO" >> $GITHUB_STEP_SUMMARY
-
-# Force trigger pipeline
+          echo "**Configuration:** Single zone (us-central1-a)" >> $GITHUB_STEP_SUMMARY
+          echo "**Cost:** ~\$121/month" >> $GITHUB_STEP_SUMMARY
