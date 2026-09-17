@@ -52,7 +52,9 @@ jobs:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
-          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+          TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
+          TF_VAR_github_app_installation_id: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+          TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: terraform destroy -auto-approve
 
       - name: Wait for cleanup
@@ -66,7 +68,9 @@ jobs:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
-          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+          TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
+          TF_VAR_github_app_installation_id: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+          TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: |
           terraform plan -out=tfplan
           terraform apply -auto-approve tfplan

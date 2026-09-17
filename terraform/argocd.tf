@@ -26,6 +26,30 @@ resource "helm_release" "argocd" {
   depends_on = [time_sleep.wait_for_cluster_auth, helm_release.kube_prometheus_stack]
 }
 
+# Configure ArgoCD with GitHub App credentials (preferred method)
+resource "null_resource" "argocd_github_app" {
+  count = var.github_app_id != "" ? 1 : 0
+  
+  provisioner "local-exec" {
+    command = <<EOT
+      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
+      
+      # Create GitHub App credentials for ArgoCD
+      kubectl create secret generic github-app-shipzen -n argocd \
+        --from-literal=type=git \
+        --from-literal=url=https://github.com/jeneeldumasia \
+        --from-literal=githubAppID=${var.github_app_id} \
+        --from-literal=githubAppInstallationID=${var.github_app_installation_id} \
+        --from-literal=githubAppPrivateKey="${var.github_app_private_key}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+      
+      kubectl label secret github-app-shipzen -n argocd argocd.argoproj.io/secret-type=repository --overwrite
+    EOT
+  }
+  
+  depends_on = [helm_release.argocd]
+}
+
 resource "null_resource" "argocd_apps" {
   triggers = {
     always_run = "${timestamp()}"
