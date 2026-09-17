@@ -129,6 +129,11 @@ resource "google_container_node_pool" "platform_nodes" {
       mode = "GKE_METADATA"
     }
     
+    # OAuth scopes for node service account
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform",  # Full GCP API access (includes GAR)
+    ]
+    
     # Use spot instances for even more savings (optional, can be preempted)
     # spot = true
   }
