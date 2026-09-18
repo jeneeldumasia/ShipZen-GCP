@@ -1,6 +1,9 @@
 name: Infra Teardown
+
 on:
-  workflow_dispatch: # Manual trigger only to prevent accidental destruction
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'  # Auto-destroy every 6 hours
 
 permissions:
   id-token: write
@@ -9,14 +12,11 @@ permissions:
 jobs:
   terraform-destroy:
     runs-on: ubuntu-latest
-    env:
-      cluster_not_found: 'false'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
-        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -39,185 +39,191 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      # ── Phase 1: Drain Kubernetes resources gracefully (skip if cluster gone) ─
+
+      - name: Check if cluster exists
+        id: check_cluster
+        run: |
+          if gcloud container clusters describe shipzen-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }} \
+            --quiet 2>/dev/null; then
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+            echo "Cluster not found, skipping Kubernetes teardown steps."
+          fi
+
       - name: Configure kubectl
+        if: steps.check_cluster.outputs.cluster_exists == 'true'
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} || echo "cluster_not_found=true" >> $GITHUB_ENV
+          gcloud container clusters get-credentials shipzen-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Enable GitOps Teardown Mode
-        if: env.cluster_not_found != 'true'
+      - name: Switch ArgoCD to teardown mode
+        if: steps.check_cluster.outputs.cluster_exists == 'true'
         run: |
-          kubectl patch application shipzen-platform \
-            -n argocd \
+          kubectl patch application shipzen-platform -n argocd \
             --type merge \
-            -p '{"spec":{"source":{"path":"infra/teardown"},"syncPolicy":{"automated":{"prune":true,"selfHeal":true},"syncOptions":["RespectIgnoreDifferences=true"]}}}' \
-          || { echo "ArgoCD application not found."; exit 1; }
+            -p '{"spec":{"source":{"path":"infra/teardown"},"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' \
+            2>/dev/null || echo "ArgoCD application not found, skipping."
 
-      - name: Trigger ArgoCD Prune Sync
-        if: env.cluster_not_found != 'true'
-        run: |
-          kubectl patch application shipzen-platform \
-            -n argocd \
+          # Trigger a prune sync
+          kubectl patch application shipzen-platform -n argocd \
             --type merge \
-            -p '{"operation":{"sync":{"prune":true,"syncOptions":["RespectIgnoreDifferences=true"]}}}'
+            -p '{"operation":{"sync":{"prune":true}}}' \
+            2>/dev/null || true
 
-      - name: Wait for ArgoCD Teardown Sync
-        if: env.cluster_not_found != 'true'
+      - name: Wait for Gateways and LoadBalancers to drain
+        if: steps.check_cluster.outputs.cluster_exists == 'true'
         run: |
-          echo "Waiting for ArgoCD to prune resources from infra/teardown..."
-          MAX_WAIT=900
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            APP_PATH=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.spec.source.path}' 2>/dev/null || echo "")
-            SYNC_STATUS=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
-            OP_PHASE=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "")
-
-            if [ "$APP_PATH" = "infra/teardown" ] && [ "$SYNC_STATUS" = "Synced" ] && { [ -z "$OP_PHASE" ] || [ "$OP_PHASE" = "Succeeded" ]; }; then
-              echo "ArgoCD teardown sync completed."
+          echo "Waiting for LoadBalancer services and Gateways to be pruned..."
+          for i in $(seq 1 60); do
+            LB=$(kubectl get svc -A -o json 2>/dev/null \
+              | jq '[.items[] | select(.spec.type=="LoadBalancer")] | length')
+            GW=$(kubectl get gateway -A --no-headers 2>/dev/null | wc -l || echo 0)
+            echo "LB services: $LB  Gateways: $GW  (attempt $i/60)"
+            if [ "$LB" -eq 0 ] && [ "$GW" -eq 0 ]; then
+              echo "All LB/Gateway resources drained."
               break
             fi
-
-            echo "ArgoCD not ready yet (path=$APP_PATH, sync=$SYNC_STATUS, phase=$OP_PHASE) (${ELAPSED}s/${MAX_WAIT}s)"
             sleep 10
-            ELAPSED=$((ELAPSED+10))
           done
 
-          if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "Timed out waiting for ArgoCD teardown sync."
-            kubectl get application shipzen-platform -n argocd -o yaml || true
-            exit 1
-          fi
-
-      - name: Wait for Kubernetes LB Resources to Drain
-        if: env.cluster_not_found != 'true'
+      - name: Force uninstall webhooks and Helm releases
+        if: steps.check_cluster.outputs.cluster_exists == 'true'
         run: |
-          echo "Waiting for LoadBalancer/Ingress resources to be removed..."
-          MAX_WAIT=900
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            LB_COUNT=$(kubectl get svc -A -o json | jq '[.items[] | select(.spec.type=="LoadBalancer")] | length')
-            INGRESS_COUNT=$(kubectl get ingress -A --no-headers 2>/dev/null | wc -l || true)
-            GATEWAY_COUNT=$(kubectl get gateways.gateway.networking.k8s.io -A --no-headers 2>/dev/null | wc -l || true)
-            HTTPROUTE_COUNT=$(kubectl get httproutes.gateway.networking.k8s.io -A --no-headers 2>/dev/null | wc -l || true)
+          # Remove Kyverno and KEDA without hooks to avoid webhook deadlocks
+          helm uninstall kyverno-policies -n kyverno --no-hooks --ignore-not-found 2>/dev/null || true
+          helm uninstall kyverno           -n kyverno --no-hooks --ignore-not-found 2>/dev/null || true
+          helm uninstall keda              -n keda    --no-hooks --ignore-not-found 2>/dev/null || true
 
-            echo "Remaining: LB services=$LB_COUNT, ingresses=$INGRESS_COUNT, gateways=$GATEWAY_COUNT, httproutes=$HTTPROUTE_COUNT"
+          # Wipe all admission webhooks — prevents stuck deletes
+          kubectl delete validatingwebhookconfigurations --all --ignore-not-found 2>/dev/null || true
+          kubectl delete mutatingwebhookconfigurations   --all --ignore-not-found 2>/dev/null || true
 
-            if [ "$LB_COUNT" -eq 0 ] && [ "$INGRESS_COUNT" -eq 0 ] && [ "$GATEWAY_COUNT" -eq 0 ] && [ "$HTTPROUTE_COUNT" -eq 0 ]; then
-              echo "Kubernetes network-entry resources are gone."
-              break
-            fi
-
-            sleep 10
-            ELAPSED=$((ELAPSED+10))
+      - name: Release stuck namespace finalizers
+        if: steps.check_cluster.outputs.cluster_exists == 'true'
+        run: |
+          for ns in $(kubectl get ns --no-headers 2>/dev/null | awk '$2=="Terminating"{print $1}'); do
+            echo "Releasing finalizer on stuck namespace: $ns"
+            kubectl get ns "$ns" -o json \
+              | jq '.spec.finalizers=[]' \
+              | kubectl replace --raw /api/v1/namespaces/"$ns"/finalize -f - || true
           done
 
-          if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "Timed out waiting for Kubernetes LB resources to drain."
-            kubectl get svc -A || true
-            kubectl get ingress -A || true
-            kubectl get gateways.gateway.networking.k8s.io -A || true
-            kubectl get httproutes.gateway.networking.k8s.io -A || true
-            exit 1
-          fi
+      # ── Phase 2: Clean up GCP network artifacts not managed by Terraform ──────
+
+      - name: Force delete GKE-owned GCP network artifacts
+        # GKE creates firewall rules, forwarding rules, backend services, and
+        # health checks outside of Terraform state. If these exist when Terraform
+        # tries to delete the VPC it fails with "network resource already in use".
+        run: |
+          PROJECT="${{ secrets.GCP_PROJECT_ID }}"
+          REGION="us-central1"
+
+          echo "=== Deleting GKE firewall rules on shipzen-vpc ==="
+          FIREWALLS=$(gcloud compute firewall-rules list \
+            --filter="network~'shipzen-vpc'" \
+            --format="value(name)" \
+            --project="$PROJECT" 2>/dev/null || true)
+          for fw in $FIREWALLS; do
+            echo "  Deleting firewall: $fw"
+            gcloud compute firewall-rules delete "$fw" --quiet --project="$PROJECT" || true
+          done
+
+          echo "=== Deleting k8s-* forwarding rules in $REGION ==="
+          FWD_RULES=$(gcloud compute forwarding-rules list \
+            --filter="name~'^k8s-'" \
+            --regions="$REGION" \
+            --format="value(name)" \
+            --project="$PROJECT" 2>/dev/null || true)
+          for fr in $FWD_RULES; do
+            echo "  Deleting forwarding rule: $fr"
+            gcloud compute forwarding-rules delete "$fr" \
+              --region="$REGION" --quiet --project="$PROJECT" || true
+          done
+
+          echo "=== Deleting k8s-* global backend services ==="
+          BACKENDS=$(gcloud compute backend-services list \
+            --filter="name~'^k8s-'" \
+            --format="value(name)" \
+            --project="$PROJECT" 2>/dev/null || true)
+          for bs in $BACKENDS; do
+            echo "  Deleting backend service: $bs"
+            gcloud compute backend-services delete "$bs" \
+              --global --quiet --project="$PROJECT" || true
+          done
+
+          echo "=== Deleting k8s-* health checks ==="
+          HCS=$(gcloud compute health-checks list \
+            --filter="name~'^k8s-'" \
+            --format="value(name)" \
+            --project="$PROJECT" 2>/dev/null || true)
+          for hc in $HCS; do
+            echo "  Deleting health check: $hc"
+            gcloud compute health-checks delete "$hc" \
+              --global --quiet --project="$PROJECT" || true
+          done
+
+          echo "=== Deleting k8s-* target pools (legacy LB) ==="
+          TPS=$(gcloud compute target-pools list \
+            --filter="name~'^k8s-'" \
+            --regions="$REGION" \
+            --format="value(name)" \
+            --project="$PROJECT" 2>/dev/null || true)
+          for tp in $TPS; do
+            echo "  Deleting target pool: $tp"
+            gcloud compute target-pools delete "$tp" \
+              --region="$REGION" --quiet --project="$PROJECT" || true
+          done
+
+          echo "Waiting 20s for GCP to process deletions..."
+          sleep 20
+
+          echo "=== Remaining artifacts (should be empty) ==="
+          gcloud compute firewall-rules list \
+            --filter="network~'shipzen-vpc'" \
+            --format="table(name)" \
+            --project="$PROJECT" 2>/dev/null || true
+
+      # ── Phase 3: Cloudflare DNS cleanup ──────────────────────────────────────
 
       - name: Cleanup Cloudflare DNS
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          echo "Cleaning up Cloudflare DNS records..."
           ZONE_NAME="jeneeldumasia.codes"
-          
-          ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
-               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-               -H "Content-Type: application/json" | jq -r '.result[0].id')
-               
-          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ]; then
-            echo "Could not retrieve Zone ID, skipping DNS cleanup."
+          ZONE_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            | jq -r '.result[0].id')
+
+          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "null" ]; then
+            echo "Could not get Cloudflare zone ID, skipping DNS cleanup."
             exit 0
           fi
 
+          echo "Cleaning up shipzen DNS records in zone $ZONE_ID..."
           PAGE=1
           while true; do
-            RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?page=$PAGE&per_page=100" \
-                 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-                 -H "Content-Type: application/json")
-            
-            HAS_RESULTS=$(echo "$RECORDS" | jq -r '.result | length')
-            if [ "$HAS_RESULTS" -eq "0" ]; then
-              break
-            fi
+            RECORDS=$(curl -s \
+              "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?page=$PAGE&per_page=100" \
+              -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}")
 
-            echo "$RECORDS" | jq -c '.result[] | select(.name | contains("shipzen")) | {id: .id, name: .name}' | while read row; do
-              RECORD_ID=$(echo "$row" | jq -r '.id')
-              RECORD_NAME=$(echo "$row" | jq -r '.name')
-              if [ -n "$RECORD_ID" ] && [ "$RECORD_ID" != "null" ]; then
-                echo "Deleting DNS record $RECORD_NAME (ID: $RECORD_ID)"
-                curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
-                   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-                   -H "Content-Type: application/json"
-              fi
+            COUNT=$(echo "$RECORDS" | jq '.result | length')
+            [ "$COUNT" -eq 0 ] && break
+
+            echo "$RECORDS" | jq -r '.result[] | select(.name | test("shipzen|jeneeldumasia")) | .id + " " + .name' \
+            | while read RID RNAME; do
+              echo "  Deleting DNS: $RNAME ($RID)"
+              curl -s -X DELETE \
+                "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RID" \
+                -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" | jq -r '.success'
             done
-            PAGE=$((PAGE+1))
+
+            PAGE=$((PAGE + 1))
           done
 
-      - name: Force Uninstall Problematic Helm Releases
-        if: env.cluster_not_found != 'true'
-        run: |
-          echo "Force uninstalling Kyverno without hooks..."
-          helm uninstall kyverno-policies -n kyverno --no-hooks --ignore-not-found || true
-          helm uninstall kyverno -n kyverno --no-hooks --ignore-not-found || true
-          echo "Force uninstalling KEDA without hooks..."
-          helm uninstall keda -n keda --no-hooks --ignore-not-found || true
-          echo "Deleting all validating and mutating webhooks to prevent deadlocks..."
-          kubectl delete validatingwebhookconfigurations --all --ignore-not-found=true || true
-          kubectl delete mutatingwebhookconfigurations --all --ignore-not-found=true || true
-
-      - name: Cleanup Stuck Namespaces
-        if: env.cluster_not_found != 'true'
-        run: |
-          for ns in $(kubectl get ns | grep Terminating | awk '{print $1}'); do
-            echo "Force deleting stuck namespace: $ns"
-            kubectl get ns "$ns" -o json | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/"$ns"/finalize -f - || true
-          done
-
-      - name: Wait for GKE Network Artifacts Cleanup
-        if: env.cluster_not_found != 'true'
-        run: |
-          echo "Waiting for GKE-managed network artifacts before terraform destroy..."
-          MAX_WAIT=900
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            FIREWALL_COUNT=$(gcloud compute firewall-rules list \
-              --filter="network~'shipzen-vpc' AND name~'^k8s-'" \
-              --format="value(name)" | wc -l)
-            FORWARDING_COUNT=$(gcloud compute forwarding-rules list \
-              --filter="name~'^k8s-' AND network~'shipzen-vpc'" \
-              --format="value(name)" | wc -l)
-            BACKEND_COUNT=$(gcloud compute backend-services list \
-              --filter="name~'^k8s-'" \
-              --format="value(name)" | wc -l)
-            HEALTHCHECK_COUNT=$(gcloud compute health-checks list \
-              --filter="name~'^k8s-'" \
-              --format="value(name)" | wc -l)
-
-            echo "Remaining GKE artifacts: firewalls=$FIREWALL_COUNT forwarding_rules=$FORWARDING_COUNT backend_services=$BACKEND_COUNT health_checks=$HEALTHCHECK_COUNT"
-
-            if [ "$FIREWALL_COUNT" -eq 0 ] && [ "$FORWARDING_COUNT" -eq 0 ] && [ "$BACKEND_COUNT" -eq 0 ] && [ "$HEALTHCHECK_COUNT" -eq 0 ]; then
-              echo "GKE network artifacts are cleaned up."
-              break
-            fi
-
-            sleep 15
-            ELAPSED=$((ELAPSED+15))
-          done
-
-          if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "Timed out waiting for GKE network artifacts cleanup."
-            gcloud compute firewall-rules list --filter="network~'shipzen-vpc' AND name~'^k8s-'" --format="table(name,network,direction,priority)"
-            gcloud compute forwarding-rules list --filter="name~'^k8s-' AND network~'shipzen-vpc'" --format="table(name,region,IPAddress,IPProtocol,network)"
-            gcloud compute backend-services list --filter="name~'^k8s-'" --format="table(name,protocol)"
-            gcloud compute health-checks list --filter="name~'^k8s-'" --format="table(name,type)"
-            exit 1
-          fi
+      # ── Phase 4: Terraform destroy ────────────────────────────────────────────
 
       - name: Terraform Destroy
         working-directory: ./terraform
@@ -231,3 +237,9 @@ jobs:
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: terraform destroy -auto-approve
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Teardown Complete 🗑️" >> $GITHUB_STEP_SUMMARY
+          echo "All ShipZen GCP infrastructure has been destroyed." >> $GITHUB_STEP_SUMMARY
