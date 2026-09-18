@@ -194,5 +194,10 @@ resource "helm_release" "external_dns" {
     value = "shipzen-cluster"
   }
 
+  set {
+    name  = "extraArgs[0]"
+    value = "--cloudflare-proxied"
+  }
+
   depends_on = [time_sleep.wait_for_cluster_auth, null_resource.gateway_api_crds]
 }
