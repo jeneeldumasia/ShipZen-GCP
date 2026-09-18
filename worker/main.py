@@ -339,7 +339,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         os.makedirs(workspace, exist_ok=True)
         subprocess.run(["git", "clone", "--depth=1", "--filter=blob:none", "--sparse", "--branch",
                        branch, clone_url, workspace], check=True, timeout=120)
-        subprocess.run(["git", "sparse-checkout", "set", "shipzen.yaml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
+        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "--skip-checks", "shipzen.yaml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
 
         # Check overrides
         overrides = {}
