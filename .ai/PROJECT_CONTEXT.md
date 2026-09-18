@@ -42,9 +42,10 @@ When starting a new development session:
 3. Read `.ai/HANDOFF.md`
 4. Read `.ai/TASKS.md`
 5. Read `.ai/DECISIONS.md` when making architectural changes
-6. Identify the specific files relevant to the requested task
-7. Inspect only those files unless broader investigation is necessary
-8. Do NOT perform a full repository scan by default
-9. Treat the source code as authoritative if it conflicts with stale context documentation
-10. Update the relevant `.ai/` files after completing meaningful changes
-11. Commit your changes locally when finished, but do NOT push them. The user will verify and push them.
+6. Read `.ai/RULES.md` for specific engineering guidelines
+7. Identify the specific files relevant to the requested task
+8. Inspect only those files unless broader investigation is necessary
+9. Do NOT perform a full repository scan by default
+10. Treat the source code as authoritative if it conflicts with stale context documentation
+11. Update the relevant `.ai/` files after completing meaningful changes
+12. Commit your changes locally when finished, but do NOT push them. The user will verify and push them.
