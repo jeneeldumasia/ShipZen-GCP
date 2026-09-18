@@ -125,7 +125,7 @@ jobs:
 
           echo "=== Deleting GKE firewall rules on shipzen-vpc ==="
           FIREWALLS=$(gcloud compute firewall-rules list \
-            --filter="network~'shipzen-vpc'" \
+            --filter="network~'shipzen-vpc' OR name~'^k8s-'" \
             --format="value(name)" \
             --project="$PROJECT" 2>/dev/null || true)
           for fw in $FIREWALLS; do
@@ -184,7 +184,7 @@ jobs:
 
           echo "=== Remaining artifacts (should be empty) ==="
           gcloud compute firewall-rules list \
-            --filter="network~'shipzen-vpc'" \
+            --filter="network~'shipzen-vpc' OR name~'^k8s-'" \
             --format="table(name)" \
             --project="$PROJECT" 2>/dev/null || true
 
