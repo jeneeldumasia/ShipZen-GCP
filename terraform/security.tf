@@ -8,6 +8,7 @@ resource "helm_release" "kyverno" {
   chart            = "kyverno"
   namespace        = "kyverno"
   create_namespace = true
+  wait             = true
 
   values = [
     yamlencode({
@@ -29,10 +30,10 @@ resource "helm_release" "kyverno" {
 }
 
 resource "helm_release" "kyverno_policies" {
-  name             = "kyverno-policies"
-  repository       = "https://kyverno.github.io/kyverno/"
-  chart            = "kyverno-policies"
-  namespace        = "kyverno"
+  name       = "kyverno-policies"
+  repository = "https://kyverno.github.io/kyverno/"
+  chart      = "kyverno-policies"
+  namespace  = "kyverno"
 
   create_namespace = true
 

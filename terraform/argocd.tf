@@ -29,7 +29,7 @@ resource "helm_release" "argocd" {
 # Configure ArgoCD with GitHub App credentials (preferred method)
 resource "null_resource" "argocd_github_app" {
   count = var.github_app_id != "" ? 1 : 0
-  
+
   provisioner "local-exec" {
     command = <<EOT
       gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
@@ -55,7 +55,7 @@ KEYEOF
       rm -f /tmp/github-app-key.pem
     EOT
   }
-  
+
   depends_on = [helm_release.argocd]
 }
 

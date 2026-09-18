@@ -51,8 +51,8 @@ resource "google_project_service" "apis" {
     "iamcredentials.googleapis.com", # For Workload Identity Federation
   ])
 
-  project = var.gcp_project
-  service = each.key
+  project            = var.gcp_project
+  service            = each.key
   disable_on_destroy = false
 }
 
@@ -86,15 +86,15 @@ resource "google_compute_router_nat" "nat" {
 
 # ── GKE ───────────────────────────────────────────────────────────────────────
 resource "google_container_cluster" "primary" {
-  name     = "shipzen-cluster"
-  location = var.gcp_region
-  node_locations = ["us-central1-a"]  # Single zone for dev (was 3 zones)
-  network    = google_compute_network.vpc.name
-  subnetwork = google_compute_subnetwork.subnet.name
+  name           = "shipzen-cluster"
+  location       = var.gcp_region
+  node_locations = ["us-central1-a"] # Single zone for dev (was 3 zones)
+  network        = google_compute_network.vpc.name
+  subnetwork     = google_compute_subnetwork.subnet.name
 
   remove_default_node_pool = true
   initial_node_count       = 1
-  deletion_protection      = false  # Allow cluster destruction for rebuild
+  deletion_protection      = false # Allow cluster destruction for rebuild
 
   # Workload Identity enabled for the cluster
   workload_identity_config {
@@ -108,35 +108,55 @@ resource "google_container_node_pool" "platform_nodes" {
   name       = "platform-nodes"
   location   = var.gcp_region
   cluster    = google_container_cluster.primary.name
-  node_count = 1  # Single zone, 1 node total for dev
+  node_count = 1 # Single zone, 1 node total for dev
 
   autoscaling {
-    min_node_count = 1  # Single zone
-    max_node_count = 3  # Single zone, max 3 nodes total for burst
+    min_node_count = 1 # Single zone
+    max_node_count = 3 # Single zone, max 3 nodes total for burst
   }
 
   node_config {
-    machine_type = var.platform_machine_type
-    disk_size_gb = 50  # Smaller disk to save costs
-    disk_type    = "pd-standard"  # Standard HDD instead of SSD
-    
+    machine_type    = var.platform_machine_type
+    disk_size_gb    = 50            # Smaller disk to save costs
+    disk_type       = "pd-standard" # Standard HDD instead of SSD
+    service_account = google_service_account.node_sa.email
+
     labels = {
       "shipzen.jeneeldumasia.codes/node-type" = "platform"
     }
-    
+
     # Enable Workload Identity
     workload_metadata_config {
       mode = "GKE_METADATA"
     }
-    
+
     # OAuth scopes for node service account
     oauth_scopes = [
-      "https://www.googleapis.com/auth/cloud-platform",  # Full GCP API access (includes GAR)
+      "https://www.googleapis.com/auth/cloud-platform", # Full GCP API access (includes GAR)
     ]
-    
+
     # Use spot instances for even more savings (optional, can be preempted)
     # spot = true
   }
+  depends_on = [google_project_iam_member.node_sa_roles]
+}
+
+resource "google_service_account" "node_sa" {
+  account_id   = "shipzen-node-sa"
+  display_name = "ShipZen GKE Node Service Account"
+}
+
+resource "google_project_iam_member" "node_sa_roles" {
+  for_each = toset([
+    "roles/artifactregistry.reader",
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+    "roles/monitoring.viewer",
+    "roles/stackdriver.resourceMetadata.writer"
+  ])
+  project = var.gcp_project
+  role    = each.key
+  member  = "serviceAccount:${google_service_account.node_sa.email}"
 }
 
 data "google_client_config" "default" {}
@@ -175,9 +195,9 @@ resource "random_id" "bucket_suffix" {
 }
 
 resource "google_storage_bucket" "build_logs" {
-  name          = "shipzen-build-logs-${random_id.bucket_suffix.hex}"
-  location      = var.gcp_region
-  force_destroy = true
+  name                        = "shipzen-build-logs-${random_id.bucket_suffix.hex}"
+  location                    = var.gcp_region
+  force_destroy               = true
   uniform_bucket_level_access = true
 
   lifecycle_rule {
@@ -266,7 +286,7 @@ resource "google_secret_manager_secret" "cloudflare_origin_cert" {
 }
 
 resource "google_secret_manager_secret_version" "cloudflare_origin_cert" {
-  secret      = google_secret_manager_secret.cloudflare_origin_cert.id
+  secret = google_secret_manager_secret.cloudflare_origin_cert.id
   secret_data = jsonencode({
     "cert" = cloudflare_origin_ca_certificate.origin_cert.certificate
     "key"  = tls_private_key.origin_cert.private_key_pem

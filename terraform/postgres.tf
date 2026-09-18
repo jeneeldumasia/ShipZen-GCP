@@ -44,7 +44,7 @@ resource "google_sql_database_instance" "postgres" {
   }
 
   deletion_protection = false
-  depends_on = [google_service_networking_connection.private_vpc_connection]
+  depends_on          = [google_service_networking_connection.private_vpc_connection]
 }
 
 resource "google_sql_user" "users" {
@@ -105,7 +105,7 @@ resource "helm_release" "postgresql" {
     value = "0"
   }
 
-  timeout = 900
+  timeout    = 900
   depends_on = [time_sleep.wait_for_cluster_auth]
 }
 

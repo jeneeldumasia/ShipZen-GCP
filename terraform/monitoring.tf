@@ -153,6 +153,6 @@ resource "helm_release" "kube_prometheus_stack" {
     value = "10Gi"
   }
 
-  timeout = 900
+  timeout    = 900
   depends_on = [time_sleep.wait_for_cluster_auth, helm_release.postgresql, helm_release.kyverno_policies]
 }

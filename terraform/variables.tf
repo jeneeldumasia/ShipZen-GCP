@@ -67,7 +67,7 @@ variable "github_app_private_key" {
 variable "platform_machine_type" {
   description = "GCE machine type for the platform node pool"
   type        = string
-  default     = "e2-standard-4"  # 4 vCPUs, 16GB RAM, ~$100/month per node
+  default     = "e2-standard-4" # 4 vCPUs, 16GB RAM, ~$100/month per node
   # Options:
   #   e2-standard-2: 2 vCPUs, 8GB RAM, ~$50/month (budget, may be tight)
   #   e2-standard-4: 4 vCPUs, 16GB RAM, ~$100/month (recommended for dev/test)
