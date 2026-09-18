@@ -23,6 +23,21 @@ terraform apply -var="platform_machine_type=e2-standard-2"  # Even cheaper
 
 ## Step-by-Step: Destroy and Recreate via Terraform
 
+### Recommended: 2-Phase GitOps Teardown (Prevents VPC Delete Failures)
+
+Before running full destroy, first switch ArgoCD into teardown mode so Kubernetes removes cloud-coupled resources (Gateway/Ingress/LoadBalancer paths) and lets GKE clean up `k8s-*` firewall + forwarding + backend/health-check artifacts.
+
+1. Ensure your branch includes `infra/teardown/kustomization.yaml`.
+2. Run the **Infra Teardown** workflow (`.github/workflows/destroy.yaml`).
+3. The workflow now performs:
+   - ArgoCD path switch to `infra/teardown` with prune enabled
+   - Wait for ArgoCD sync/prune completion
+   - Wait for Kubernetes LB/Gateway/Ingress resources to drain
+   - Wait for GKE-managed network artifacts (`k8s-*`) to clear
+   - Then run `terraform destroy`
+
+This avoids the failure: `network ... is already being used by .../firewalls/k8s-*-node-http-hc`.
+
 ### Prerequisites
 
 1. **Set up gcloud in your session:**

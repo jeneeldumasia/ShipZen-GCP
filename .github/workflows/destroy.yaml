@@ -43,14 +43,81 @@ jobs:
         run: |
           gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} || echo "cluster_not_found=true" >> $GITHUB_ENV
 
-      - name: Suspend ArgoCD Auto-Sync
+      - name: Enable GitOps Teardown Mode
         if: env.cluster_not_found != 'true'
         run: |
           kubectl patch application shipzen-platform \
             -n argocd \
             --type merge \
-            -p '{"spec":{"syncPolicy":{"automated":null}}}' \
-          || echo "ArgoCD application not found, continuing..."
+            -p '{"spec":{"source":{"path":"infra/teardown"},"syncPolicy":{"automated":{"prune":true,"selfHeal":true},"syncOptions":["RespectIgnoreDifferences=true"]}}}' \
+          || { echo "ArgoCD application not found."; exit 1; }
+
+      - name: Trigger ArgoCD Prune Sync
+        if: env.cluster_not_found != 'true'
+        run: |
+          kubectl patch application shipzen-platform \
+            -n argocd \
+            --type merge \
+            -p '{"operation":{"sync":{"prune":true,"syncOptions":["RespectIgnoreDifferences=true"]}}}'
+
+      - name: Wait for ArgoCD Teardown Sync
+        if: env.cluster_not_found != 'true'
+        run: |
+          echo "Waiting for ArgoCD to prune resources from infra/teardown..."
+          MAX_WAIT=900
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            APP_PATH=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.spec.source.path}' 2>/dev/null || echo "")
+            SYNC_STATUS=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+            OP_PHASE=$(kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "")
+
+            if [ "$APP_PATH" = "infra/teardown" ] && [ "$SYNC_STATUS" = "Synced" ] && { [ -z "$OP_PHASE" ] || [ "$OP_PHASE" = "Succeeded" ]; }; then
+              echo "ArgoCD teardown sync completed."
+              break
+            fi
+
+            echo "ArgoCD not ready yet (path=$APP_PATH, sync=$SYNC_STATUS, phase=$OP_PHASE) (${ELAPSED}s/${MAX_WAIT}s)"
+            sleep 10
+            ELAPSED=$((ELAPSED+10))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "Timed out waiting for ArgoCD teardown sync."
+            kubectl get application shipzen-platform -n argocd -o yaml || true
+            exit 1
+          fi
+
+      - name: Wait for Kubernetes LB Resources to Drain
+        if: env.cluster_not_found != 'true'
+        run: |
+          echo "Waiting for LoadBalancer/Ingress resources to be removed..."
+          MAX_WAIT=900
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            LB_COUNT=$(kubectl get svc -A -o json | jq '[.items[] | select(.spec.type=="LoadBalancer")] | length')
+            INGRESS_COUNT=$(kubectl get ingress -A --no-headers 2>/dev/null | wc -l || true)
+            GATEWAY_COUNT=$(kubectl get gateways.gateway.networking.k8s.io -A --no-headers 2>/dev/null | wc -l || true)
+            HTTPROUTE_COUNT=$(kubectl get httproutes.gateway.networking.k8s.io -A --no-headers 2>/dev/null | wc -l || true)
+
+            echo "Remaining: LB services=$LB_COUNT, ingresses=$INGRESS_COUNT, gateways=$GATEWAY_COUNT, httproutes=$HTTPROUTE_COUNT"
+
+            if [ "$LB_COUNT" -eq 0 ] && [ "$INGRESS_COUNT" -eq 0 ] && [ "$GATEWAY_COUNT" -eq 0 ] && [ "$HTTPROUTE_COUNT" -eq 0 ]; then
+              echo "Kubernetes network-entry resources are gone."
+              break
+            fi
+
+            sleep 10
+            ELAPSED=$((ELAPSED+10))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "Timed out waiting for Kubernetes LB resources to drain."
+            kubectl get svc -A || true
+            kubectl get ingress -A || true
+            kubectl get gateways.gateway.networking.k8s.io -A || true
+            kubectl get httproutes.gateway.networking.k8s.io -A || true
+            exit 1
+          fi
 
       - name: Cleanup Cloudflare DNS
         env:
@@ -111,6 +178,46 @@ jobs:
             echo "Force deleting stuck namespace: $ns"
             kubectl get ns "$ns" -o json | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/"$ns"/finalize -f - || true
           done
+
+      - name: Wait for GKE Network Artifacts Cleanup
+        if: env.cluster_not_found != 'true'
+        run: |
+          echo "Waiting for GKE-managed network artifacts before terraform destroy..."
+          MAX_WAIT=900
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            FIREWALL_COUNT=$(gcloud compute firewall-rules list \
+              --filter="network~'shipzen-vpc' AND name~'^k8s-'" \
+              --format="value(name)" | wc -l)
+            FORWARDING_COUNT=$(gcloud compute forwarding-rules list \
+              --filter="name~'^k8s-' AND network~'shipzen-vpc'" \
+              --format="value(name)" | wc -l)
+            BACKEND_COUNT=$(gcloud compute backend-services list \
+              --filter="name~'^k8s-'" \
+              --format="value(name)" | wc -l)
+            HEALTHCHECK_COUNT=$(gcloud compute health-checks list \
+              --filter="name~'^k8s-'" \
+              --format="value(name)" | wc -l)
+
+            echo "Remaining GKE artifacts: firewalls=$FIREWALL_COUNT forwarding_rules=$FORWARDING_COUNT backend_services=$BACKEND_COUNT health_checks=$HEALTHCHECK_COUNT"
+
+            if [ "$FIREWALL_COUNT" -eq 0 ] && [ "$FORWARDING_COUNT" -eq 0 ] && [ "$BACKEND_COUNT" -eq 0 ] && [ "$HEALTHCHECK_COUNT" -eq 0 ]; then
+              echo "GKE network artifacts are cleaned up."
+              break
+            fi
+
+            sleep 15
+            ELAPSED=$((ELAPSED+15))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "Timed out waiting for GKE network artifacts cleanup."
+            gcloud compute firewall-rules list --filter="network~'shipzen-vpc' AND name~'^k8s-'" --format="table(name,network,direction,priority)"
+            gcloud compute forwarding-rules list --filter="name~'^k8s-' AND network~'shipzen-vpc'" --format="table(name,region,IPAddress,IPProtocol,network)"
+            gcloud compute backend-services list --filter="name~'^k8s-'" --format="table(name,protocol)"
+            gcloud compute health-checks list --filter="name~'^k8s-'" --format="table(name,type)"
+            exit 1
+          fi
 
       - name: Terraform Destroy
         working-directory: ./terraform
