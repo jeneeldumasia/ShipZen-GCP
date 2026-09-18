@@ -42,12 +42,12 @@ resource "helm_release" "redis" {
   version          = "27.0.8"
   namespace        = "shipzen-system"
   create_namespace = true
-  
+
   # Add retries for transient API server errors
   wait          = true
   wait_for_jobs = true
   timeout       = 900
-  
+
   # Disable hooks that can fail during high load
   disable_webhooks = true
 
@@ -65,12 +65,12 @@ resource "helm_release" "redis" {
     name  = "auth.enabled"
     value = "true"
   }
-  
+
   set {
     name  = "auth.existingSecret"
     value = "redis-auth"
   }
-  
+
   set {
     name  = "auth.existingSecretPasswordKey"
     value = "redis-password"

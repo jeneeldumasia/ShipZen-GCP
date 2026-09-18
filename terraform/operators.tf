@@ -41,6 +41,7 @@ resource "helm_release" "external_secrets" {
   version          = "0.9.20"
   namespace        = "external-secrets"
   create_namespace = true
+  wait             = true
 
   set {
     name  = "installCRDs"
@@ -117,7 +118,7 @@ resource "null_resource" "cluster_secret_store" {
 
       rm -rf ~/.kube/cache
 
-      MAX_RETRIES=10
+      MAX_RETRIES=24
       RETRY_COUNT=0
       until cat <<EOF | kubectl apply --server-side -f -
 apiVersion: external-secrets.io/v1beta1
