@@ -20,7 +20,8 @@ resource "helm_release" "kyverno" {
           "[*/*,kube-public,*]",
           "[*/*,kube-node-lease,*]",
           "[Node,*,*]",
-          "[*/*,observability,*]"
+          "[*/*,observability,*]",
+          "[*/*,shipzen-build,*]"
         ]
       }
     })
