@@ -138,43 +138,68 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
         w = watch.Watch()
         pod_name = None
 
+        pod_spec = None
+
         # Wait for Pod to exist
         for event in w.stream(core_v1.list_namespaced_pod, namespace="shipzen-build", label_selector=f"job-name={job_name}", timeout_seconds=300):
             pod = event['object']
-            status = pod.status.phase
-
-            if status == "Pending":
-                r.publish(f"shipzen:status:{deployment_id}", json.dumps(
-                    {"state": "Queued", "last_error": None}))
-            elif status in ["Running", "Succeeded", "Failed"]:
-                pod_name = pod.metadata.name
-                w.stop()
-                break
+            pod_name = pod.metadata.name
+            pod_spec = pod.spec
+            w.stop()
+            break
 
         if not pod_name:
             raise Exception("Timed out waiting for Pod to be created")
 
         state_machine.update_state(deployment_id, DeploymentState.BUILDING)
 
-        # Wait for container to start generating logs (sometimes there's a slight delay after phase=Running)
-        time.sleep(2)
+        all_containers = []
+        if pod_spec.init_containers:
+            all_containers.extend([c.name for c in pod_spec.init_containers])
+        if pod_spec.containers:
+            all_containers.extend([c.name for c in pod_spec.containers])
 
-        # Stream Logs
         stdout_chunks = []
-        try:
-            log_stream = core_v1.read_namespaced_pod_log(
-                name=pod_name, namespace="shipzen-build", follow=True, _preload_content=False,
-                container=pod.spec.containers[0].name
-            )
-            for line in log_stream:
-                stdout_chunks.append(line)
-                try:
-                    r.publish(f"shipzen:logs:{deployment_id}", line.decode(
-                        'utf-8', errors='replace'))
-                except Exception:
-                    pass
-        except ApiException as e:
-            logger.warning(f"Error reading pod logs: {e}")
+
+        # Stream logs for each container sequentially
+        for container_name in all_containers:
+            # Wait for container to start generating logs
+            container_started = False
+            w2 = watch.Watch()
+            for event in w2.stream(core_v1.list_namespaced_pod, namespace="shipzen-build", field_selector=f"metadata.name={pod_name}", timeout_seconds=600):
+                pod_status = event['object'].status
+                statuses = []
+                if pod_status.init_container_statuses:
+                    statuses.extend(pod_status.init_container_statuses)
+                if pod_status.container_statuses:
+                    statuses.extend(pod_status.container_statuses)
+                
+                for s in statuses:
+                    if s.name == container_name and (s.state.running or s.state.terminated):
+                        container_started = True
+                        break
+                
+                if container_started:
+                    w2.stop()
+                    break
+                    
+            if not container_started:
+                logger.warning(f"Container {container_name} never started.")
+                break
+
+            try:
+                log_stream = core_v1.read_namespaced_pod_log(
+                    name=pod_name, namespace="shipzen-build", follow=True, _preload_content=False,
+                    container=container_name
+                )
+                for line in log_stream:
+                    stdout_chunks.append(line)
+                    try:
+                        r.publish(f"shipzen:logs:{deployment_id}", line.decode('utf-8', errors='replace'))
+                    except Exception:
+                        pass
+            except ApiException as e:
+                logger.warning(f"Error reading pod logs for {container_name}: {e}")
 
         # Wait for Job to complete using Watch API
         job_succeeded = False
