@@ -416,8 +416,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
             if e.status == 409:
                 logger.info(f"Job {job_name} already exists (XAUTOCLAIM redelivery). Continuing to monitor.")
             else:
-                raise Exception(f"Kubernetes Job creation failed (HTTP {e.status}): {e.reason}. "
-                                f"Ensure the 'shipzen-build' namespace exists and the worker ServiceAccount has batch/jobs create permission.")
+                raise Exception(f"Kubernetes Job creation failed (HTTP {e.status}): {e.reason}. Body: {e.body}")
 
         # Call monitor_job synchronously in this thread
         builder_type = selected_builder.name if hasattr(
