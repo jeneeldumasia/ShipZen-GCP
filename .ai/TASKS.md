@@ -41,3 +41,4 @@
 - ~~PAT for GitHub auth~~ (company policy)
 - ~~Auto-deploy on git push~~ (user preference, manual only)
 - ~~Multi-zone for dev~~ (cost savings)
+- ✅ Remove the 'Restart System Pods' button from the admin UI (SystemControls.tsx) because ArgoCD reverts the deployment patches.
