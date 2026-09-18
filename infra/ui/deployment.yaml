@@ -48,13 +48,13 @@ spec:
                 secretKeyRef:
                   name: shipzen-auth-secret
                   key: auth_secret
-            - name: GITHUB_CLIENT_ID
+            - name: OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: shipzen-github
                   key: client_id
                   optional: true
-            - name: GITHUB_CLIENT_SECRET
+            - name: OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: shipzen-github
