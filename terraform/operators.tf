@@ -143,3 +143,56 @@ EOT
   }
   depends_on = [time_sleep.wait_for_eso_crds]
 }
+
+# ── ExternalDNS ──────────────────────────────────────────────────────────────
+resource "helm_release" "external_dns" {
+  name             = "external-dns"
+  repository       = "https://kubernetes-sigs.github.io/external-dns/"
+  chart            = "external-dns"
+  version          = "1.14.3"
+  namespace        = "external-dns"
+  create_namespace = true
+
+  set {
+    name  = "provider"
+    value = "cloudflare"
+  }
+
+  set_sensitive {
+    name  = "env[0].name"
+    value = "CF_API_TOKEN"
+  }
+
+  set_sensitive {
+    name  = "env[0].value"
+    value = var.cloudflare_api_token
+  }
+
+  set {
+    name  = "sources[0]"
+    value = "service"
+  }
+
+  set {
+    name  = "sources[1]"
+    value = "ingress"
+  }
+
+  set {
+    name  = "sources[2]"
+    value = "gateway-httproute"
+  }
+
+  set {
+    name  = "domainFilters[0]"
+    value = "jeneeldumasia.codes"
+  }
+
+  # Ensure it doesn't conflict with other deployments on the same domain
+  set {
+    name  = "txtOwnerId"
+    value = "shipzen-cluster"
+  }
+
+  depends_on = [time_sleep.wait_for_cluster_auth, null_resource.gateway_api_crds]
+}
