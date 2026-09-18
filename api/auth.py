@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 GITHUB_ENABLED = (
     os.getenv("GITHUB_ENABLED", "false").lower() == "true" or
     os.getenv("SHIPZEN_GITHUB_ENABLED", "false").lower() == "true" or
-    bool(os.getenv("SHIPZEN_GITHUB_CLIENT_ID")) or
-    bool(os.getenv("GITHUB_CLIENT_ID"))
+    bool(os.getenv("SHIPZEN_OAUTH_CLIENT_ID")) or
+    bool(os.getenv("OAUTH_CLIENT_ID"))
 )
 
 

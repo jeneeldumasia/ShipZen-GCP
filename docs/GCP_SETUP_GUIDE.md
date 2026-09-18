@@ -58,8 +58,8 @@ To allow GitHub Actions to safely deploy your infrastructure without using stati
    - `PG_PASSWORD`: PostgreSQL password
    - `GRAFANA_PASSWORD`: Grafana admin password
    - `TF_API_TOKEN`: Terraform Cloud API token
-   - `SHIPZEN_GITHUB_CLIENT_ID`: GitHub OAuth App Client ID
-   - `SHIPZEN_GITHUB_CLIENT_SECRET`: GitHub OAuth App Client Secret
+   - `SHIPZEN_OAUTH_CLIENT_ID`: GitHub OAuth App Client ID
+   - `SHIPZEN_OAUTH_CLIENT_SECRET`: GitHub OAuth App Client Secret
    - `SHIPZEN_GITHUB_APP_ID`: GitHub App ID
    - `SHIPZEN_GITHUB_APP_PRIVATE_KEY`: GitHub App Private Key (PEM format)
    - `SHIPZEN_GITHUB_APP_WEBHOOK_SECRET`: GitHub App Webhook Secret
