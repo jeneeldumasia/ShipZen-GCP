@@ -116,9 +116,18 @@ resource "null_resource" "cluster_secret_store" {
         sleep 5
       done
 
+      echo "Waiting for external-secrets webhook pod to be Ready..."
+      kubectl wait --for=condition=Ready pod \
+        -l app.kubernetes.io/name=external-secrets-webhook \
+        -n external-secrets \
+        --timeout=300s || true
+
+      echo "Waiting 10s for webhook endpoint to register..."
+      sleep 10
+
       rm -rf ~/.kube/cache
 
-      MAX_RETRIES=24
+      MAX_RETRIES=36
       RETRY_COUNT=0
       until cat <<EOF | kubectl apply --server-side -f -
 apiVersion: external-secrets.io/v1beta1
