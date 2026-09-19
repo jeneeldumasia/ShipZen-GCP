@@ -18,4 +18,3 @@ resources:
   - grafana-dashboards.yaml
   - github-app-secret.yaml
   - github-secret.yaml
-  - pdb.yaml

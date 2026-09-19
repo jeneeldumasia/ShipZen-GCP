@@ -1,13 +1,13 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: shipzen-controller-pdb
+  name: shipzen-api-pdb
   namespace: shipzen-system
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   selector:
     matchLabels:
-      app: shipzen-controller
+      app: shipzen-api
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -15,7 +15,21 @@ metadata:
   name: shipzen-worker-pdb
   namespace: shipzen-system
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   selector:
     matchLabels:
       app: shipzen-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shipzen-controller-pdb
+  namespace: shipzen-system
+spec:
+  # Controller uses leader election — only 1 pod is active at a time.
+  # minAvailable: 1 ensures a standby is preserved during node drain
+  # so leader failover can happen immediately.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: shipzen-controller

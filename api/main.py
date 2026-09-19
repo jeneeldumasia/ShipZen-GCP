@@ -56,7 +56,7 @@ REDIS_HOST = os.getenv(
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 STREAM_NAME = os.getenv("STREAM_NAME", "deploy_stream")
 
-# ECR repository URL — injected by Terraform at deploy time.
+# GAR registry URL — injected by Terraform at deploy time.
 # The API constructs the full image URI as: <GAR_REGISTRY_URL>/<project_id>:<deployment_id>
 # Users never see or input this value.
 GAR_REGISTRY_URL = os.getenv("GAR_REGISTRY_URL", "")
