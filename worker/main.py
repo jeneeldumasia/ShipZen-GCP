@@ -30,6 +30,11 @@ from metrics import (
     shipzen_deployments_total
 )
 
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('worker')
+
+
 def get_github_app_token(repo_url: str) -> str:
     app_id = os.environ.get("GITHUB_APP_ID")
     private_key = os.environ.get("GITHUB_APP_PRIVATE_KEY")
@@ -82,9 +87,6 @@ def get_github_app_token(repo_url: str) -> str:
         logger.error(f"Error fetching GitHub App token: {e}")
         return None
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('worker')
 
 try:
     k8s_config.load_incluster_config()
@@ -107,7 +109,62 @@ _semaphore = threading.Semaphore(MAX_WORKERS)
 # PERF-04 Fix: Shared module-level Redis client
 _redis_client = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, password=config.REDIS_PASSWORD)
 
+# Health check: tracks when the main loop last successfully iterated.
+# Liveness probe will fail if this hasn't been updated in >120s (stuck loop).
+_last_loop_tick = time.time()
+
 from database import get_db_connection
+
+
+def _start_health_server(port: int = 8000):
+    """
+    Start an HTTP server on `port` that serves:
+      GET /healthz  — 200 if Redis ping succeeds, 503 otherwise.
+      GET /metrics  — Prometheus text format (delegated to prometheus_client).
+    This replaces the bare prometheus_client.start_http_server() so that
+    liveness/readiness probes can hit /healthz and get a meaningful status
+    instead of always-200 Prometheus text regardless of queue health.
+    """
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass  # Suppress noisy access logs from probe traffic
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                try:
+                    _redis_client.ping()
+                    # Also check that main loop is alive (not stuck)
+                    stuck = (time.time() - _last_loop_tick) > 120
+                    if stuck:
+                        self.send_response(503)
+                        self.end_headers()
+                        self.wfile.write(b"ERROR: main loop stuck")
+                    else:
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(b"OK")
+                except Exception as e:
+                    self.send_response(503)
+                    self.end_headers()
+                    self.wfile.write(f"ERROR: {e}".encode())
+            elif self.path in ("/metrics", "/"):
+                output = generate_latest()
+                self.send_response(200)
+                self.send_header("Content-Type", CONTENT_TYPE_LATEST)
+                self.end_headers()
+                self.wfile.write(output)
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logger.info(f"Health+metrics server started on port {port} (/healthz, /metrics)")
+
 
 def record_build(deployment_id: str, gcs_key: str, status: str):
     build_id = str(uuid.uuid4())
@@ -482,7 +539,7 @@ def main():
     signal.signal(signal.SIGTERM, handle_sigterm)
     signal.signal(signal.SIGINT, handle_sigterm)
 
-    start_metrics_server(port=8000)
+    _start_health_server(port=8000)
     queue = QueueClient()
     state_machine = StateMachine()
 
@@ -493,6 +550,7 @@ def main():
     error_backoff = 2
 
     while not _shutdown:
+        global _last_loop_tick
         try:
             claimed = queue.recover_pending_messages()
             if claimed:
@@ -507,7 +565,9 @@ def main():
                     for msg_id, data in msg_list:
                         _semaphore.acquire()
                         _executor.submit(process_message, queue, state_machine, msg_id, data)
-            
+
+            # Heartbeat: update the liveness timestamp on every successful iteration
+            _last_loop_tick = time.time()
             # Reset backoff on success
             error_backoff = 2
         except Exception:

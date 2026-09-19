@@ -31,13 +31,15 @@ resource "null_resource" "argocd_github_app" {
   count = var.github_app_id != "" ? 1 : 0
 
   provisioner "local-exec" {
+    # Pass the private key via env var to avoid writing it to disk.
+    # 'printf' is used (not 'echo') so no trailing newline is appended.
+    environment = {
+      GITHUB_APP_PRIVATE_KEY = var.github_app_private_key
+    }
     command = <<EOT
       gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
       
-      # Create temporary file with private key
-      cat > /tmp/github-app-key.pem <<'KEYEOF'
-${var.github_app_private_key}
-KEYEOF
+      printf '%s' "$GITHUB_APP_PRIVATE_KEY" > /tmp/github-app-key.pem
       
       # Create GitHub App credentials secret for ArgoCD
       kubectl create secret generic github-app-repo-creds -n argocd \
@@ -48,11 +50,10 @@ KEYEOF
         --from-file=githubAppPrivateKey=/tmp/github-app-key.pem \
         --dry-run=client -o yaml | kubectl apply -f -
       
+      rm -f /tmp/github-app-key.pem
+      
       kubectl label secret github-app-repo-creds -n argocd \
         argocd.argoproj.io/secret-type=repo-creds --overwrite
-      
-      # Clean up temp file
-      rm -f /tmp/github-app-key.pem
     EOT
   }
 
@@ -60,8 +61,11 @@ KEYEOF
 }
 
 resource "null_resource" "argocd_apps" {
+  # Trigger re-application only when the cluster or the app source path changes.
+  # Previously used timestamp() which caused unnecessary forced syncs on every apply.
   triggers = {
-    always_run = "${timestamp()}"
+    cluster_name = google_container_cluster.primary.name
+    app_source   = "https://github.com/jeneeldumasia/ShipZen-GCP.git@HEAD:infra"
   }
   provisioner "local-exec" {
     command = <<EOT

@@ -65,3 +65,19 @@
 - **Decision**: ExternalDNS operator reads gateway annotations and updates Cloudflare DNS automatically
 - **Reason**: Eliminates manual DNS update step after LoadBalancer provisioning
 - **Config**: txtOwnerId=shipzen-cluster, domain=jeneeldumasia.codes
+
+## Redis Persistence
+- **Decision**: Enable Redis AOF persistence (`appendfsync everysec`)
+- **Reason**: Without persistence, Redis pod restarts (e.g., node drain) result in the complete loss of all queued deployments in the stream and pub/sub state.
+
+## Webhooks via Transactional Outbox
+- **Decision**: Both webhook handlers insert into the `outbox_events` table instead of calling Redis `xadd` directly.
+- **Reason**: Guarantees atomicity. If Redis is unavailable, the deployment record is still committed, and the outbox relay loop forwards it to the stream upon recovery.
+
+## ArgoCD GitHub App Secret Provisioning
+- **Decision**: Pass the GitHub App private key via an environment variable to the `local-exec` provisioner instead of writing to `/tmp`.
+- **Reason**: Security hardening; prevents the private key from remaining on the CI runner disk if the `kubectl` step fails or during parallel job execution.
+
+## Real Health Checks for Worker
+- **Decision**: Replace default Prometheus `/` endpoint with a custom `/healthz` HTTP server.
+- **Reason**: The original endpoint returned 200 OK unconditionally. The new `/healthz` pings Redis and verifies the main message loop hasn't stalled, allowing Kubernetes liveness probes to actually detect broken workers.

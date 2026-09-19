@@ -58,7 +58,24 @@ resource "helm_release" "redis" {
 
   set {
     name  = "master.persistence.enabled"
-    value = "false"
+    value = "true"
+  }
+
+  set {
+    name  = "master.persistence.size"
+    value = "2Gi"
+  }
+
+  # AOF persistence: fsync every second — at most 1s of data loss on crash.
+  # This is the correct minimum for a queue/message-broker workload.
+  set {
+    name  = "master.extraFlags[0]"
+    value = "--appendonly yes"
+  }
+
+  set {
+    name  = "master.extraFlags[1]"
+    value = "--appendfsync everysec"
   }
 
   set {
