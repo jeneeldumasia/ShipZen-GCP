@@ -3,13 +3,17 @@
 # ============================================================================
 #
 # Provides a complete, offline-capable development environment by replacing
-# every AWS dependency with a local equivalent:
+# cloud dependencies with local equivalents:
 #
-#   AWS S3             → LocalStack  (http://localhost:4566)
-#   AWS Secrets Manager → LocalStack  (http://localhost:4566)
-#   AWS ECR            → registry:2   (http://localhost:5001)
+#   GCP Secret Manager → LocalStack secretsmanager  (http://localhost:4566)
+#   GCP Artifact Registry → registry:2              (http://localhost:5001)
 #   GitHub OAuth       → stub-token bypass (built into auth.py)
 #   Kubernetes (ctrl)  → not started; see LOCAL_DEV.md §Advanced
+#
+# Note: LocalStack's secretsmanager service is used as a local stand-in for
+# GCP Secret Manager. The API's /env and /secrets endpoints will use the
+# GCP Secret Manager client in production; locally, those calls are not
+# exercised unless you set ENVIRONMENT=development and configure a local mock.
 #
 # Usage:
 #   docker compose -f docker-compose.local.yml --env-file .env.local up --build
@@ -23,14 +27,14 @@ name: shipzen-local
 
 # ---------------------------------------------------------------------------
 # Shared environment block — consumed by both `api` and (when added) worker.
-# All AWS calls are redirected to LocalStack via AWS_ENDPOINT_URL.
+# AWS credentials are set here only to satisfy LocalStack's secretsmanager
+# emulator; the production API uses GCP Workload Identity and has no AWS SDK.
 # ---------------------------------------------------------------------------
 x-aws-local: &aws-local
   AWS_ACCESS_KEY_ID: test
   AWS_SECRET_ACCESS_KEY: test
   AWS_DEFAULT_REGION: us-east-1
   # boto3 ≥ 1.28 reads this to override every service endpoint in one shot.
-  # service-specific overrides (AWS_ENDPOINT_URL_S3 etc.) take precedence if set.
   AWS_ENDPOINT_URL: http://localstack:4566
 
 x-db-env: &db-env
@@ -76,8 +80,8 @@ services:
       timeout: 3s
       retries: 12
 
-  # LocalStack — unified emulator for S3 and Secrets Manager.
-  # The free community edition supports both services without any extra config.
+  # LocalStack — secretsmanager emulator used as a local stand-in for
+  # GCP Secret Manager during development (free community edition).
   localstack:
     image: localstack/localstack:3.4
     restart: unless-stopped
@@ -100,7 +104,7 @@ services:
       timeout: 5s
       retries: 20
 
-  # Local OCI container registry — replaces ECR for development builds.
+  # Local OCI container registry — replaces GCP Artifact Registry for development builds.
   # The worker/builder uses this as the push target when ENVIRONMENT=development.
   registry:
     image: registry:2
@@ -129,8 +133,8 @@ services:
       # without a GitHub account. Disabled automatically when ENVIRONMENT=production.
       ENABLE_LOCAL_STUB_AUTH: "true"
       # Point the API at a local registry for any image URI construction.
-      ECR_REPOSITORY_URL: "localhost:5001/shipzen-builds"
-      ECR_REGISTRY: "localhost:5001"
+      GAR_REGISTRY_URL: "localhost:5001/shipzen-builds"
+      GAR_REGISTRY: "localhost:5001"
       # S3 bucket created by init-localstack.sh at stack startup.
       S3_LOG_BUCKET: shipzen-logs
       # Optional: comma-separated emails that receive the 'admin' role on first login.

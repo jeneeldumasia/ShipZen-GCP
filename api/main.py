@@ -57,9 +57,9 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 STREAM_NAME = os.getenv("STREAM_NAME", "deploy_stream")
 
 # ECR repository URL — injected by Terraform at deploy time.
-# The API constructs the full image URI as: <ECR_URL>:<deployment_id>
+# The API constructs the full image URI as: <GAR_REGISTRY_URL>/<project_id>:<deployment_id>
 # Users never see or input this value.
-ECR_REPOSITORY_URL = os.getenv("ECR_REPOSITORY_URL", "")
+GAR_REGISTRY_URL = os.getenv("GAR_REGISTRY_URL", "")
 
 # Repo URL allowlist — same pattern used in builder/main.py
 # MED-03 Fix: Use \A and \Z anchors to prevent newline injection
@@ -97,6 +97,7 @@ def get_redis() -> redis_lib.Redis:
 async def outbox_relay():
     """Continuously poll the outbox_events table and forward to Redis."""
     while True:
+        events = []  # Initialize before try so the sleep check below is always safe
         try:
             with get_connection() as conn:
                 with conn.cursor(cursor_factory=DictCursor) as cur:
@@ -117,11 +118,12 @@ async def outbox_relay():
                         ids = tuple(event['id'] for event in events)
                         cur.execute("DELETE FROM outbox_events WHERE id IN %s;", (ids,))
                     conn.commit()
-            if not events:
-                await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Outbox relay error: {e}")
             await asyncio.sleep(5)
+            continue
+        if not events:
+            await asyncio.sleep(1)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -604,7 +606,7 @@ async def analyze_repo(request: Request, body: AnalyzeRequest, current_user: Use
 def create_deployment(request: Request, project_id: str, body: CreateDeploymentRequest, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
     """
     Submit a deployment request. Only a repo URL is required.
-    - The platform generates the image URI automatically from ECR_REPOSITORY_URL.
+    - The platform generates the image URI automatically from GAR_REGISTRY_URL.
     - Scaling is handled by Karpenter/KEDA — the user does not set replicas.
     - Port defaults to 8080; override only if your app listens elsewhere.
     """
@@ -637,14 +639,14 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
     queued_at = str(time.time())
 
     # Build the image URI — users never input this.
-    # Format: <ecr_repo_url>:<deployment_id>
+    # Format: <gar_registry_url>/<project_id>:<deployment_id>
     # deployment_id as tag gives a unique, traceable, immutable image per deploy.
-    if ECR_REPOSITORY_URL:
-        # Base registry e.g. 123456789012.dkr.ecr.region.amazonaws.com
-        base_registry = ECR_REPOSITORY_URL.split("/")[0]
+    if GAR_REGISTRY_URL:
+        # Base registry e.g. us-central1-docker.pkg.dev/PROJECT_ID/shipzen-platform
+        base_registry = GAR_REGISTRY_URL.split("/")[0]
         image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
     else:
-        # Local dev / testing fallback — no ECR configured
+        # Local dev / testing fallback — no GAR configured
         image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"
 
     try:
@@ -1166,8 +1168,6 @@ def get_env_vars(request: Request, project_id: str, project: dict = Depends(veri
     except Exception as e:
         if "NotFound" in str(e):
             return {"keys": []}
-        raise e
-    except Exception as e:
         logger.error(f"Failed to fetch env vars for {project_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch env vars")
 
@@ -1223,7 +1223,7 @@ def put_env_var(request: Request, project_id: str, body: PutEnvVarRequest, proje
             action="UPDATE_ENV",
             resource_type="project",
             resource_id=project_id,
-            details={"key": key},
+            details={"key": body.key},
         )
         return {"message": "Updated successfully"}
     except Exception as e:
@@ -1263,8 +1263,6 @@ def delete_env_var(request: Request, project_id: str, key: str, project: dict = 
     except Exception as e:
         if "NotFound" in str(e):
             return {"message": "Deleted successfully"}
-        raise e
-    except Exception as e:
         logger.error(f"Failed to delete env var for {project_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete env var")
 
@@ -1337,8 +1335,6 @@ def list_secrets(request: Request, project_id: str, project: dict = Depends(veri
     except Exception as e:
         if "NotFound" in str(e):
             return {"secrets": []}
-        raise e
-    except Exception as e:
         logger.error(f"Failed to list secrets: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve secrets")
 
@@ -1358,10 +1354,8 @@ def put_secret(request: Request, project_id: str, body: PutSecretRequest, projec
         if "NotFound" in str(e):
             pass
         else:
-            raise e
-    except Exception as e:
-        logger.error(f"Failed to fetch secrets for update: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update secrets")
+            logger.error(f"Failed to fetch secrets for update: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update secrets")
         
     secrets_dict[body.key] = body.value
     
@@ -1413,8 +1407,6 @@ def delete_secret(request: Request, project_id: str, key: str, project: dict = D
     except Exception as e:
         if "NotFound" in str(e):
             raise HTTPException(status_code=404, detail="Secret not found")
-        raise e
-    except Exception as e:
         logger.error(f"Failed to delete secret: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete secret")
 
@@ -1478,8 +1470,8 @@ async def github_webhook(request: Request, project_id: str):
 
     deployment_id = str(uuid.uuid4())
     queued_at = str(time.time())
-    if ECR_REPOSITORY_URL:
-        base_registry = ECR_REPOSITORY_URL.split("/")[0]
+    if GAR_REGISTRY_URL:
+        base_registry = GAR_REGISTRY_URL.split("/")[0]
         image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
     else:
         image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"
@@ -1502,24 +1494,9 @@ async def github_webhook(request: Request, project_id: str):
                             status_code=403, detail="Webhook repository does not match project's repository")
                     port = last_deploy["port"]
 
-                cur.execute(
-                    """
-                    INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
-                    """,
-                    (deployment_id, project_id, repo_url, image_uri, 1, port)
-                )
-            conn.commit()
-    except Exception as e:
-        logger.error(
-            f"Failed to process webhook DB insert for {project_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to process webhook")
-
-    # Fix 3: Separate XADD to handle stream failures without swallowing
-    try:
-        r = get_redis()
-        r.xadd(STREAM_NAME, {
+        # Transactional outbox — same pattern as create_deployment.
+        # If Redis is down, outbox_relay will forward the event when Redis recovers.
+        outbox_payload = json.dumps({
             "deployment_id": deployment_id,
             "project_id":    project_id,
             "repo_url":      repo_url,
@@ -1527,22 +1504,19 @@ async def github_webhook(request: Request, project_id: str):
             "image_name":    image_uri,
             "queued_at":     queued_at,
             "retries":       "0",
-        }, maxlen=10000)
+        })
+        cur.execute(
+            "INSERT INTO outbox_events (stream_name, event_type, payload) VALUES (%s, %s, %s);",
+            (STREAM_NAME, "deploy", outbox_payload)
+        )
+        conn.commit()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
-            f"Failed to enqueue webhook deployment {deployment_id}: {e}")
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE deployments SET state = 'Failed', last_error = %s WHERE deployment_id = %s;",
-                        ("Failed to enqueue to stream", deployment_id),
-                    )
-                conn.commit()
-        except Exception:
-            pass
+            f"Failed to process webhook DB insert for {project_id}: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to enqueue webhook deployment")
+            status_code=500, detail="Failed to process webhook")
 
     log_audit_event(
         project_id=project_id,
@@ -1653,42 +1627,34 @@ async def github_app_webhook(request: Request):
 
         deployment_id = str(uuid.uuid4())
         queued_at = str(time.time())
-        if ECR_REPOSITORY_URL:
-            base_registry = ECR_REPOSITORY_URL.split("/")[0]
+        if GAR_REGISTRY_URL:
+            base_registry = GAR_REGISTRY_URL.split("/")[0]
             image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
         else:
-            image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"
-
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
+            image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"                        """
                         INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
                         VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
                         """,
                         (deployment_id, project_id, matched_repo_url, image_uri, 1, port)
                     )
+                    # Transactional outbox — atomic with the deployment INSERT.
+                    outbox_payload = json.dumps({
+                        "deployment_id": deployment_id,
+                        "project_id":    project_id,
+                        "repo_url":      matched_repo_url,
+                        "branch":        branch,
+                        "image_name":    image_uri,
+                        "queued_at":     queued_at,
+                        "retries":       "0",
+                    })
+                    cur.execute(
+                        "INSERT INTO outbox_events (stream_name, event_type, payload) VALUES (%s, %s, %s);",
+                        (STREAM_NAME, "deploy", outbox_payload)
+                    )
                 conn.commit()
         except Exception as e:
             logger.error(
                 f"Failed to process webhook DB insert for {project_id}: {e}")
-            continue
-
-        try:
-            r = get_redis()
-            r.xadd(STREAM_NAME, {
-                "deployment_id": deployment_id,
-                "project_id":    project_id,
-                "repo_url":      matched_repo_url,
-                "branch":        branch,
-                "image_name":    image_uri,
-                "queued_at":     queued_at,
-                "retries":       "0",
-            }, maxlen=10000)
-        except Exception as e:
-            logger.error(
-                f"Failed to enqueue webhook deployment {deployment_id}: {e}")
             continue
 
         log_audit_event(

@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from enum import Enum
 
@@ -17,7 +17,7 @@ class ProjectSchema(BaseModel):
     name: str
     namespace: str
     status: ProjectStatus = Field(default=ProjectStatus.PROVISIONING)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     deleted_at: Optional[datetime] = None
 
     @field_serializer('created_at', 'deleted_at')
