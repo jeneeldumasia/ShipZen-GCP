@@ -22,7 +22,7 @@ Before the next deployment, several new GitHub Secrets must be configured for th
 | LoadBalancer | ❌ Not provisioned (depends on pods being healthy) |
 | Cloudflare DNS | ❌ Not updated (depends on LoadBalancer IP) |
 
-## Recently Completed Changes (Phase 1, 2 & 3 Fixes)
+## Recently Completed Changes (Phase 1, 2, 3 & Production-Readiness Audit)
 - Fixed critical runtime crash (`NameError`) in API `PUT /env`.
 - Fixed 5 silent error-masking bugs in API env/secrets endpoints (dead `except` blocks).
 - Worker startup fragility fixed (logger definition moved).
@@ -39,6 +39,11 @@ Before the next deployment, several new GitHub Secrets must be configured for th
 - **Phase 3**: Updated `docker-compose.local.yml` — `ECR_REPOSITORY_URL`/`ECR_REGISTRY` → `GAR_REGISTRY_URL`/`GAR_REGISTRY`; comments now accurately describe GCP Artifact Registry as the production target.
 - **Phase 3**: Fixed deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)` in `controller/models.py`.
 - **Phase 3**: Updated `PROJECT_CONTEXT.md` — replaced stale AWS stack references (EKS, ECR, S3, Secrets Manager, Karpenter, IRSA) with accurate GCP equivalents (GKE, GAR, GCS, Secret Manager, KEDA, Workload Identity).
+- **Production-Readiness Audit (20 bugs fixed)**:
+  - **Critical (4)**: Webhook INSERT syntax corruption; in-flight deployment guard; DATABASE_URL validation; rollback branch hardcoding
+  - **High (8)**: /github/branches auth; circuit breaker reset race; env/secret validators; GCS client singleton; _project_failures scope; controller startupProbe; deployment name sanitization; /users/me DB query
+  - **Medium (5)**: walk_path recursion limit; httpx client singleton; tenant NetworkPolicy tightening; schema-job resource limits; deletion_protection=true; audit log project_members join; builder CPU limits
+  - **Low (3)**: Bare except blocks; duplicate imports cleanup; UI startupProbe; worker HOSTNAME env var
 
 ## Active Blocker
 **Missing GitHub Secrets for CI Deployment**
