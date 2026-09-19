@@ -44,6 +44,8 @@ def evict_user_token_cache(user_id: str):
 
 
 # REL-01 Fix: Circuit breaker state for GitHub API
+# Protected by _github_cb_lock — async handlers run concurrently and can race.
+_github_cb_lock = threading.Lock()
 _github_cb_failures = 0
 _github_cb_last_failure = 0.0
 _github_cb_open = False
@@ -113,14 +115,19 @@ async def get_current_user(
     # REL-01 Fix: Circuit breaker logic for GitHub API
     global _github_cb_failures, _github_cb_last_failure, _github_cb_open
     import time
-    
-    if _github_cb_open:
-        if time.time() - _github_cb_last_failure < 30:
+
+    with _github_cb_lock:
+        cb_open = _github_cb_open
+        cb_last_failure = _github_cb_last_failure
+
+    if cb_open:
+        if time.time() - cb_last_failure < 30:
             raise HTTPException(
                 status_code=503, detail="Auth service temporarily unavailable (circuit breaker open)")
         else:
             # Half-open state: let one request through to test
-            _github_cb_open = False
+            with _github_cb_lock:
+                _github_cb_open = False
 
     try:
         async with httpx.AsyncClient() as client:
@@ -158,19 +165,21 @@ async def get_current_user(
             }
     except httpx.RequestError as e:
         logger.error(f"GitHub API request failed: {e}")
-        # Update circuit breaker state
-        _github_cb_failures += 1
-        _github_cb_last_failure = time.time()
-        if _github_cb_failures >= 5:
-            _github_cb_open = True
-            logger.warning("GitHub API circuit breaker opened")
-            
+        # Update circuit breaker state atomically
+        with _github_cb_lock:
+            _github_cb_failures += 1
+            _github_cb_last_failure = time.time()
+            if _github_cb_failures >= 5:
+                _github_cb_open = True
+                logger.warning("GitHub API circuit breaker opened")
+
         raise HTTPException(
             status_code=503, detail="Auth service unavailable")
-            
+
     # Reset circuit breaker on success
-    _github_cb_failures = 0
-    _github_cb_open = False
+    with _github_cb_lock:
+        _github_cb_failures = 0
+        _github_cb_open = False
 
     from database import get_or_create_user
     db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"])

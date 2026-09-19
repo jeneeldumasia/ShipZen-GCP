@@ -63,6 +63,13 @@ spec:
                   name: shipzen-github
                   key: app_webhook_secret
                   optional: true
+            - name: GCP_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-gar-config
+                  key: project_id
+            - name: ENVIRONMENT
+              value: "production"
           resources:
             requests:
               cpu: "100m"
@@ -89,5 +96,5 @@ spec:
               port: 8000
             failureThreshold: 30
             periodSeconds: 10
-          volumeMounts:
-      volumes:
+          volumeMounts: []
+      volumes: []

@@ -183,12 +183,16 @@ def delete_gar_repository(project_id: str):
 
 
 from psycopg2.pool import ThreadedConnectionPool
+import threading as _threading
 db_pool = None
+_db_pool_lock = _threading.Lock()
 
 def get_db_connection():
     global db_pool
     if db_pool is None:
-        db_pool = ThreadedConnectionPool(1, 20, DATABASE_URL)
+        with _db_pool_lock:
+            if db_pool is None:  # Re-check after acquiring lock
+                db_pool = ThreadedConnectionPool(1, 20, DATABASE_URL)
     conn = db_pool.getconn()
     conn.autocommit = False
     return conn
