@@ -50,7 +50,7 @@ spec:
               value: "deploy_stream"
             - name: UI_ORIGIN
               value: "https://shipzen.jeneeldumasia.codes"
-            - name: GAR_REPOSITORY_URL
+            - name: GAR_REGISTRY_URL
               valueFrom:
                 secretKeyRef:
                   name: shipzen-gar-config
