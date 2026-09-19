@@ -1,9 +1,8 @@
 # Current State: ShipZen-GCP
 
 ## Current Development Phase
-GCP infrastructure is deployed. Platform pods are failing to start due to GKE node pool
-oauth scope issue (403 on GAR image pull). Fix has been committed - next `apply-only.yaml`
-run will resolve it.
+Phase 1 (Critical Bug Fixes & CI) and Phase 2 (Reliability) fixes have been implemented in the codebase. Development is paused.
+Before the next deployment, several new GitHub Secrets must be configured for the CI pipelines to work correctly with Terraform (Redis password, GitHub App credentials).
 
 ## Infrastructure Status
 | Resource | Status |
@@ -13,51 +12,53 @@ run will resolve it.
 | GAR `shipzen-platform` | ✅ All 4 images pushed (sha-8fc21f6 → api, ui, controller, worker) |
 | GAR `shipzen-builds` | ✅ Created |
 | ArgoCD | ✅ Installed, repo access working (GitHub App, repo-creds secret) |
-| ArgoCD Application | ⚠️ OutOfSync / Degraded (pods can't pull images - 403) |
+| ArgoCD Application | ⚠️ Pending sync for infrastructure updates (PDBs, probes) |
 | External Secrets Operator | ✅ Installed |
 | ClusterSecretStore | ✅ Applied |
 | Kyverno | ✅ Installed |
 | Envoy Gateway | ✅ Installed |
 | PostgreSQL | ✅ Running |
-| Redis | ✅ Running |
+| Redis | ✅ Running (Persistence enabled) |
 | LoadBalancer | ❌ Not provisioned (depends on pods being healthy) |
 | Cloudflare DNS | ❌ Not updated (depends on LoadBalancer IP) |
 
-## Recently Completed Changes
-- Full AWS → GCP migration (EKS→GKE, ECR→GAR, S3→GCS, AWS Secrets→GCP Secret Manager)
-- Cost optimization: 3 zones → 1 zone dev (saves ~$179/month)
-- GitHub App auth for ArgoCD (no PAT, company policy)
-- Fixed ArgoCD secret label: `repository` → `repo-creds`
-- Built and pushed all 4 container images to GAR
-- Fixed build workflow GAR path: `shipzen` → `shipzen-platform`
-- Added `oauth_scopes` to node pool for GAR image pull access
-- Added `kubectl wait` for ESO webhook pod before ClusterSecretStore apply
-- Rewrote destroy.yaml with 4-phase teardown (prevents VPC deletion failure)
-- Merged Copilot PR: ExternalDNS, node SA for GAR, helm wait flags
+## Recently Completed Changes (Phase 1, 2 & 3 Fixes)
+- Fixed critical runtime crash (`NameError`) in API `PUT /env`.
+- Fixed 5 silent error-masking bugs in API env/secrets endpoints (dead `except` blocks).
+- Worker startup fragility fixed (logger definition moved).
+- API now receives `GCP_PROJECT` env var (fixes all Secret Manager calls).
+- Fixed `deploy.yaml` to include missing `TF_VAR_redis_password` and `TF_VAR_github_app_*` credentials.
+- `argocd.tf` no longer writes the GitHub App private key to the runner's disk (now passed via env).
+- Redis AOF persistence enabled to prevent data loss of queue/events on pod restart.
+- Both webhook handlers refactored to use the transactional outbox pattern instead of direct Redis `xadd`.
+- Thread-safe locks added to Controller DB pool and API Auth circuit breaker.
+- Real `/healthz` HTTP endpoint added to worker for probing Redis connectivity.
+- PodDisruptionBudgets added for API, Worker, and Controller.
+- **Phase 3**: Fixed `apply-only.yaml` — added missing `TF_VAR_redis_password` and `TF_VAR_github_token` to Plan and Apply steps; corrected secret name `SHIPZEN_APP_INSTALLATION_ID` → `SHIPZEN_GITHUB_APP_INSTALLATION_ID` (now matches `deploy.yaml`).
+- **Phase 3**: Renamed `ECR_REPOSITORY_URL` → `GAR_REGISTRY_URL` throughout `api/main.py` — variable declaration, comments, and all 3 image URI construction sites (create_deployment, github_webhook, github_app_webhook).
+- **Phase 3**: Updated `docker-compose.local.yml` — `ECR_REPOSITORY_URL`/`ECR_REGISTRY` → `GAR_REGISTRY_URL`/`GAR_REGISTRY`; comments now accurately describe GCP Artifact Registry as the production target.
+- **Phase 3**: Fixed deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)` in `controller/models.py`.
+- **Phase 3**: Updated `PROJECT_CONTEXT.md` — replaced stale AWS stack references (EKS, ECR, S3, Secrets Manager, Karpenter, IRSA) with accurate GCP equivalents (GKE, GAR, GCS, Secret Manager, KEDA, Workload Identity).
 
 ## Active Blocker
-**Pods are in ErrImagePull / Kyverno webhook deadlock**
+**Missing GitHub Secrets for CI Deployment**
+The following secrets need to be added to the GitHub repository before running CI:
+- `REDIS_PASSWORD`
+- `SHIPZEN_GITHUB_TOKEN`
+- `SHIPZEN_GITHUB_APP_ID`
+- `SHIPZEN_GITHUB_APP_INSTALLATION_ID`
+- `SHIPZEN_GITHUB_APP_PRIVATE_KEY`
 
-Root cause: When the oauth_scopes were added to the node pool, GKE drained and
-recreated the node. This killed Kyverno pods mid-drain, so new pods can't be
-created (webhook unavailable). The node is back but Kyverno hasn't recovered.
-
-**Fix: Run `apply-only.yaml`** - Terraform will reconcile the node pool (already
-has oauth_scopes), ESO webhook wait logic will hold until it's ready, and ArgoCD
-will re-sync with correct images.
-
-## Known Issues (will be resolved by next apply-only.yaml run)
-1. Pods stuck in ErrImagePull (403 GAR) - fixed by oauth_scopes on node pool
-2. Kyverno webhook deadlock after node drain - resolves once Kyverno pods restart
-3. LoadBalancer not provisioned - resolves after pods are healthy and ArgoCD syncs
+## Known Issues
+1. LoadBalancer not provisioned - resolves after pods are healthy and ArgoCD syncs.
 
 ## What Will Happen on Next apply-only.yaml Run
-1. Terraform: node pool already has oauth_scopes → no-op on node pool
-2. Terraform: ESO ClusterSecretStore will wait for webhook pod Ready
-3. ArgoCD syncs with sha-8fc21f6 images → pods pull successfully from GAR
-4. Envoy Gateway creates LoadBalancer service
-5. ExternalDNS OR Cloudflare step updates DNS
-6. Site goes live at shipzen.jeneeldumasia.codes
+1. Terraform uses new secrets to provision ArgoCD GitHub App credentials reliably.
+2. Terraform applies Redis persistence configuration.
+3. ArgoCD syncs infrastructure changes (PDBs, new probes, env vars).
+4. Envoy Gateway creates LoadBalancer service.
+5. ExternalDNS updates DNS.
+6. Site goes live.
 
 ## Infrastructure Details
 - **Cluster**: shipzen-cluster (us-central1 regional, single zone us-central1-a)

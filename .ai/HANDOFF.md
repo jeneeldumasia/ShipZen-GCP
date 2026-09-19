@@ -47,20 +47,21 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 | `GCP_SERVICE_ACCOUNT` | GCP service account email |
 | `GCP_PROJECT_ID` | GCP project ID |
 | `TF_API_TOKEN` | HCP Terraform token |
-| `SHIPZEN_GITHUB_APP_ID` | ArgoCD GitHub App ID |
+| `REDIS_PASSWORD` | Static password for Redis cluster |
 | `SHIPZEN_APP_INSTALLATION_ID` | ArgoCD GitHub App Installation ID |
+| `SHIPZEN_GITHUB_APP_ID` | ArgoCD GitHub App ID |
 | `SHIPZEN_GITHUB_APP_PRIVATE_KEY` | ArgoCD GitHub App private key (PEM) |
-| `SHIPZEN_GITHUB_CLIENT_ID` | OAuth for UI login |
-| `SHIPZEN_GITHUB_CLIENT_SECRET` | OAuth for UI login |
+| `SHIPZEN_OAUTH_CLIENT_ID` | OAuth for UI login |
+| `SHIPZEN_OAUTH_CLIENT_SECRET` | OAuth for UI login |
 | `SHIPZEN_GITHUB_APP_WEBHOOK_SECRET` | GitHub webhook HMAC secret |
 | `SHIPZEN_AUTH_SECRET` | NextAuth secret |
 | `CLOUDFLARE_API_TOKEN` | DNS management |
 | `PG_PASSWORD` | PostgreSQL password |
 | `GRAFANA_PASSWORD` | Grafana admin password |
+| `ARGOCD_ADMIN_PASSWORD` | Custom ArgoCD admin password (optional) |
 
 ## Current Blocker (as of last session)
-Pods in ErrImagePull. Fix committed. Run `apply-only.yaml` to resolve.
-See CURRENT_STATE.md for full detail.
+All Phase 1, 2, and 3 fixes have been applied and committed. All required GitHub Secrets are now present. **Run `apply-only.yaml`** to deploy and get the site live.
 
 ## Common Debugging Commands
 ```bash
