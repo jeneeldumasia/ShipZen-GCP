@@ -49,7 +49,11 @@ class RepoAnalyzer:
         if not base_path.exists() or not base_path.is_dir():
             return services
 
-        def walk_path(current_path: Path):
+        def walk_path(current_path: Path, _depth: int = 0):
+            # M-4 Fix: Limit recursion depth to prevent runaway traversal of deep repo trees
+            if _depth > 5:
+                return
+
             if current_path != base_path:
                 if current_path.name in EXCLUDED_DIRS or current_path.name.startswith('.'):
                     return
@@ -101,7 +105,7 @@ class RepoAnalyzer:
                         framework = "vite"
                     elif '"express"' in content:
                         framework = "express"
-                except:
+                except Exception:
                     pass
                 candidates.append(DetectedService(
                     name=current_path.name or self._repo_name,
@@ -120,7 +124,7 @@ class RepoAnalyzer:
                             framework = "fastapi"
                         elif "flask" in content:
                             framework = "flask"
-                    except:
+                    except Exception:
                         pass
                 candidates.append(DetectedService(
                     name=current_path.name or self._repo_name,
@@ -176,7 +180,7 @@ class RepoAnalyzer:
             try:
                 for d in current_path.iterdir():
                     if d.is_dir():
-                        walk_path(d)
+                        walk_path(d, _depth + 1)
             except Exception:
                 pass
 

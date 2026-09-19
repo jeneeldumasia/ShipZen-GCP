@@ -21,6 +21,11 @@ GITHUB_ENABLED = (
     bool(os.getenv("OAUTH_CLIENT_ID"))
 )
 
+# M-6 Fix: Reusable httpx.AsyncClient singleton to avoid per-request overhead
+_http_client = httpx.AsyncClient(
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    timeout=30.0
+)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -130,27 +135,26 @@ async def get_current_user(
                 _github_cb_open = False
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://api.github.com/user",
-                headers={"Authorization": f"Bearer {token}",
-                         "Accept": "application/vnd.github+json"},
-                timeout=5
+        resp = await _http_client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.github+json"},
+            timeout=5
+        )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid GitHub token",
             )
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid GitHub token",
-                )
 
-            gh_user = resp.json()
-            # Fetch emails because primary email might be private
-            email_resp = await client.get(
-                "https://api.github.com/user/emails",
-                headers={"Authorization": f"Bearer {token}",
-                         "Accept": "application/vnd.github+json"},
-                timeout=5
-            )
+        gh_user = resp.json()
+        # Fetch emails because primary email might be private
+        email_resp = await _http_client.get(
+            "https://api.github.com/user/emails",
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.github+json"},
+            timeout=5
+        )
             email = None
             if email_resp.status_code == 200:
                 for e in email_resp.json():
@@ -176,9 +180,10 @@ async def get_current_user(
         raise HTTPException(
             status_code=503, detail="Auth service unavailable")
 
-    # Reset circuit breaker on success
+    # Reset circuit breaker on success — clear failure count AND stale timestamp
     with _github_cb_lock:
         _github_cb_failures = 0
+        _github_cb_last_failure = 0.0
         _github_cb_open = False
 
     from database import get_or_create_user

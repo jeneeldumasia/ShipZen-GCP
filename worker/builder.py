@@ -103,7 +103,7 @@ class DockerfileBuilder(Builder):
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"memory": "4Gi"}
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
                                     "runAsUser": 1000,
@@ -118,7 +118,7 @@ class DockerfileBuilder(Builder):
                                 "command": ["sh", "-c", build_script],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"memory": "4Gi"}
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
                                     "runAsUser": 1000,
@@ -139,7 +139,7 @@ class DockerfileBuilder(Builder):
                                 "command": ["sh", "-c", push_script],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"memory": "4Gi"}
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "volumeMounts": [{"name": "shared", "mountPath": "/shared"}],
                             }
@@ -288,7 +288,7 @@ fi
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"memory": "4Gi"}
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
                                     "runAsUser": 1000,
@@ -302,7 +302,7 @@ fi
                                 "image": "docker:24-dind-rootless",
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"memory": "4Gi"}
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
                                     "privileged": False,
@@ -332,7 +332,7 @@ fi
                                 "command": ["sh", "-c", push_script],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"memory": "4Gi"}
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "volumeMounts": [{"name": "shared", "mountPath": "/shared"}],
                             }
