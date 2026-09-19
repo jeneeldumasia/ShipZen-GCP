@@ -19,19 +19,19 @@ import redis as redis_lib
 import redis.asyncio as aioredis
 import psycopg2
 from psycopg2.extras import DictCursor
-from fastapi import FastAPI, HTTPException, Query, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Depends, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 import json
 from pydantic import BaseModel, field_validator
 from google.cloud import secretmanager
+from google.cloud import storage as gcs_storage
 import hmac
 import hashlib
 import secrets
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi import Request
 
 from database import get_connection, init_db, verify_project_access
 from contextlib import asynccontextmanager
@@ -77,6 +77,8 @@ _RESERVED_NS_PREFIXES = ('kube-', 'shipzen-', 'default', 'observability', 'kyver
 
 # PERF-01 Fix: Module-level GCP Secret Manager client singleton
 _sm_client = secretmanager.SecretManagerServiceClient()
+# H-6 Fix: Module-level GCS client singleton — avoids per-request connection overhead
+_gcs_client = gcs_storage.Client()
 GCP_PROJECT = os.getenv('GCP_PROJECT', '')
 
 # Kubernetes namespace name rules: lowercase alphanumeric and hyphens, 3–63 chars
@@ -744,7 +746,7 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
                 "deployment_id": deployment_id,
                 "project_id":    project_id,
                 "repo_url":      last_good['repo_url'],
-                "branch":        "main",
+                "branch":        last_good.get('branch') or "main",
                 "image_name":    last_good['image_uri'],
                 "queued_at":     str(time.time()),
                 "retries":       "0",
@@ -1048,10 +1050,8 @@ def get_build_logs(request: Request, project_id: str, deployment_id: str, build_
                     raise HTTPException(
                         status_code=404, detail="Log storage not configured")
 
-                from google.cloud import storage
-                storage_client = storage.Client()
                 try:
-                    bucket_obj = storage_client.bucket(bucket)
+                    bucket_obj = _gcs_client.bucket(bucket)
                     blob = bucket_obj.blob(key)
                     if not blob.exists():
                         raise HTTPException(
@@ -1137,13 +1137,18 @@ def get_global_audit_logs(
                 else:
                     cur.execute(
                         """
-                        SELECT a.*, p.name as project_name 
+                        SELECT a.*, p.name as project_name
                         FROM audit_logs a
                         JOIN projects p ON a.project_id = p.id
-                        WHERE a.user_id = %s OR p.owner_id = %s
+                        WHERE a.user_id = %s
+                           OR p.owner_id = %s
+                           OR EXISTS (
+                               SELECT 1 FROM project_members pm
+                               WHERE pm.project_id = p.id AND pm.user_id = %s
+                           )
                         ORDER BY a.timestamp DESC LIMIT %s;
                         """,
-                        (current_user.user_id, current_user.user_id, limit),
+                        (current_user.user_id, current_user.user_id, current_user.user_id, limit),
                     )
                 return [_serialize(dict(r)) for r in cur.fetchall()]
     except Exception as e:
@@ -1172,10 +1177,30 @@ def get_env_vars(request: Request, project_id: str, project: dict = Depends(veri
         raise HTTPException(status_code=500, detail="Failed to fetch env vars")
 
 
-# HIGH-22 Fix: Pydantic model for env var input validation
+# Env var key validation: standard POSIX env var names (uppercase, digits, underscore)
+_ENV_KEY_RE = re.compile(r'^[A-Z_][A-Z0-9_]{0,254}$')
+_ENV_VALUE_MAX = 32 * 1024  # 32 KB — well within Secret Manager's 64 KB limit
+
 class PutEnvVarRequest(BaseModel):
     key: str
     value: str
+
+    @field_validator('key')
+    @classmethod
+    def validate_key(cls, v: str) -> str:
+        if not _ENV_KEY_RE.match(v):
+            raise ValueError(
+                "key must be a valid env var name: uppercase letters, digits, and underscores only, "
+                "starting with a letter or underscore, max 255 characters"
+            )
+        return v
+
+    @field_validator('value')
+    @classmethod
+    def validate_value(cls, v: str) -> str:
+        if len(v.encode('utf-8')) > _ENV_VALUE_MAX:
+            raise ValueError("value must not exceed 32 KB")
+        return v
 
 
 @app.put("/projects/{project_id}/env", tags=["Environment"])
@@ -1271,8 +1296,8 @@ def delete_env_var(request: Request, project_id: str, key: str, project: dict = 
 
 @app.get("/github/branches", tags=["GitHub"])
 @limiter.limit("20/minute")
-def get_github_branches(request: Request, repo_url: str):
-    """Fetch branches for a public Git repository using git ls-remote."""
+def get_github_branches(request: Request, repo_url: str, current_user: User = Depends(get_current_user)):
+    """Fetch branches for a repository. Requires authentication."""
     if not _REPO_URL_RE.match(repo_url):
         raise HTTPException(status_code=400, detail="Invalid repository URL")
 
@@ -1320,6 +1345,23 @@ def get_github_branches(request: Request, repo_url: str):
 class PutSecretRequest(BaseModel):
     key: str
     value: str
+
+    @field_validator('key')
+    @classmethod
+    def validate_key(cls, v: str) -> str:
+        if not _ENV_KEY_RE.match(v):
+            raise ValueError(
+                "key must be a valid env var name: uppercase letters, digits, and underscores only, "
+                "starting with a letter or underscore, max 255 characters"
+            )
+        return v
+
+    @field_validator('value')
+    @classmethod
+    def validate_value(cls, v: str) -> str:
+        if len(v.encode('utf-8')) > _ENV_VALUE_MAX:
+            raise ValueError("value must not exceed 32 KB")
+        return v
 
 @app.get("/projects/{project_id}/secrets", tags=["Secrets"])
 @limiter.limit("50/minute")
@@ -1479,6 +1521,14 @@ async def github_webhook(request: Request, project_id: str):
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=DictCursor) as cur:
+                # CRIT-02: Guard against duplicate webhook deliveries
+                cur.execute(
+                    "SELECT 1 FROM deployments WHERE project_id = %s AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
+                    (project_id,)
+                )
+                if cur.fetchone():
+                    return JSONResponse(status_code=200, content={"message": "deployment already in-flight, webhook ignored"})
+
                 cur.execute(
                     "SELECT repo_url, port FROM deployments WHERE project_id = %s ORDER BY updated_at DESC LIMIT 1;",
                     (project_id,)
@@ -1494,22 +1544,28 @@ async def github_webhook(request: Request, project_id: str):
                             status_code=403, detail="Webhook repository does not match project's repository")
                     port = last_deploy["port"]
 
-        # Transactional outbox — same pattern as create_deployment.
-        # If Redis is down, outbox_relay will forward the event when Redis recovers.
-        outbox_payload = json.dumps({
-            "deployment_id": deployment_id,
-            "project_id":    project_id,
-            "repo_url":      repo_url,
-            "branch":        branch,
-            "image_name":    image_uri,
-            "queued_at":     queued_at,
-            "retries":       "0",
-        })
-        cur.execute(
-            "INSERT INTO outbox_events (stream_name, event_type, payload) VALUES (%s, %s, %s);",
-            (STREAM_NAME, "deploy", outbox_payload)
-        )
-        conn.commit()
+                cur.execute(
+                    """
+                    INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
+                    """,
+                    (deployment_id, project_id, repo_url, image_uri, 1, port)
+                )
+                # Transactional outbox — atomic with deployment INSERT.
+                outbox_payload = json.dumps({
+                    "deployment_id": deployment_id,
+                    "project_id":    project_id,
+                    "repo_url":      repo_url,
+                    "branch":        branch,
+                    "image_name":    image_uri,
+                    "queued_at":     queued_at,
+                    "retries":       "0",
+                })
+                cur.execute(
+                    "INSERT INTO outbox_events (stream_name, event_type, payload) VALUES (%s, %s, %s);",
+                    (STREAM_NAME, "deploy", outbox_payload)
+                )
+            conn.commit()
     except HTTPException:
         raise
     except Exception as e:
@@ -1631,7 +1687,22 @@ async def github_app_webhook(request: Request):
             base_registry = GAR_REGISTRY_URL.split("/")[0]
             image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
         else:
-            image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"                        """
+            image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"
+
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    # CRIT-02: Guard against in-flight deployments from concurrent webhook deliveries
+                    cur.execute(
+                        "SELECT 1 FROM deployments WHERE project_id = %s AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
+                        (project_id,)
+                    )
+                    if cur.fetchone():
+                        logger.info(f"Skipping GitHub App webhook for {project_id}: deployment already in-flight")
+                        continue
+
+                    cur.execute(
+                        """
                         INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
                         VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
                         """,
@@ -1677,7 +1748,17 @@ async def github_app_webhook(request: Request):
 @limiter.limit("100/minute")
 def get_me(request: Request, current_user: User = Depends(get_current_user)):
     """Get the currently logged-in user's profile and role."""
-    return {"user_id": current_user.user_id, "is_admin": current_user.is_admin}
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=DictCursor) as cur:
+                cur.execute("SELECT id, email, role FROM users WHERE id = %s;", (current_user.user_id,))
+                row = cur.fetchone()
+    except Exception as e:
+        logger.error(f"Failed to fetch user profile: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"user_id": row["id"], "email": row["email"], "role": row["role"], "is_admin": current_user.is_admin}
 
 
 class UpdateRoleRequest(BaseModel):
@@ -1858,16 +1939,17 @@ def _serialize(obj: dict) -> dict:
 
 # ── Restarts ──────────────────────────────────────────────────────────────────
 
-import datetime
-
 @app.post("/projects/{project_id}/deployments/{deployment_id}/restart", tags=["Deployments"])
 @limiter.limit("5/minute")
 def restart_deployment(request: Request, project_id: str, deployment_id: str, current_user: User = Depends(get_current_user)):
     """Restart a deployment by patching its pod template with a new restartedAt annotation."""
     project = verify_project_access(project_id, current_user)
     deployment = _get_deployment_or_404(project_id, deployment_id)
-    
-    deployment_name = f"{deployment_id[:8]}-{project['name']}"
+
+    # H-10 Fix: Sanitize the project name to a valid Kubernetes resource name
+    # (lowercase, alphanumeric + hyphens, max 54 chars to leave room for the 9-char prefix).
+    safe_name = re.sub(r'[^a-z0-9-]', '-', project['name'].lower())[:54].strip('-')
+    deployment_name = f"{deployment_id[:8]}-{safe_name}"
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     patch = {
         "spec": {

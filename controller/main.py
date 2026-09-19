@@ -3,7 +3,15 @@ import time
 import logging
 import yaml
 import psycopg2
+import datetime
+import queue
+import threading
+import signal
+import sys
+import json
+import socket
 from psycopg2.extras import DictCursor
+from psycopg2.pool import ThreadedConnectionPool
 from jinja2 import Environment, FileSystemLoader
 from kubernetes import client, config as k8s_config
 from kubernetes.client.rest import ApiException
@@ -11,13 +19,6 @@ from kubernetes.client.models import V1Lease, V1LeaseSpec, V1ObjectMeta
 from kubernetes.utils import create_from_yaml
 
 import redis
-import json
-import socket
-import datetime
-import queue
-import threading
-import signal
-import sys
 from models import ProjectStatus, ProjectSchema
 from metrics import (
     shipzen_drift_total,
@@ -171,6 +172,11 @@ _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PAS
 
 jinja_env = Environment(loader=FileSystemLoader("templates"))
 
+# H-8 Fix: Module-level declaration — avoids lazy globals() check on every reconcile tick.
+# Keys are project IDs; values are consecutive failure counts.
+# Entries for terminated projects are pruned during each full reconcile sweep.
+_project_failures: dict = {}
+
 
 def ensure_gar_repository(project_id: str):
     # GCP Artifact Registry handles package creation automatically on push
@@ -182,10 +188,8 @@ def delete_gar_repository(project_id: str):
     pass
 
 
-from psycopg2.pool import ThreadedConnectionPool
-import threading as _threading
 db_pool = None
-_db_pool_lock = _threading.Lock()
+_db_pool_lock = threading.Lock()
 
 def get_db_connection():
     global db_pool
@@ -402,10 +406,12 @@ def reconcile():
         logger.error(f"Failed to fetch global K8s state: {e}")
         return
 
-    # REL-03 Fix: Track consecutive failures per project
-    global _project_failures
-    if '_project_failures' not in globals():
-        _project_failures = {}
+    # Prune _project_failures entries for projects no longer in the active set
+    # to prevent unbounded memory growth over time (H-8 fix).
+    active_ids = {row['id'] for row in projects}
+    stale_keys = [k for k in _project_failures if k not in active_ids]
+    for k in stale_keys:
+        del _project_failures[k]
 
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
@@ -413,10 +419,10 @@ def reconcile():
         for row in projects:
             p_id = row['id']
             if _project_failures.get(p_id, 0) >= 3:
-                logger.warning(f"Skipping project {p_id} due to { _project_failures[p_id]} consecutive failures")
+                logger.warning(f"Skipping project {p_id} due to {_project_failures[p_id]} consecutive failures")
                 continue
             futures[executor.submit(_reconcile_project, dict(row), global_deps, global_svcs, global_routes, global_ext_secrets)] = p_id
-            
+
         for future in concurrent.futures.as_completed(futures):
             p_id = futures[future]
             try:

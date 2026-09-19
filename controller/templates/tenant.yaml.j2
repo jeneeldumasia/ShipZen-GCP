@@ -59,7 +59,10 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: shipzen-system # Allow traffic from Envoy Gateway
+              kubernetes.io/metadata.name: shipzen-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: envoy-gateway
   egress:
     # Explicitly allow DNS
     - ports:

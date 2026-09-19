@@ -69,6 +69,10 @@ spec:
                   name: shipzen-github-app
                   key: private_key
                   optional: true
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           resources:
             requests:
               cpu: "100m"
