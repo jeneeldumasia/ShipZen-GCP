@@ -28,6 +28,12 @@ def get_db_connection():
     if _db_pool is None:
         with _pool_lock:
             if _db_pool is None:
-                _db_pool = ThreadedConnectionPool(1, 20, os.environ.get("DATABASE_URL", ""))
-                
+                db_url = os.environ.get("DATABASE_URL", "")
+                if not db_url:
+                    raise RuntimeError(
+                        "DATABASE_URL environment variable is not set. "
+                        "Cannot initialise the database connection pool."
+                    )
+                _db_pool = ThreadedConnectionPool(1, 20, db_url)
+
     return PooledConnectionWrapper(_db_pool.getconn(), _db_pool)

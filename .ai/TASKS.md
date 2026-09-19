@@ -35,6 +35,30 @@ Nothing — all secrets are present, all code fixes are committed.
 - ✅ GitHub App auth for ArgoCD (no PAT)
 - ✅ Build workflow fixed (correct GAR path)
 - ✅ All 4 images built and pushed to GAR (sha-8fc21f6)
+- ✅ **Production-readiness audit (20 bugs fixed):**
+  - ✅ C-1: Fixed github_app_webhook syntax corruption — INSERT now executes
+  - ✅ C-2: Added in-flight deployment guards to both webhook handlers
+  - ✅ C-3: worker/database.py now raises RuntimeError on missing DATABASE_URL
+  - ✅ C-6: Rollback fetches branch from deployment row instead of hardcoding 'main'
+  - ✅ H-2: Added auth guard to /github/branches endpoint
+  - ✅ H-3: Circuit breaker reset clears both failures and last_failure under lock
+  - ✅ H-4: Added env var/secret key/value validators (ENV_KEY_RE + 32KB max)
+  - ✅ H-6: Created module-level GCS client singleton
+  - ✅ H-8: Moved _project_failures to module level; prune stale keys
+  - ✅ H-9: Added controller startupProbe
+  - ✅ H-10: Sanitized project name before building k8s deployment name
+  - ✅ H-11: /users/me now returns email and role from DB
+  - ✅ M-4: Added max_depth=5 recursion limit to analyzer walk_path
+  - ✅ M-6: Created httpx.AsyncClient singleton in auth.py
+  - ✅ M-9: Tightened tenant NetworkPolicy ingress to envoy pods only
+  - ✅ M-10: Added resource limits + securityContext to schema-job.yaml
+  - ✅ M-12: Set deletion_protection=true on GKE cluster
+  - ✅ M-14: Fixed global audit log query to include project_members
+  - ✅ M-15: Added CPU limits to all builder Job containers
+  - ✅ L-2: Replaced bare except: with except Exception: in analyzer.py
+  - ✅ L-4/L-5/L-6: Cleaned up duplicate imports in api/main.py and controller/main.py
+  - ✅ L-7: Added startupProbe to UI deployment
+  - ✅ L-8: Added HOSTNAME Downward API env var to worker deployment
 
 ## Backlog
 - [ ] Production readiness: 3-zone HA setup
@@ -44,6 +68,9 @@ Nothing — all secrets are present, all code fixes are committed.
 - [ ] Cost monitoring / billing alerts
 - [ ] Update architecture diagrams for GCP
 - [ ] Runbook for common operations
+
+## Parked (Requires External Dependencies)
+- [ ] C-4/C-5: Pin all builder image tags to digests and remove runtime pack download (requires upstream digest lookup or custom base image build)
 
 ## Won't Do
 - ~~PAT for GitHub auth~~ (company policy)
