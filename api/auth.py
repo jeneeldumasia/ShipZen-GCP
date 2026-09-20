@@ -155,18 +155,18 @@ async def get_current_user(
                      "Accept": "application/vnd.github+json"},
             timeout=5
         )
-            email = None
-            if email_resp.status_code == 200:
-                for e in email_resp.json():
-                    if e.get("primary"):
-                        email = e.get("email")
-                        break
+        email = None
+        if email_resp.status_code == 200:
+            for e in email_resp.json():
+                if e.get("primary"):
+                    email = e.get("email")
+                    break
 
-            user_info = {
-                "id": str(gh_user["id"]),
-                "login": gh_user["login"],
-                "email": email or gh_user.get("email")
-            }
+        user_info = {
+            "id": str(gh_user["id"]),
+            "login": gh_user["login"],
+            "email": email or gh_user.get("email")
+        }
     except httpx.RequestError as e:
         logger.error(f"GitHub API request failed: {e}")
         # Update circuit breaker state atomically
