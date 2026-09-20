@@ -1,6 +1,6 @@
 resource "google_storage_bucket" "velero_backups" {
-  name          = "${var.project_id}-velero-backups"
-  location      = var.region
+  name          = "${var.gcp_project}-velero-backups"
+  location      = var.gcp_region
   force_destroy = true
 
   uniform_bucket_level_access = true
@@ -30,5 +30,5 @@ resource "google_storage_bucket_iam_member" "velero_sa_object_admin" {
 resource "google_service_account_iam_member" "velero_workload_identity" {
   service_account_id = google_service_account.velero_sa.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[velero/velero]"
+  member             = "serviceAccount:${var.gcp_project}.svc.id.goog[velero/velero]"
 }
