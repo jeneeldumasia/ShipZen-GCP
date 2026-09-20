@@ -28,6 +28,10 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sleep", "15"]
           ports:
             - name: http
               containerPort: 3000

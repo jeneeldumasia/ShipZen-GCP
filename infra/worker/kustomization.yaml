@@ -5,3 +5,4 @@ resources:
   - serviceaccount.yaml
   - deployment.yaml
   - rbac.yaml
+  - pdb.yaml

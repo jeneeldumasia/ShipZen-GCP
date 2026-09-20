@@ -78,7 +78,7 @@ variable "platform_machine_type" {
 variable "use_cloud_sql" {
   description = "Set to true to provision a dedicated Cloud SQL PostgreSQL instance instead of in-cluster PostgreSQL."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "cloud_sql_tier" {

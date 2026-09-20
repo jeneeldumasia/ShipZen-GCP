@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_deployments_state ON deployments(state);
 CREATE INDEX IF NOT EXISTS idx_deployments_updated_at ON deployments(updated_at DESC);
 
 -- Partial unique index to enforce exactly one active deployment per project (Finding 4)
-CREATE UNIQUE INDEX idx_deployments_one_active_per_project 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deployments_one_active_per_project 
 ON deployments (project_id) 
 WHERE state IN ('Queued', 'Building', 'Deploying', 'Verifying');
 
