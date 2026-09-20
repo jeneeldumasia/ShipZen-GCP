@@ -27,6 +27,7 @@ spec:
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           lifecycle:
@@ -100,5 +101,9 @@ spec:
               port: 8000
             failureThreshold: 30
             periodSeconds: 10
-          volumeMounts: []
-      volumes: []
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp-vol
+      volumes:
+        - name: tmp-vol
+          emptyDir: {}

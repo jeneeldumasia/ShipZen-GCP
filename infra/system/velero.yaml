@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    targetRevision: 7.2.1
+    chart: velero
+    helm:
+      values: |
+        configuration:
+          backupStorageLocation:
+            - name: default
+              provider: gcp
+              bucket: shipzen-velero-backups
+        initContainers:
+          - name: velero-plugin-for-gcp
+            image: velero/velero-plugin-for-gcp:v1.9.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
+        serviceAccount:
+          server:
+            create: true
+            name: velero
+            annotations:
+              iam.gke.io/gcp-service-account: "velero-backup-sa@shipzen-gcp.iam.gserviceaccount.com"
+        credentials:
+          useSecret: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

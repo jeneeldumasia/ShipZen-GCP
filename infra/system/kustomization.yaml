@@ -18,3 +18,8 @@ resources:
   - grafana-dashboards.yaml
   - github-app-secret.yaml
   - github-secret.yaml
+  - rate-limit.yaml
+  - tenant-deny-ingress.yaml
+  - applicationset.yaml
+  - velero.yaml
+  - loki.yaml

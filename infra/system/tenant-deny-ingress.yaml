@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-tenant-ingress
+  namespace: shipzen-system
+spec:
+  podSelector: {} # Selects all pods in shipzen-system
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from within the shipzen-system namespace itself
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shipzen-system
+    # Allow traffic from the Envoy Gateway namespace (if deployed externally) or itself
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              gateway.envoyproxy.io/system: "true"
+    # Allow Prometheus scraping from monitoring namespaces (if any)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
