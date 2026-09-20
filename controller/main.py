@@ -10,6 +10,9 @@ import signal
 import sys
 import json
 import socket
+import jwt
+import requests
+import base64
 from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 from jinja2 import Environment, FileSystemLoader
@@ -162,6 +165,73 @@ RECONCILIATION_INTERVAL = int(os.getenv("RECONCILIATION_INTERVAL", "15"))
 GAR_REGISTRY = os.getenv("GAR_REGISTRY", "")
 GCP_PROJECT = os.getenv("GCP_PROJECT", "")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
+
+TENANT_REPO_URL = os.environ.get("TENANT_REPO_URL", "https://github.com/jeneeldumasia/shipzen-tenants")
+GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
+GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
+
+def get_github_app_token(repo_url: str) -> str:
+    if not GITHUB_APP_ID or not GITHUB_APP_PRIVATE_KEY or not repo_url.startswith("https://github.com/"):
+        return None
+    try:
+        parts = repo_url.rstrip("/").split("/")
+        owner, repo = parts[-2], parts[-1]
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        now = int(time.time())
+        payload = {"iat": now - 60, "exp": now + (10 * 60), "iss": GITHUB_APP_ID}
+        pk = GITHUB_APP_PRIVATE_KEY.replace("\\n", "\n")
+        encoded_jwt = jwt.encode(payload, pk, algorithm="RS256")
+        headers = {"Authorization": f"Bearer {encoded_jwt}", "Accept": "application/vnd.github.v3+json"}
+        resp = requests.get(f"https://api.github.com/repos/{owner}/{repo}/installation", headers=headers, timeout=10)
+        if resp.status_code != 200: return None
+        installation_id = resp.json()["id"]
+        token_resp = requests.post(f"https://api.github.com/app/installations/{installation_id}/access_tokens", headers=headers, timeout=10)
+        if token_resp.status_code != 201: return None
+        return token_resp.json()["token"]
+    except Exception as e:
+        logger.error(f"Error fetching GitHub App token: {e}")
+        return None
+
+def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
+    token = get_github_app_token(TENANT_REPO_URL)
+    if not token:
+        logger.error("Failed to get GitHub token for GitOps")
+        return
+    parts = TENANT_REPO_URL.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1]
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    
+    path = f"namespaces/{namespace}/{filename}"
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+    
+    sha = None
+    resp = requests.get(api_url, headers=headers)
+    if resp.status_code == 200:
+        sha = resp.json()["sha"]
+    elif resp.status_code != 404:
+        logger.error(f"GitHub API error: {resp.status_code} {resp.text}")
+        return
+
+    if delete:
+        if sha:
+            data = {"message": f"Delete {path}", "sha": sha, "branch": "main"}
+            requests.delete(api_url, headers=headers, json=data)
+        return
+
+    data = {
+        "message": f"Update {path}",
+        "content": base64.b64encode(content.encode('utf-8')).decode('utf-8'),
+        "branch": "main"
+    }
+    if sha:
+        data["sha"] = sha
+        
+    res = requests.put(api_url, headers=headers, json=data)
+    if res.status_code not in (200, 201):
+        logger.error(f"Failed to commit to Git: {res.status_code} {res.text}")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis-master.shipzen-system.svc.cluster.local")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -452,7 +522,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                     gar_registry=GAR_REGISTRY,
                     gcp_project=GCP_PROJECT,
                 )
-                apply_manifests(manifests)
+                commit_manifests_to_git(project.namespace, "tenant.yaml", manifests)
 
                 if check_namespace_exists(project.namespace):
                     ensure_gar_repository(project.id)
@@ -464,17 +534,17 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                     logger.info(
                         f"Project {project.name} provisioned and Ready.")
                 else:
-                    project_conn.rollback()
                     logger.info(
-                        f"Namespace {project.namespace} not yet visible; will retry.")
+                        f"Namespace {project.namespace} not yet visible; waiting for ArgoCD sync.")
 
             elif project.status == ProjectStatus.TERMINATING:
                 logger.info(
                     f"Terminating project: {project.name} ({project.namespace})")
+                commit_manifests_to_git(project.namespace, "tenant.yaml", "", delete=True)
+                
                 if check_namespace_exists(project.namespace):
-                    delete_namespace(project.namespace)
                     logger.info(
-                        f"Namespace {project.namespace} deletion triggered.")
+                        f"Namespace {project.namespace} GitOps deletion triggered. Waiting for ArgoCD sync.")
                     project_conn.commit()
                 else:
                     delete_gar_repository(project.id)
@@ -573,7 +643,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         replicas=db_dep.get('replicas', 1),
                         health_check_path=db_dep.get('health_check_path', '/')
                     )
-                    apply_manifests(manifests)
+                    commit_manifests_to_git(project.namespace, f"{d_id}.yaml", manifests)
                     
                     if not k8s_dep:
                         continue # Can't check replicas yet
@@ -639,9 +709,8 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
             if k8s_name not in db_deployments or db_deployments[k8s_name]['state'] not in _LIVE_STATES:
                 shipzen_drift_total.inc()
                 logger.warning(
-                    f"Drift: Orphan Deployment {k8s_name} found in K8s. Cleaning up...")
-                k8s_apps_api.delete_namespaced_deployment(
-                    name=k8s_name, namespace=project.namespace)
+                    f"Drift: Orphan Deployment {k8s_name} found in K8s. Cleaning up via GitOps...")
+                commit_manifests_to_git(project.namespace, f"{k8s_name}.yaml", "", delete=True)
                 try:
                     k8s_core_api.delete_namespaced_service(
                         name=f"{k8s_name}-svc", namespace=project.namespace)

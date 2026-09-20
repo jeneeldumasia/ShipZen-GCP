@@ -1,0 +1,19 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: global-rate-limit
+  namespace: shipzen-system
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: shipzen-gateway
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - limit:
+            requests: 100
+            unit: Minute
+          clientSelectors:
+            - type: SourceIP

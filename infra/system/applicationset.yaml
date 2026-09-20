@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenant-namespaces
+  namespace: shipzen-system
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/jeneeldumasia/shipzen-tenants.git
+        revision: HEAD
+        directories:
+          - path: namespaces/*
+  template:
+    metadata:
+      name: '{{path.basename}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/jeneeldumasia/shipzen-tenants.git
+        targetRevision: HEAD
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
