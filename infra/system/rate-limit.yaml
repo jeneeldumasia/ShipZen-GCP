@@ -15,5 +15,3 @@ spec:
         - limit:
             requests: 100
             unit: Minute
-          clientSelectors:
-            - type: SourceIP
