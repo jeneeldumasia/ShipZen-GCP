@@ -49,6 +49,7 @@ resource "google_project_service" "apis" {
     "sqladmin.googleapis.com",
     "redis.googleapis.com",
     "iamcredentials.googleapis.com", # For Workload Identity Federation
+    "servicenetworking.googleapis.com", # For Cloud SQL private VPC connection
   ])
 
   project            = var.gcp_project
