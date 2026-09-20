@@ -14,7 +14,7 @@ permissions:
   actions: read  # Allow token to work across workflows
 
 jobs:
-  destroy-and-deploy:
+  terraform-apply:
     runs-on: ubuntu-latest
     if: github.event.inputs.confirm_destroy == 'DESTROY'
     env:
@@ -75,6 +75,35 @@ jobs:
           terraform plan -out=tfplan
           terraform apply -auto-approve tfplan
 
+  build-images:
+    needs: terraform-apply
+    uses: ./.github/workflows/build-push.yaml
+    secrets: inherit
+
+  post-deploy:
+    needs: build-images
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Configure kubectl
+        run: gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+
       - name: Push Secrets to GCP Secret Manager
         run: |
           echo "Pushing GitHub OAuth Secret..."
@@ -92,9 +121,6 @@ jobs:
           echo "Pushing Alerts Stub Secret..."
           gcloud secrets create shipzen-alerts --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | gcloud secrets versions add shipzen-alerts --data-file=-
-
-      - name: Configure kubectl
-        run: gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Trigger ArgoCD Sync
         run: |
