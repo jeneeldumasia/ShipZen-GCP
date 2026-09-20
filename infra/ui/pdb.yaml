@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shipzen-ui-pdb
+  namespace: shipzen-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: shipzen-ui

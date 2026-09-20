@@ -8,3 +8,4 @@ resources:
   - httproute.yaml
   - networkpolicy.yaml
   - rbac.yaml
+  - pdb.yaml
