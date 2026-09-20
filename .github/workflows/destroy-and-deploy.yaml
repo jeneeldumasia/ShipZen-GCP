@@ -143,7 +143,7 @@ jobs:
               FULL_RECORD_NAME="shipzen.jeneeldumasia.codes"
             fi
             
-            RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$FULL_RECORD_NAME&type=CNAME" \
+            RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$FULL_RECORD_NAME&type=A" \
                  -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                  -H "Content-Type: application/json" | jq -r '.result[0].id')
 
@@ -151,12 +151,12 @@ jobs:
               curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
                    -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                    -H "Content-Type: application/json" \
-                   --data '{"type":"CNAME","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
+                   --data '{"type":"A","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
             else
               curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
                    -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
                    -H "Content-Type: application/json" \
-                   --data '{"type":"CNAME","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
+                   --data '{"type":"A","name":"'"$RECORD_NAME"'","content":"'${{ env.NLB_URL }}'","ttl":1,"proxied":true}'
             fi
           done
 

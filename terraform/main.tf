@@ -94,7 +94,7 @@ resource "google_container_cluster" "primary" {
 
   remove_default_node_pool = true
   initial_node_count       = 1
-  deletion_protection      = true # Prevent accidental cluster destruction
+  deletion_protection      = false # Prevent accidental cluster destruction
 
   # Workload Identity enabled for the cluster
   workload_identity_config {
