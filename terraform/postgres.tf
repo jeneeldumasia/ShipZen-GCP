@@ -48,16 +48,18 @@ resource "google_sql_database_instance" "postgres" {
 }
 
 resource "google_sql_user" "users" {
-  count    = var.use_cloud_sql ? 1 : 0
-  name     = local.pg_username
-  instance = google_sql_database_instance.postgres[0].name
-  password = local.pg_password
+  count           = var.use_cloud_sql ? 1 : 0
+  name            = local.pg_username
+  instance        = google_sql_database_instance.postgres[0].name
+  password        = local.pg_password
+  deletion_policy = "ABANDON"
 }
 
 resource "google_sql_database" "database" {
-  count    = var.use_cloud_sql ? 1 : 0
-  name     = local.pg_database
-  instance = google_sql_database_instance.postgres[0].name
+  count           = var.use_cloud_sql ? 1 : 0
+  name            = local.pg_database
+  instance        = google_sql_database_instance.postgres[0].name
+  deletion_policy = "ABANDON"
 }
 
 # ── In-Cluster PostgreSQL (Helm fallback) ─────────────────────────────────────
