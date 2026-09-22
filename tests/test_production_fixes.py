@@ -44,11 +44,15 @@ def test_token_cache_eviction():
 def test_leader_elector_create_and_renew():
     sys.path.insert(0, CONTROLLER_DIR)
     # Remove cached metrics/database if any to ensure controller packages load
-    for mod in ['metrics', 'models', 'database']:
+    for mod in ['metrics', 'models', 'database', 'controller', 'controller.main']:
         sys.modules.pop(mod, None)
 
-    import controller.main as ctrl
-    from controller.main import LeaderElector
+    import prometheus_client
+    prometheus_client.REGISTRY = prometheus_client.CollectorRegistry(auto_describe=True)
+
+    with patch("kubernetes.config.load_incluster_config"), patch("kubernetes.config.load_kube_config"):
+        import controller.main as ctrl
+        from controller.main import LeaderElector
 
     with patch("controller.main.k8s_coordination_api") as mock_coordination:
         from kubernetes.client.rest import ApiException
@@ -87,10 +91,14 @@ def test_leader_elector_create_and_renew():
 # --- 3. Event-Driven Workqueue Tests ---
 def test_controller_workqueue():
     sys.path.insert(0, CONTROLLER_DIR)
-    for mod in ['metrics', 'models', 'database']:
+    for mod in ['metrics', 'models', 'database', 'controller', 'controller.main']:
         sys.modules.pop(mod, None)
 
-    from controller.main import _work_queue
+    import prometheus_client
+    prometheus_client.REGISTRY = prometheus_client.CollectorRegistry(auto_describe=True)
+
+    with patch("kubernetes.config.load_incluster_config"), patch("kubernetes.config.load_kube_config"):
+        from controller.main import _work_queue
 
     project_id = "test-project-uuid-99"
     _work_queue.put(project_id)

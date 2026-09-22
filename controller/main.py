@@ -55,6 +55,22 @@ class LeaderElector:
         self.lease_duration = lease_duration
         self.renew_deadline = renew_deadline
         self.is_leader = False
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._renew_loop, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=2)
+        self.release()
+
+    def _renew_loop(self):
+        while not self._stop_event.is_set():
+            self.try_acquire_or_renew()
+            time.sleep(self.lease_duration / 3.0)
 
     def try_acquire_or_renew(self) -> bool:
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -130,7 +146,7 @@ class LeaderElector:
 # Workqueue for event-driven reconciliations
 _work_queue = queue.Queue()
 
-def event_listener_loop():
+def event_listener_loop(elector):
     """Subscribes to Redis state change events and enqueues project IDs for instant reconciliation."""
     while True:
         try:
@@ -143,8 +159,9 @@ def event_listener_loop():
                         data = json.loads(msg["data"])
                         project_id = data.get("project_id")
                         if project_id:
-                            logger.info(f"Event received for project {project_id} -> enqueued for immediate reconciliation")
-                            _work_queue.put(project_id)
+                            if elector.is_leader:
+                                logger.info(f"Event received for project {project_id} -> enqueued for immediate reconciliation")
+                                _work_queue.put(project_id)
                     except Exception as parse_e:
                         logger.warning(f"Failed to parse event message: {parse_e}")
         except Exception as conn_e:
@@ -796,15 +813,16 @@ def main():
     start_metrics_server(port=9090)
     _wait_for_schema()
 
-    # Start event listener thread for real-time Redis pub/sub
-    event_thread = threading.Thread(target=event_listener_loop, daemon=True)
-    event_thread.start()
-
     elector = LeaderElector()
+    elector.start()
+
+    # Start event listener thread for real-time Redis pub/sub
+    event_thread = threading.Thread(target=event_listener_loop, args=(elector,), daemon=True)
+    event_thread.start()
 
     def handle_shutdown(signum, frame):
         logger.info("Shutdown signal received. Stepping down and releasing lease...")
-        elector.release()
+        elector.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, handle_shutdown)
@@ -817,7 +835,7 @@ def main():
 
     while True:
         try:
-            is_leader = elector.try_acquire_or_renew()
+            is_leader = elector.is_leader
             if is_leader:
                 if standby_logged:
                     logger.info("Promoted to Leader! Running active reconciliation.")
@@ -840,6 +858,14 @@ def main():
                     reconcile()
                     last_full_reconcile = time.time()
             else:
+                # Drain the queue to prevent memory leak in case we just lost leadership
+                while not _work_queue.empty():
+                    try:
+                        _work_queue.get_nowait()
+                        _work_queue.task_done()
+                    except queue.Empty:
+                        break
+                        
                 if not standby_logged:
                     logger.info("Pod is currently in Standby (follower mode). Active leader holds lease.")
                     standby_logged = True
