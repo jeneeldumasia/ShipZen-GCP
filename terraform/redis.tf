@@ -24,7 +24,7 @@ resource "google_secret_manager_secret_version" "redis_password" {
 resource "kubernetes_secret" "redis_auth" {
   metadata {
     name      = "redis-auth"
-    namespace = "shipzen-system"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
   }
   data = {
     "redis-password" = local.redis_password
@@ -40,8 +40,8 @@ resource "helm_release" "redis" {
   repository       = "oci://registry-1.docker.io/bitnamicharts"
   chart            = "redis"
   version          = "27.0.8"
-  namespace        = "shipzen-system"
-  create_namespace = true
+  namespace        = kubernetes_namespace.shipzen_system.metadata[0].name
+  create_namespace = false
 
   # Add retries for transient API server errors
   wait          = true

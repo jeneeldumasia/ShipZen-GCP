@@ -8,11 +8,10 @@ locals {
 }
 
 # Secret for shipzen-system namespace (API & Controller)
-# Note: shipzen-system namespace is created by helm_release.postgresql or helm_release.redis
 resource "kubernetes_secret" "gar_config" {
   metadata {
     name      = "shipzen-gar-config"
-    namespace = "shipzen-system"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
   }
 
   data = {
@@ -22,9 +21,7 @@ resource "kubernetes_secret" "gar_config" {
   }
 
   depends_on = [
-    time_sleep.wait_for_cluster_auth,
-    helm_release.postgresql,
-    helm_release.redis
+    time_sleep.wait_for_cluster_auth
   ]
 }
 
@@ -50,7 +47,7 @@ resource "kubernetes_secret" "gar_config_build" {
 resource "kubernetes_secret" "gcs_config" {
   metadata {
     name      = "shipzen-gcs-config"
-    namespace = "shipzen-system"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
   }
 
   data = {
@@ -58,9 +55,7 @@ resource "kubernetes_secret" "gcs_config" {
   }
 
   depends_on = [
-    time_sleep.wait_for_cluster_auth,
-    helm_release.postgresql,
-    helm_release.redis
+    time_sleep.wait_for_cluster_auth
   ]
 }
 
