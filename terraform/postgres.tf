@@ -69,8 +69,8 @@ resource "helm_release" "postgresql" {
   repository       = "oci://registry-1.docker.io/bitnamicharts"
   chart            = "postgresql"
   version          = "18.7.3"
-  namespace        = "shipzen-system"
-  create_namespace = true
+  namespace        = kubernetes_namespace.shipzen_system.metadata[0].name
+  create_namespace = false
 
   set {
     name  = "auth.database"
@@ -115,7 +115,7 @@ resource "helm_release" "postgresql" {
 resource "kubernetes_secret" "db_credentials" {
   metadata {
     name      = "shipzen-db-credentials"
-    namespace = "shipzen-system"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
   }
 
   data = {
@@ -123,9 +123,7 @@ resource "kubernetes_secret" "db_credentials" {
   }
 
   depends_on = [
-    time_sleep.wait_for_cluster_auth,
-    helm_release.postgresql,
-    helm_release.redis
+    time_sleep.wait_for_cluster_auth
   ]
 }
 
