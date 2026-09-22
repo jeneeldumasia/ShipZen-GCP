@@ -76,9 +76,15 @@ _BRANCH_RE = re.compile(r'^[a-zA-Z0-9_.\-/]{1,200}$')
 _RESERVED_NS_PREFIXES = ('kube-', 'shipzen-', 'default', 'observability', 'kyverno', 'argocd')
 
 # PERF-01 Fix: Module-level GCP Secret Manager client singleton
-_sm_client = secretmanager.SecretManagerServiceClient()
+try:
+    _sm_client = secretmanager.SecretManagerServiceClient()
+except Exception:
+    _sm_client = None
 # H-6 Fix: Module-level GCS client singleton — avoids per-request connection overhead
-_gcs_client = gcs_storage.Client()
+try:
+    _gcs_client = gcs_storage.Client()
+except Exception:
+    _gcs_client = None
 GCP_PROJECT = os.getenv('GCP_PROJECT', '')
 
 # Kubernetes namespace name rules: lowercase alphanumeric and hyphens, 3–63 chars
@@ -842,8 +848,17 @@ async def websocket_deployment_status(websocket: WebSocket, project_id: str, dep
             await websocket.close(code=1008)
             return
         from auth import get_current_user_from_token
-        await get_current_user_from_token(token)
+        user = await get_current_user_from_token(token)
     except Exception:
+        await websocket.close(code=1008)
+        return
+
+    # Verify the deployment belongs to this project
+    try:
+        import asyncio
+        await asyncio.to_thread(verify_project_access, project_id, user)
+        await asyncio.to_thread(_get_deployment_or_404, project_id, deployment_id)
+    except HTTPException:
         await websocket.close(code=1008)
         return
 

@@ -366,7 +366,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         return
 
     deployment = state_machine.get_deployment(deployment_id)
-    if deployment and deployment.get("state") in [DeploymentState.BUILDING, DeploymentState.DEPLOYING, DeploymentState.RUNNING]:
+    if deployment and deployment.get("state") in [DeploymentState.DEPLOYING, DeploymentState.RUNNING]:
         queue.ack_message(message_id)
         return
 
