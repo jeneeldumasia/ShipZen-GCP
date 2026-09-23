@@ -257,6 +257,8 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
                         pass
             except ApiException as e:
                 logger.warning(f"Error reading pod logs for {container_name}: {e}")
+            except Exception as e:
+                logger.warning(f"Stream abruptly disconnected for {container_name}: {e}")
 
         # Wait for Job to complete using Watch API
         job_succeeded = False
