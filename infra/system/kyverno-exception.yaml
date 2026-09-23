@@ -23,3 +23,25 @@ spec:
         - observability
         names:
         - "*node-exporter*"
+---
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: promtail-exception
+  namespace: shipzen-system
+spec:
+  exceptions:
+  - policyName: "disallow-host-path"
+    ruleNames:
+    - "host-path"
+    - "autogen-host-path"
+  match:
+    any:
+    - resources:
+        kinds:
+        - Pod
+        - apps/v1/DaemonSet
+        namespaces:
+        - shipzen-system
+        names:
+        - "*promtail*"
