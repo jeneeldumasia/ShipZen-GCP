@@ -317,9 +317,12 @@ fi
                                 ],
                                 "command": ["sh", "-c"],
                                 "args": [
+                                    "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && "
+                                    "export DOCKER_HOST=unix:///run/user/1000/docker.sock && "
                                     "dockerd-rootless.sh --tls=false & "
                                     "while ! docker info >/dev/null 2>&1; do sleep 1; done; "
-                                    "wget -qO- https://github.com/buildpacks/pack/releases/download/v0.33.2/pack-v0.33.2-linux.tgz | tar -xz -C /usr/local/bin && "
+                                    "mkdir -p /workspace/bin && wget -qO- https://github.com/buildpacks/pack/releases/download/v0.33.2/pack-v0.33.2-linux.tgz | tar -xz -C /workspace/bin && "
+                                    "export PATH=/workspace/bin:$PATH && "
                                     + " ".join(pack_args) + " && "
                                     "docker save local-image -o /shared/image.tar"
                                 ]
