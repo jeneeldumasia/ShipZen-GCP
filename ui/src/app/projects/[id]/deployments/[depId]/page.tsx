@@ -97,7 +97,7 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
       </div>
 
       {/* The Pulse */}
-      {deployment.state === "Deployed" && <Pulse state={deployment.state} url={appUrl} />}
+      {deployment.state === "Running" && <Pulse state={deployment.state} url={appUrl} />}
 
       {/* Error state */}
       {deployment.state === "Failed" && deployment.last_error && (
