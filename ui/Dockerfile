@@ -1,4 +1,4 @@
-FROM node:20-bullseye-slim AS builder
+FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
@@ -8,7 +8,7 @@ COPY . .
 RUN mkdir -p public
 RUN npm run build
 
-FROM node:20-bullseye-slim AS runner
+FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/next.config.mjs ./
