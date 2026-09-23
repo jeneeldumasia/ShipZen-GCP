@@ -21,7 +21,7 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [ended, setEnded] = useState(false);
-  const scrollRef = useRef<HTMLPreElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
