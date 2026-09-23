@@ -56,7 +56,7 @@ def get_connection():
     if db_pool is None:                     # fast path — no lock once initialised
         with _db_pool_lock:
             if db_pool is None:             # double-checked locking
-                db_pool = ThreadedConnectionPool(1, 30, dsn=DATABASE_URL)
+                db_pool = ThreadedConnectionPool(1, 5, dsn=DATABASE_URL)
     conn = db_pool.getconn()
     return PooledConnectionWrapper(conn, db_pool)
 
