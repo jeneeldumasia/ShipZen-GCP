@@ -160,12 +160,12 @@ class RailpackBuilder(Builder):
         return os.path.exists(os.path.join(workspace_path, "Cargo.toml")) or os.path.exists(os.path.join(workspace_path, "bun.lockb"))
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
-        # For now, Railpack uses buildpacks as a placeholder until native compiler images are built
-        b = BuildpackBuilder()
+        # For now, Railpack uses Nixpacks as a placeholder until native compiler images are built
+        b = NixpacksBuilder()
         return b.generate_job_manifest(deployment_id, repo_url, branch, image_uri, overrides)
 
 
-class BuildpackBuilder(Builder):
+class NixpacksBuilder(Builder):
     def detect(self, workspace_path: str) -> bool:
         return True  # Fallback for all other repos
 
@@ -240,15 +240,24 @@ if [ -f package.json ]; then
 fi
 """
 
-        env_vars = []
-        if overrides.get("bp_node_run_scripts"):
-            env_vars.append({"name": "BP_NODE_RUN_SCRIPTS",
-                            "value": overrides.get("bp_node_run_scripts")})
+        nixpacks_script = (
+            "set -e; "
+            "nixpacks build /workspace --out /workspace/.nixpacks"
+        )
 
-        pack_args = ["pack", "build", "local-image", "--path", "/workspace", "--builder",
-                     "paketobuildpacks/builder-jammy-base", "--env", "NODE_OPTIONS=--max-old-space-size=2048"]
-        if overrides.get("runtime"):
-            pack_args.extend(["--buildpack", overrides.get("runtime")])
+        buildkit_script = (
+            "set -e; "
+            "mkdir -p ~/.config/buildkit; "
+            "rootlesskit buildkitd --oci-worker-no-process-sandbox & "
+            "BKPID=$!; "
+            "for i in $(seq 1 30); do buildctl debug workers && break || sleep 1; done; "
+            f"buildctl build "
+            f"  --frontend dockerfile.v0 "
+            f"  --local context=/workspace "
+            f"  --local dockerfile=/workspace/.nixpacks "
+            f"  --output type=docker,dest=/shared/image.tar; "
+            "EXIT=$?; kill $BKPID 2>/dev/null || true; exit $EXIT"
+        )
 
         push_script = (
             "set -e; "
@@ -296,29 +305,38 @@ fi
                                 }
                             },
                             {
-                                "name": "pack",
-                                "image": "docker:24-dind",
+                                "name": "nixpacks-generate",
+                                "image": "ghcr.io/railwayapp/nixpacks:latest",
+                                "command": ["sh", "-c", nixpacks_script],
+                                "resources": {
+                                    "requests": {"cpu": "1", "memory": "2Gi"},
+                                    "limits": {"cpu": "2", "memory": "4Gi"}
+                                },
+                                "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
+                                "securityContext": {
+                                    "runAsUser": 1000,
+                                    "runAsGroup": 1000,
+                                    "allowPrivilegeEscalation": False,
+                                    "seccompProfile": {"type": "RuntimeDefault"}
+                                }
+                            },
+                            {
+                                "name": "buildkit",
+                                "image": "moby/buildkit:master-rootless",
+                                "command": ["sh", "-c", buildkit_script],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
-                                    "privileged": True,
-                                    "runAsUser": 0
+                                    "runAsUser": 1000,
+                                    "runAsGroup": 1000,
+                                    # Accepted Risk: Rootless BuildKit requires unconfined seccomp profiles to perform unshare() and mount() syscalls for nested containerization.
+                                    "seccompProfile": {"type": "Unconfined"}
                                 },
-                                "env": env_vars,
                                 "volumeMounts": [
                                     {"name": "workspace", "mountPath": "/workspace"},
                                     {"name": "shared", "mountPath": "/shared"}
-                                ],
-                                "command": ["sh", "-c"],
-                                "args": [
-                                    "dockerd --tls=false & "
-                                    "while ! docker info >/dev/null 2>&1; do sleep 1; done; "
-                                    "mkdir -p /workspace/bin && wget -qO- https://github.com/buildpacks/pack/releases/download/v0.33.2/pack-v0.33.2-linux.tgz | tar -xz -C /workspace/bin && "
-                                    "export PATH=/workspace/bin:$PATH && "
-                                    + " ".join(pack_args) + " && "
-                                    "docker save local-image -o /shared/image.tar"
                                 ]
                             }
                         ],

@@ -19,7 +19,7 @@ from kubernetes.client.rest import ApiException
 from config import config
 from queue_client import QueueClient
 from state_machine import StateMachine, DeploymentState
-from builder import DockerfileBuilder, RailpackBuilder, BuildpackBuilder
+from builder import DockerfileBuilder, RailpackBuilder, NixpacksBuilder
 from metrics import (
     start_metrics_server,
     shipzen_build_duration_seconds,
@@ -468,7 +468,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
                     pass
 
         # Builder detection
-        builders = [DockerfileBuilder(), RailpackBuilder(), BuildpackBuilder()]
+        builders = [DockerfileBuilder(), RailpackBuilder(), NixpacksBuilder()]
         selected_builder = None
         for b in builders:
             if b.detect(workspace):
