@@ -71,7 +71,7 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
       <div className="h-64 w-full flex flex-col items-center justify-end overflow-hidden pb-4 relative" style={{ maskImage: "linear-gradient(to bottom, transparent, black 80%)", WebkitMaskImage: "linear-gradient(to bottom, transparent, black 80%)" }}>
         
         {lines.length === 0 && !ended ? (
-          <div className="flex items-center gap-3 text-text-secondary font-mono text-xs uppercase tracking-widest animate-pulse">
+          <div className="flex items-center gap-3 text-text-secondary font-mono text-xs uppercase tracking-widest">
             <Wifi size={14} className="text-brand" />
             Awaiting Telemetry...
           </div>
@@ -98,7 +98,7 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
             })}
             
             {connected && (
-              <div className="mt-2 text-[10px] font-mono text-brand uppercase tracking-widest animate-pulse flex items-center gap-1.5">
+              <div className="mt-2 text-[10px] font-mono text-brand uppercase tracking-widest flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-brand" /> Streaming
               </div>
             )}

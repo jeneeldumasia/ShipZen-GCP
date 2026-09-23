@@ -19,18 +19,13 @@ function Pulse({ state, url }: { state: string, url?: string }) {
     <div className="flex flex-col items-center justify-center py-32 relative w-full max-w-2xl mx-auto">
       {/* The Aura */}
       <div className={`absolute inset-0 blur-3xl opacity-20 -z-10 rounded-full transition-all duration-1000 ${
-        isFailed ? "bg-red-500" : isLive ? "bg-emerald-500" : isActive ? "bg-brand animate-pulse" : "bg-transparent"
+        isFailed ? "bg-red-500" : isLive ? "bg-emerald-500" : isActive ? "bg-brand" : "bg-transparent"
       }`} />
       
       {/* The Core Ring */}
       <div className={`relative w-64 h-64 rounded-full flex flex-col items-center justify-center border-2 transition-all duration-[2000ms] ease-out ${
         isFailed ? "border-red-500 scale-95" : isLive ? "border-emerald-500 scale-105" : isActive ? "border-brand scale-100" : "border-canvas-border"
       }`}>
-        
-        {/* Animated Inner Pulse for active states */}
-        {isActive && (
-          <div className="absolute inset-0 rounded-full border border-brand animate-ping opacity-20" style={{ animationDuration: '3s' }} />
-        )}
         
         <h2 className={`text-4xl font-display font-bold uppercase tracking-widest ${
           isFailed ? "text-red-500" : isLive ? "text-emerald-500" : isActive ? "text-text-primary" : "text-text-secondary"
@@ -102,7 +97,7 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
       </div>
 
       {/* The Pulse */}
-      <Pulse state={deployment.state} url={appUrl} />
+      {!isActive && <Pulse state={deployment.state} url={appUrl} />}
 
       {/* Error state */}
       {deployment.state === "Failed" && deployment.last_error && (
@@ -117,6 +112,9 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
       {/* Live Cinematic Logs */}
       {isActive && (
         <div className="max-w-4xl mx-auto mt-16 opacity-100 transition-opacity duration-500">
+          <h2 className="text-2xl text-center font-display font-bold uppercase tracking-widest text-text-primary mb-8">
+            {deployment.state}
+          </h2>
           <LiveLogPanel
             projectId={params.id}
             deploymentId={params.depId}
