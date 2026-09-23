@@ -42,7 +42,7 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
     ws.onmessage = (e: MessageEvent) => {
       const line = (e.data as string).replace(ANSI_RE, "");
       if (line.trim() === "ping" || line.trim() === '{"type": "ping"}') return;
-      setLines((prev) => [...prev, line].slice(-50));
+      setLines((prev) => [...prev, line].slice(-500));
     };
 
     ws.onerror = () => {
@@ -69,43 +69,29 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
 
   return (
     <div className="w-full flex flex-col items-center justify-center relative">
-      <div className="h-64 w-full flex flex-col items-center justify-end overflow-hidden pb-4 relative" style={{ maskImage: "linear-gradient(to bottom, transparent, black 80%)", WebkitMaskImage: "linear-gradient(to bottom, transparent, black 80%)" }}>
-        
-        {lines.length === 0 && !ended ? (
-          <div className="flex items-center gap-3 text-text-secondary font-mono text-xs uppercase tracking-widest">
-            <Wifi size={14} className="text-brand" />
-            Awaiting Telemetry...
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2 w-full max-w-2xl text-center">
-            {lines.slice(-6).map((line, idx, arr) => {
-              // The very last item is fully opaque. As we go back, they fade.
-              const isLast = idx === arr.length - 1;
-              const opacity = isLast ? 1 : Math.max(0.1, (idx + 1) / arr.length);
-              
-              return (
-                <div 
-                  key={line + idx} 
-                  className={`font-mono text-xs tracking-widest uppercase transition-all duration-500 ease-out`}
-                  style={{ 
-                    opacity: opacity, 
-                    transform: `translateY(${isLast ? '0px' : '-4px'}) scale(${isLast ? 1 : 0.98})`,
-                    color: isLast ? "var(--text-primary)" : "var(--text-secondary)"
-                  }}
-                >
-                  {line.substring(0, 80)}{line.length > 80 ? "..." : ""}
-                </div>
-              );
-            })}
-            
-            {connected && (
-              <div className="mt-2 text-[10px] font-mono text-brand uppercase tracking-widest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand" /> Streaming
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {lines.length === 0 && !ended ? (
+        <div className="h-64 w-full flex items-center justify-center text-text-secondary font-mono text-xs uppercase tracking-widest">
+          <Wifi size={14} className="text-brand mr-2" />
+          Awaiting Telemetry...
+        </div>
+      ) : (
+        <div 
+          ref={scrollRef}
+          className="h-64 w-full max-w-3xl bg-surface/30 border border-border/50 rounded-xl overflow-y-auto p-4 flex flex-col font-mono text-[11px] text-text-secondary custom-scrollbar"
+        >
+          {lines.map((line, idx) => (
+            <div key={idx} className="whitespace-pre-wrap break-all py-0.5">
+              {line}
+            </div>
+          ))}
+          
+          {connected && (
+            <div className="mt-4 text-[10px] text-brand uppercase tracking-widest flex items-center gap-2 opacity-80">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" /> Streaming
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
