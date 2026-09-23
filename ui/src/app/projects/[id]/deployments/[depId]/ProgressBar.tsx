@@ -14,7 +14,7 @@ export function ProgressBar({ state }: { state: DeploymentState }) {
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-text-secondary/10" />
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-red-500/50" />
           
-          <div className="relative flex flex-col items-center gap-2 bg-background px-4">
+          <div className="relative z-10 flex flex-col items-center gap-2 bg-background px-4">
             <div className="w-8 h-8 rounded-full border-2 border-red-500 bg-background flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
               <span className="text-xs font-bold font-mono">!</span>
             </div>
@@ -47,7 +47,7 @@ export function ProgressBar({ state }: { state: DeploymentState }) {
           const isFuture = index > activeIndex;
 
           return (
-            <div key={step} className="relative flex flex-col items-center gap-2 bg-background px-2 sm:px-4">
+            <div key={step} className="relative z-10 flex flex-col items-center gap-2 bg-background px-2 sm:px-4">
               <div 
                 className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500
                   ${isCompleted ? "border-brand bg-brand text-background" : 
