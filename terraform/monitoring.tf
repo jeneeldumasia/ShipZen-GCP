@@ -45,6 +45,11 @@ resource "helm_release" "kube_prometheus_stack" {
     value = "false"
   }
 
+  set {
+    name  = "defaultDashboardsEnabled"
+    value = "false"
+  }
+
   # Disable persistence (cost) - omitted storageSpec to default to emptyDir
 
   set {
@@ -80,7 +85,7 @@ resource "helm_release" "kube_prometheus_stack" {
 
   set {
     name  = "grafana.grafana\\.ini.auth\\.anonymous.enabled"
-    value = "false"
+    value = "true"
   }
 
   set {
