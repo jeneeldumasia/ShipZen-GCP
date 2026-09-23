@@ -242,6 +242,17 @@ if [ -f package.json ]; then
 fi
 """
 
+        import re
+        
+        # Safely extract base URI handling digests and ports
+        base_uri = image_uri.split('@')[0]
+        if ':' in base_uri.split('/')[-1]:
+            base_uri = base_uri.rsplit(':', 1)[0]
+            
+        safe_branch = re.sub(r'[^a-zA-Z0-9_.-]', '-', branch)[:100]
+        main_cache_uri = f"{base_uri}:main-cache"
+        branch_cache_uri = f"{base_uri}:{safe_branch}-cache"
+
         nixpacks_args = ["build", "/workspace", "--out", "/workspace/.nixpacks"]
 
         buildkit_script = (
@@ -254,13 +265,11 @@ fi
             f"  --frontend dockerfile.v0 "
             f"  --local context=/workspace "
             f"  --local dockerfile=/workspace/.nixpacks "
-            f"  --output type=docker,dest=/shared/image.tar; "
+            f"  --export-cache type=registry,ref={branch_cache_uri},mode=max "
+            f"  --import-cache type=registry,ref={branch_cache_uri} "
+            f"  --import-cache type=registry,ref={main_cache_uri} "
+            f"  --output type=image,name={image_uri},push=true; "
             "EXIT=$?; kill $BKPID 2>/dev/null || true; exit $EXIT"
-        )
-
-        push_script = (
-            "set -e; "
-            f"crane push /shared/image.tar {image_uri}"
         )
 
         return {
@@ -321,6 +330,8 @@ fi
                                     "privileged": True
                                 }
                             },
+                        ],
+                        "containers": [
                             {
                                 "name": "buildkit",
                                 "image": "moby/buildkit:master-rootless",
@@ -339,18 +350,6 @@ fi
                                     {"name": "workspace", "mountPath": "/workspace"},
                                     {"name": "shared", "mountPath": "/shared"}
                                 ]
-                            }
-                        ],
-                        "containers": [
-                            {
-                                "name": "push",
-                                "image": "gcr.io/go-containerregistry/crane:debug",
-                                "command": ["sh", "-c", push_script],
-                                "resources": {
-                                    "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"cpu": "2", "memory": "4Gi"}
-                                },
-                                "volumeMounts": [{"name": "shared", "mountPath": "/shared"}],
                             }
                         ],
                         "volumes": [

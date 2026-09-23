@@ -283,7 +283,7 @@ def get_db_connection():
     if db_pool is None:
         with _db_pool_lock:
             if db_pool is None:  # Re-check after acquiring lock
-                db_pool = ThreadedConnectionPool(1, 30, DATABASE_URL)
+                db_pool = ThreadedConnectionPool(1, 2, DATABASE_URL)
     conn = db_pool.getconn()
     conn.autocommit = False
     return conn

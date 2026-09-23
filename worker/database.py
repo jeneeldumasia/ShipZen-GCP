@@ -34,6 +34,6 @@ def get_db_connection():
                         "DATABASE_URL environment variable is not set. "
                         "Cannot initialise the database connection pool."
                     )
-                _db_pool = ThreadedConnectionPool(1, 20, db_url)
+                _db_pool = ThreadedConnectionPool(1, 2, db_url)
 
     return PooledConnectionWrapper(_db_pool.getconn(), _db_pool)
