@@ -41,6 +41,7 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
 
     ws.onmessage = (e: MessageEvent) => {
       const line = (e.data as string).replace(ANSI_RE, "");
+      if (line.trim() === "ping" || line.trim() === '{"type": "ping"}') return;
       setLines((prev) => [...prev, line].slice(-50));
     };
 
