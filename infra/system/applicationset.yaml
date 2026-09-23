@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: tenant-namespaces
-  namespace: shipzen-system
+  namespace: argocd
 spec:
   generators:
     - git:
@@ -13,6 +13,7 @@ spec:
   template:
     metadata:
       name: '{{path.basename}}'
+      namespace: argocd
     spec:
       project: default
       source:
