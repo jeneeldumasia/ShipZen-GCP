@@ -6,6 +6,7 @@ import { AutoRefresh } from "./AutoRefresh";
 import { RedeployButton } from "./RedeployButton";
 import { RestartAppButton } from "./RestartAppButton";
 import { CancelDeployButton } from "./CancelDeployButton";
+import { ProgressBar } from "./ProgressBar";
 import { LiveLogPanel } from "./LiveLogPanel";
 import { auth } from "@/auth";
 
@@ -102,6 +103,8 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
         <p className="text-lg font-mono text-text-secondary opacity-50">{deployment.repo_url}</p>
         <p className="text-xs font-mono text-text-secondary uppercase tracking-widest mt-2">{shortId} • PORT {deployment.port}</p>
       </div>
+
+      <ProgressBar state={deployment.state as any} />
 
       {/* The Pulse */}
       {deployment.state === "Running" && <Pulse state={deployment.state} url={appUrl} />}
