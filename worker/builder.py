@@ -291,24 +291,20 @@ fi
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
-                                    "allowPrivilegeEscalation": False,
-                                    "seccompProfile": {"type": "RuntimeDefault"}
+                                    "runAsUser": 0,
+                                    "privileged": True
                                 }
                             },
                             {
                                 "name": "pack",
-                                "image": "docker:24-dind-rootless",
+                                "image": "docker:24-dind",
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
-                                    "privileged": False,
-                                    "runAsUser": 1000,
-                                    # Accepted Risk: Rootless Docker-in-Docker requires unconfined seccomp profiles to perform unshare() and mount() syscalls for nested containerization.
-                                    "seccompProfile": {"type": "Unconfined"}
+                                    "privileged": True,
+                                    "runAsUser": 0
                                 },
                                 "env": env_vars,
                                 "volumeMounts": [
@@ -317,9 +313,7 @@ fi
                                 ],
                                 "command": ["sh", "-c"],
                                 "args": [
-                                    "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && "
-                                    "export DOCKER_HOST=unix:///run/user/1000/docker.sock && "
-                                    "dockerd-rootless.sh --tls=false & "
+                                    "dockerd --tls=false & "
                                     "while ! docker info >/dev/null 2>&1; do sleep 1; done; "
                                     "mkdir -p /workspace/bin && wget -qO- https://github.com/buildpacks/pack/releases/download/v0.33.2/pack-v0.33.2-linux.tgz | tar -xz -C /workspace/bin && "
                                     "export PATH=/workspace/bin:$PATH && "
