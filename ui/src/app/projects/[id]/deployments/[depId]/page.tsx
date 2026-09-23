@@ -5,6 +5,7 @@ import { api, Build } from "@/lib/api";
 import { AutoRefresh } from "./AutoRefresh";
 import { RedeployButton } from "./RedeployButton";
 import { RestartAppButton } from "./RestartAppButton";
+import { CancelDeployButton } from "./CancelDeployButton";
 import { LiveLogPanel } from "./LiveLogPanel";
 import { auth } from "@/auth";
 
@@ -86,7 +87,13 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
           >
             <Activity size={16} /> Metrics
           </a>
-          <RestartAppButton projectId={params.id} deploymentId={params.depId} />
+          
+          {isActive ? (
+            <CancelDeployButton projectId={params.id} deploymentId={params.depId} />
+          ) : (
+            <RestartAppButton projectId={params.id} deploymentId={params.depId} />
+          )}
+          
           <RedeployButton projectId={params.id} repoUrl={deployment.repo_url} port={deployment.port} />
         </div>
       </div>

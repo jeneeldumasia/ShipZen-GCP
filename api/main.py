@@ -14,6 +14,7 @@ import uuid
 import logging
 import asyncio
 from typing import Optional
+from kubernetes import client as k8s_client, config as k8s_config
 
 import redis as redis_lib
 import redis.asyncio as aioredis
@@ -714,6 +715,57 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
         logger.warning(f"Failed to publish project_reconcile event: {pub_err}")
 
     return _serialize(deployment)
+
+
+@app.post("/projects/{project_id}/deployments/{deployment_id}/cancel", status_code=202, tags=["Deployments"])
+@limiter.limit("5/minute")
+def cancel_deployment(request: Request, project_id: str, deployment_id: str, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+    """Cancel an active deployment and kill its worker job."""
+    
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM deployments WHERE deployment_id = %s AND project_id = %s",
+                (deployment_id, project_id)
+            )
+            deployment = cur.fetchone()
+            if not deployment:
+                raise HTTPException(status_code=404, detail="Deployment not found")
+            
+            if deployment["state"] not in ("Queued", "Building", "Deploying", "Verifying"):
+                raise HTTPException(status_code=400, detail="Cannot cancel a deployment that is not active")
+
+            # Update DB state
+            cur.execute(
+                "UPDATE deployments SET state = 'Failed', last_error = 'Cancelled by user', updated_at = NOW() WHERE deployment_id = %s",
+                (deployment_id,)
+            )
+        conn.commit()
+
+    # Attempt to kill Kubernetes Job
+    try:
+        try:
+            k8s_config.load_incluster_config()
+        except Exception:
+            # Fallback for local development if needed, though mostly API runs in cluster
+            pass 
+        batch_v1 = k8s_client.BatchV1Api()
+        job_name = f"build-{deployment_id[:8]}"
+        batch_v1.delete_namespaced_job(name=job_name, namespace="shipzen-build", propagation_policy="Background")
+        logger.info(f"Killed builder job {job_name} for cancelled deployment {deployment_id}")
+    except Exception as e:
+        logger.warning(f"Failed to delete kubernetes job for cancelled deployment (may have already completed): {e}")
+
+    log_audit_event(
+        project_id=project_id,
+        user_id=current_user.user_id,
+        action="CANCEL_DEPLOY",
+        resource_type="deployment",
+        resource_id=deployment_id,
+        details={}
+    )
+
+    return {"status": "cancelled"}
 
 
 @app.post("/projects/{project_id}/rollback", status_code=202, tags=["Deployments"])

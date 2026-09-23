@@ -156,6 +156,10 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    cancel: (projectId: string, deploymentId: string) =>
+      request<{ status: string }>(`/projects/${projectId}/deployments/${deploymentId}/cancel`, {
+        method: "POST",
+      }),
     restart: (projectId: string, deploymentId: string) =>
       request<{ status: string }>(`/projects/${projectId}/deployments/${deploymentId}/restart`, {
         method: "POST",
