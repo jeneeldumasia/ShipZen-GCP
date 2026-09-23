@@ -317,7 +317,7 @@ fi
                                 ],
                                 "command": ["sh", "-c"],
                                 "args": [
-                                    "/usr/local/bin/dockerd-rootless.sh --tls=false & "
+                                    "dockerd-rootless.sh --tls=false & "
                                     "while ! docker info >/dev/null 2>&1; do sleep 1; done; "
                                     "wget -qO- https://github.com/buildpacks/pack/releases/download/v0.33.2/pack-v0.33.2-linux.tgz | tar -xz -C /usr/local/bin && "
                                     + " ".join(pack_args) + " && "
