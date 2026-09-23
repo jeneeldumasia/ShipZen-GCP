@@ -185,6 +185,8 @@ class NixpacksBuilder(Builder):
 
         setup_script = f"""
 {clone_cmd}
+chmod 777 /workspace
+chmod 777 /shared
 cd /workspace
 """
         if overrides.get("inject_server_js"):
@@ -240,10 +242,7 @@ if [ -f package.json ]; then
 fi
 """
 
-        nixpacks_script = (
-            "set -e; "
-            "nixpacks build /workspace --out /workspace/.nixpacks"
-        )
+        nixpacks_args = ["build", "/workspace", "--out", "/workspace/.nixpacks"]
 
         buildkit_script = (
             "set -e; "
@@ -294,7 +293,10 @@ fi
                                 "image": "alpine/git:2.43.0",
                                 "command": ["sh", "-c", setup_script],
                                 "env": git_clone_env,
-                                "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
+                                "volumeMounts": [
+                                    {"name": "workspace", "mountPath": "/workspace"},
+                                    {"name": "shared", "mountPath": "/shared"}
+                                ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
@@ -307,17 +309,16 @@ fi
                             {
                                 "name": "nixpacks-generate",
                                 "image": "ghcr.io/railwayapp/nixpacks:latest",
-                                "command": ["sh", "-c", nixpacks_script],
+                                "command": ["nixpacks"],
+                                "args": nixpacks_args,
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
                                 "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
-                                    "allowPrivilegeEscalation": False,
-                                    "seccompProfile": {"type": "RuntimeDefault"}
+                                    "runAsUser": 0,
+                                    "privileged": True
                                 }
                             },
                             {
