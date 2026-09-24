@@ -185,85 +185,72 @@ def record_build(deployment_id: str, gcs_key: str, status: str):
 
 
 def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machine: StateMachine, builder_type: str = "unknown", project_id: str = "unknown", queue: QueueClient = None, message_id: str = None, trace_id: str = "unknown"):
-    """Monitors the Kubernetes Job, streams logs to Redis, and finalizes the deployment."""
+    """Monitors the Kubernetes Job, streams logs to Redis, and finalizes the deployment.
+
+    This implementation avoids long-lived HTTP watch/follow streams that get killed
+    by GCP's infrastructure idle timeout (~5 min). Instead it:
+      1. Polls for the builder pod to appear.
+      2. Polls for the job to reach a terminal state (succeeded/failed).
+      3. Publishes incremental log tails to Redis while polling.
+      4. Collects full logs after job completion.
+    """
     logger.info(f"Monitoring Job {job_name} for deployment {deployment_id} [trace_id={trace_id}]")
     r = _redis_client
     gcs_log_key = f"logs/{deployment_id}/build.log"
     build_start_time = time.time()
 
     try:
-        w = watch.Watch()
+        # ── Step 1: Wait for the builder Pod to exist (polling) ──────────
         pod_name = None
-
-        pod_spec = None
-
-        # Wait for Pod to exist
-        for event in w.stream(core_v1.list_namespaced_pod, namespace="shipzen-build", label_selector=f"job-name={job_name}", timeout_seconds=300):
-            pod = event['object']
-            pod_name = pod.metadata.name
-            pod_spec = pod.spec
-            w.stop()
-            break
+        deadline = time.time() + 300  # 5 min
+        while time.time() < deadline:
+            try:
+                pods = core_v1.list_namespaced_pod(
+                    namespace="shipzen-build",
+                    label_selector=f"job-name={job_name}",
+                )
+                if pods.items:
+                    pod_name = pods.items[0].metadata.name
+                    break
+            except Exception as e:
+                logger.warning(f"Error listing pods for {job_name}: {e}")
+            time.sleep(3)
 
         if not pod_name:
             raise Exception("Timed out waiting for Pod to be created")
 
         state_machine.update_state(deployment_id, DeploymentState.BUILDING)
 
-        all_containers = []
-        if pod_spec.init_containers:
-            all_containers.extend([c.name for c in pod_spec.init_containers])
-        if pod_spec.containers:
-            all_containers.extend([c.name for c in pod_spec.containers])
-
-        stdout_chunks = []
-
-        # Stream logs for each container sequentially
-        for container_name in all_containers:
-            # Wait for container to start generating logs
-            container_started = False
-            w2 = watch.Watch()
-            for event in w2.stream(core_v1.list_namespaced_pod, namespace="shipzen-build", field_selector=f"metadata.name={pod_name}", timeout_seconds=600):
-                pod_status = event['object'].status
-                statuses = []
-                if pod_status.init_container_statuses:
-                    statuses.extend(pod_status.init_container_statuses)
-                if pod_status.container_statuses:
-                    statuses.extend(pod_status.container_statuses)
-                
-                for s in statuses:
-                    if s.name == container_name and (s.state.running or s.state.terminated):
-                        container_started = True
-                        break
-                
-                if container_started:
-                    w2.stop()
-                    break
-                    
-            if not container_started:
-                logger.warning(f"Container {container_name} never started.")
-                break
-
-            try:
-                log_stream = core_v1.read_namespaced_pod_log(
-                    name=pod_name, namespace="shipzen-build", follow=True, _preload_content=False,
-                    container=container_name
-                )
-                for line in log_stream:
-                    stdout_chunks.append(line)
-                    try:
-                        r.publish(f"shipzen:logs:{deployment_id}", line.decode('utf-8', errors='replace'))
-                    except Exception:
-                        pass
-            except ApiException as e:
-                logger.warning(f"Error reading pod logs for {container_name}: {e}")
-            except Exception as e:
-                logger.warning(f"Stream abruptly disconnected for {container_name}: {e}")
-
-        # Wait for Job to complete using polling instead of watch to avoid idle connection timeouts
+        # ── Step 2: Poll job status until terminal, streaming log tails ──
         job_succeeded = False
-        timeout = time.time() + 3600
+        log_bytes_seen = 0
+        timeout = time.time() + 3600  # 1 hour hard cap
+
         while time.time() < timeout:
+            # --- publish incremental logs to Redis ---
+            try:
+                # Fetch all log bytes produced so far (non-follow, fast)
+                raw_log = core_v1.read_namespaced_pod_log(
+                    name=pod_name,
+                    namespace="shipzen-build",
+                    follow=False,
+                    _preload_content=True,
+                    timestamps=False,
+                )
+                if raw_log and len(raw_log) > log_bytes_seen:
+                    new_chunk = raw_log[log_bytes_seen:]
+                    log_bytes_seen = len(raw_log)
+                    for line in new_chunk.splitlines():
+                        try:
+                            r.publish(f"shipzen:logs:{deployment_id}", line)
+                        except Exception:
+                            pass
+            except ApiException:
+                pass  # pod may not be ready yet
+            except Exception:
+                pass
+
+            # --- check job terminal state ---
             try:
                 job = batch_v1.read_namespaced_job(name=job_name, namespace="shipzen-build")
                 if job.status.succeeded and job.status.succeeded >= 1:
@@ -277,10 +264,32 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
                 logger.warning(f"Error checking job status: {e}")
             except Exception as e:
                 logger.warning(f"Error checking job status: {e}")
+
             time.sleep(5)
 
-        # Upload logs to GCS with trace_id metadata
-        stdout_bytes = b''.join(stdout_chunks)
+        # ── Step 3: Collect final complete logs ──────────────────────────
+        stdout_bytes = b""
+        try:
+            final_log = core_v1.read_namespaced_pod_log(
+                name=pod_name,
+                namespace="shipzen-build",
+                follow=False,
+                _preload_content=True,
+            )
+            if final_log:
+                stdout_bytes = final_log.encode("utf-8") if isinstance(final_log, str) else final_log
+                # Publish any remaining lines not yet sent
+                if len(stdout_bytes) > log_bytes_seen:
+                    remaining = stdout_bytes[log_bytes_seen:].decode("utf-8", errors="replace")
+                    for line in remaining.splitlines():
+                        try:
+                            r.publish(f"shipzen:logs:{deployment_id}", line)
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning(f"Failed to collect final logs: {e}")
+
+        # ── Step 4: Upload logs to GCS ───────────────────────────────────
         try:
             if GCS_LOG_BUCKET:
                 storage_client = storage.Client()
@@ -325,8 +334,6 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
                                 first_port), deployment_id))
             except Exception as e:
                 logger.warning(f"Failed to extract exposed port: {e}")
-
-
 
             record_build(deployment_id, gcs_log_key, "Success")
             state_machine.update_state(deployment_id, "Deploying")
