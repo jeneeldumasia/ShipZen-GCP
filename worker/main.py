@@ -260,19 +260,24 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
             except Exception as e:
                 logger.warning(f"Stream abruptly disconnected for {container_name}: {e}")
 
-        # Wait for Job to complete using Watch API
+        # Wait for Job to complete using polling instead of watch to avoid idle connection timeouts
         job_succeeded = False
-        job_w = watch.Watch()
-        try:
-            for event in job_w.stream(batch_v1.list_namespaced_job, namespace="shipzen-build", field_selector=f"metadata.name={job_name}", timeout_seconds=3600):
-                job = event['object']
+        timeout = time.time() + 3600
+        while time.time() < timeout:
+            try:
+                job = batch_v1.read_namespaced_job(name=job_name, namespace="shipzen-build")
                 if job.status.succeeded and job.status.succeeded >= 1:
                     job_succeeded = True
                     break
                 if job.status.failed and job.status.failed >= 1:
                     break
-        finally:
-            job_w.stop()
+            except ApiException as e:
+                if e.status == 404:
+                    break
+                logger.warning(f"Error checking job status: {e}")
+            except Exception as e:
+                logger.warning(f"Error checking job status: {e}")
+            time.sleep(5)
 
         # Upload logs to GCS with trace_id metadata
         stdout_bytes = b''.join(stdout_chunks)
