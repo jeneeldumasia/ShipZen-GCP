@@ -318,7 +318,7 @@ fi
                             {
                                 "name": "nixpacks-generate",
                                 "image": "ghcr.io/railwayapp/nixpacks:latest",
-                                "command": ["nixpacks"],
+                                "command": ["/bin/sh", "-c", "curl -sSL https://nixpacks.com/install.sh | bash && /usr/local/bin/nixpacks \"$@\"", "--"],
                                 "args": nixpacks_args,
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
