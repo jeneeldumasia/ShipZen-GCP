@@ -216,6 +216,9 @@ export const api = {
   },
 
   admin: {
+    users: () => request<any[]>("/admin/users"),
+    deployments: () => request<any[]>("/admin/deployments"),
+    auditLogs: () => request<AuditLog[]>("/admin/audit-logs"),
     restartSystem: () =>
       request<{ status: string }>("/admin/system/restart", { method: "POST" }),
   },
