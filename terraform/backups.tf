@@ -51,13 +51,8 @@ resource "helm_release" "velero" {
             bucket   = google_storage_bucket.velero_backups.name
           }
         ]
-        volumeSnapshotLocation = [
-          {
-            name     = "default"
-            provider = "gcp"
-          }
-        ]
       }
+      snapshotsEnabled = false
       initContainers = [
         {
           name            = "velero-plugin-for-gcp"
