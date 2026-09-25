@@ -48,17 +48,12 @@ spec:
           operator: Equal
           value: tenant
           effect: NoSchedule
-      # Fix #8.8: imagePullSecret so tenant pods can pull built images from Artifact Registry.
-      # The gar-pull-secret is created per-namespace by the controller when
-      # provisioning the tenant namespace (uses GCRAccessToken generator with Workload Identity).
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      imagePullSecrets:
-        - name: gar-pull-secret
       containers:
         - name: app
           securityContext:
