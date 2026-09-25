@@ -21,5 +21,4 @@ resources:
   - rate-limit.yaml
   - tenant-deny-ingress.yaml
   - applicationset.yaml
-  - velero.yaml
   - loki.yaml
