@@ -32,10 +32,7 @@ class DockerfileBuilder(Builder):
         return os.path.exists(os.path.join(workspace_path, "Dockerfile"))
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
-        registry = image_uri.split('/')[0] if '/' in image_uri else ''
-
         # CRIT-01 Fix: Use environment variables instead of f-string interpolation
-        # to prevent shell injection via malicious branch names or repo URLs.
         git_clone_env = [
             {"name": "GIT_REPO_URL", "value": repo_url},
             {"name": "GIT_BRANCH", "value": branch},
@@ -46,24 +43,11 @@ class DockerfileBuilder(Builder):
         else:
             clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
-        build_script = (
-            "set -e; "
-            "mkdir -p ~/.config/buildkit; "
-            "rootlesskit buildkitd --oci-worker-no-process-sandbox & "
-            "BKPID=$!; "
-            "for i in $(seq 1 30); do buildctl debug workers && break || sleep 1; done; "
-            f"buildctl build "
-            f"  --frontend dockerfile.v0 "
-            f"  --local context=/workspace "
-            f"  --local dockerfile=/workspace "
-            f"  --output type=docker,dest=/shared/image.tar; "
-            "EXIT=$?; kill $BKPID 2>/dev/null || true; exit $EXIT"
-        )
-
-        push_script = (
-            "set -e; "
-            f"crane push /shared/image.tar {image_uri}"
-        )
+        # Safely extract base URI for cache
+        base_uri = image_uri.split('@')[0]
+        if ':' in base_uri.split('/')[-1]:
+            base_uri = base_uri.rsplit(':', 1)[0]
+        cache_uri = f"{base_uri}:cache"
 
         return {
             "apiVersion": "batch/v1",
@@ -81,11 +65,6 @@ class DockerfileBuilder(Builder):
                 "backoffLimit": 0,
                 "activeDeadlineSeconds": 1800,  # 30 mins
                 "template": {
-                    "metadata": {
-                        "annotations": {
-                            "container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined"
-                        }
-                    },
                     "spec": {
                         "restartPolicy": "Never",
                         "serviceAccountName": "shipzen-builder-sa",
@@ -102,50 +81,43 @@ class DockerfileBuilder(Builder):
                                 "env": git_clone_env,
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
                                 "resources": {
-                                    "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"cpu": "2", "memory": "4Gi"}
+                                    "requests": {"cpu": "500m", "memory": "1Gi"},
+                                    "limits": {"cpu": "1", "memory": "2Gi"}
                                 },
                                 "securityContext": {
                                     "runAsUser": 0,
                                     "allowPrivilegeEscalation": False,
                                     "seccompProfile": {"type": "RuntimeDefault"}
                                 }
-                            },
-                            {
-                                "name": "buildkit",
-                                "image": "moby/buildkit:master-rootless",
-                                "command": ["sh", "-c", build_script],
-                                "resources": {
-                                    "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"cpu": "2", "memory": "4Gi"}
-                                },
-                                "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
-                                    # Accepted Risk: Rootless BuildKit requires unconfined seccomp profiles to perform unshare() and mount() syscalls for nested containerization.
-                                    "seccompProfile": {"type": "Unconfined"}
-                                },
-                                "volumeMounts": [
-                                    {"name": "workspace", "mountPath": "/workspace"},
-                                    {"name": "shared", "mountPath": "/shared"}
-                                ]
                             }
                         ],
                         "containers": [
                             {
-                                "name": "push",
-                                "image": "gcr.io/go-containerregistry/crane:debug",
-                                "command": ["sh", "-c", push_script],
+                                "name": "kaniko",
+                                "image": "gcr.io/kaniko-project/executor:latest",
+                                "args": [
+                                    "--context=dir:///workspace",
+                                    "--dockerfile=/workspace/Dockerfile",
+                                    f"--destination={image_uri}",
+                                    "--cache=true",
+                                    f"--cache-repo={cache_uri}"
+                                ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
-                                "volumeMounts": [{"name": "shared", "mountPath": "/shared"}],
+                                "volumeMounts": [
+                                    {"name": "workspace", "mountPath": "/workspace"}
+                                ],
+                                "securityContext": {
+                                    "runAsUser": 0,
+                                    "allowPrivilegeEscalation": False,
+                                    "seccompProfile": {"type": "RuntimeDefault"}
+                                }
                             }
                         ],
                         "volumes": [
-                            {"name": "workspace", "emptyDir": {}},
-                            {"name": "shared", "emptyDir": {}}
+                            {"name": "workspace", "emptyDir": {}}
                         ]
                     }
                 }
@@ -169,8 +141,6 @@ class NixpacksBuilder(Builder):
         return True  # Fallback for all other repos
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
-        registry = image_uri.split('/')[0] if '/' in image_uri else ''
-
         # CRIT-01 Fix: Use environment variables instead of f-string interpolation
         git_clone_env = [
             {"name": "GIT_REPO_URL", "value": repo_url},
@@ -185,7 +155,6 @@ class NixpacksBuilder(Builder):
         setup_script = f"""
 {clone_cmd}
 chmod 777 /workspace
-chmod 777 /shared
 cd /workspace
 """
         if overrides.get("inject_server_js"):
@@ -241,35 +210,13 @@ if [ -f package.json ]; then
 fi
 """
 
-        import re
-        
         # Safely extract base URI handling digests and ports
         base_uri = image_uri.split('@')[0]
         if ':' in base_uri.split('/')[-1]:
             base_uri = base_uri.rsplit(':', 1)[0]
-            
-        safe_branch = re.sub(r'[^a-zA-Z0-9_.-]', '-', branch)[:100]
-        main_cache_uri = f"{base_uri}:main-cache"
-        branch_cache_uri = f"{base_uri}:{safe_branch}-cache"
+        cache_uri = f"{base_uri}:cache"
 
         nixpacks_args = ["build", "/workspace", "--out", "/workspace/.nixpacks"]
-
-        buildkit_script = (
-            "set -e; "
-            "mkdir -p ~/.config/buildkit; "
-            "rootlesskit buildkitd --oci-worker-no-process-sandbox & "
-            "BKPID=$!; "
-            "for i in $(seq 1 30); do buildctl debug workers && break || sleep 1; done; "
-            f"buildctl build "
-            f"  --frontend dockerfile.v0 "
-            f"  --local context=/workspace "
-            f"  --local dockerfile=/workspace/.nixpacks "
-            f"  --export-cache type=registry,ref={branch_cache_uri},mode=max "
-            f"  --import-cache type=registry,ref={branch_cache_uri} "
-            f"  --import-cache type=registry,ref={main_cache_uri} "
-            f"  --output type=image,name={image_uri},push=true; "
-            "EXIT=$?; kill $BKPID 2>/dev/null || true; exit $EXIT"
-        )
 
         return {
             "apiVersion": "batch/v1",
@@ -302,12 +249,11 @@ fi
                                 "command": ["sh", "-c", setup_script],
                                 "env": git_clone_env,
                                 "volumeMounts": [
-                                    {"name": "workspace", "mountPath": "/workspace"},
-                                    {"name": "shared", "mountPath": "/shared"}
+                                    {"name": "workspace", "mountPath": "/workspace"}
                                 ],
                                 "resources": {
-                                    "requests": {"cpu": "1", "memory": "2Gi"},
-                                    "limits": {"cpu": "2", "memory": "4Gi"}
+                                    "requests": {"cpu": "500m", "memory": "1Gi"},
+                                    "limits": {"cpu": "1", "memory": "2Gi"}
                                 },
                                 "securityContext": {
                                     "runAsUser": 0,
@@ -334,28 +280,31 @@ fi
                         ],
                         "containers": [
                             {
-                                "name": "buildkit",
-                                "image": "moby/buildkit:master-rootless",
-                                "command": ["sh", "-c", buildkit_script],
+                                "name": "kaniko",
+                                "image": "gcr.io/kaniko-project/executor:latest",
+                                "args": [
+                                    "--context=dir:///workspace",
+                                    "--dockerfile=/workspace/.nixpacks/Dockerfile",
+                                    f"--destination={image_uri}",
+                                    "--cache=true",
+                                    f"--cache-repo={cache_uri}"
+                                ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
-                                "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
-                                    # Accepted Risk: Rootless BuildKit requires unconfined seccomp profiles to perform unshare() and mount() syscalls for nested containerization.
-                                    "seccompProfile": {"type": "Unconfined"}
-                                },
                                 "volumeMounts": [
-                                    {"name": "workspace", "mountPath": "/workspace"},
-                                    {"name": "shared", "mountPath": "/shared"}
-                                ]
+                                    {"name": "workspace", "mountPath": "/workspace"}
+                                ],
+                                "securityContext": {
+                                    "runAsUser": 0,
+                                    "allowPrivilegeEscalation": False,
+                                    "seccompProfile": {"type": "RuntimeDefault"}
+                                }
                             }
                         ],
                         "volumes": [
-                            {"name": "workspace", "emptyDir": {}},
-                            {"name": "shared", "emptyDir": {}}
+                            {"name": "workspace", "emptyDir": {}}
                         ]
                     }
                 }
