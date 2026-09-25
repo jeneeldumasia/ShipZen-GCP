@@ -318,6 +318,7 @@ fi
                             {
                                 "name": "nixpacks-generate",
                                 "image": "ghcr.io/railwayapp/nixpacks:latest",
+                                "command": ["nixpacks"],
                                 "args": nixpacks_args,
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
