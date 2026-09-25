@@ -13,6 +13,11 @@ resource "helm_release" "kyverno" {
   values = [
     yamlencode({
       installCRDs = true
+      features = {
+        policyExceptions = {
+          enabled = true
+        }
+      }
       config = {
         resourceFilters = [
           "[Event,*,*]",
