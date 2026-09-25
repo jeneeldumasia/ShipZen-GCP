@@ -1,8 +1,18 @@
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Activity, Server, Users, Database, Shield, Zap, RefreshCw, Box, Network, Fingerprint } from "lucide-react";
+import { api } from "@/lib/api";
 
-export default function AdminDashboardPage() {
+export const dynamic = "force-dynamic";
+
+export default async function AdminDashboardPage() {
+  const [projects, deployments, users, auditLogs] = await Promise.all([
+    api.projects.list().catch(() => []),
+    api.admin.deployments().catch(() => []),
+    api.admin.users().catch(() => []),
+    api.admin.auditLogs().catch(() => []),
+  ]);
+
   return (
     <div className="pb-12">
       <PageHeader 
@@ -12,9 +22,9 @@ export default function AdminDashboardPage() {
       
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-fade-in" style={{ animationDuration: '0.3s' }}>
-        <MetricCard label="Total Deployments" value="1,284" icon={Box} color="blue" trend="+12% from last week" />
-        <MetricCard label="Active Nodes" value="12 / 12" icon={Server} color="green" trend="100% capacity" />
-        <MetricCard label="Platform Users" value="84" icon={Users} color="default" trend="2 pending invites" />
+        <MetricCard label="Total Deployments" value={deployments.length} icon={Box} color="blue" trend={`${projects.length} Active Projects`} />
+        <MetricCard label="Active Nodes" value="3 / 3" icon={Server} color="green" trend="100% capacity" />
+        <MetricCard label="Platform Users" value={users.length} icon={Users} color="default" trend="Online" />
         <MetricCard label="System Load" value="42%" icon={Activity} color="amber" trend="Stable" />
       </div>
 
@@ -116,25 +126,21 @@ export default function AdminDashboardPage() {
             </h2>
             
             <div className="space-y-4">
-              {[
-                { action: "Admin Login", user: "jeneel.dumasia", time: "2 mins ago", type: "info" },
-                { action: "Project Deleted", user: "system", time: "14 mins ago", type: "warning" },
-                { action: "ArgoCD Sync", user: "webhook", time: "1 hour ago", type: "success" },
-                { action: "Database Backup", user: "cron", time: "3 hours ago", type: "info" },
-                { action: "Failed Auth", user: "unknown", time: "5 hours ago", type: "danger" },
-              ].map((log, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-canvas-border/50 bg-black/5 dark:bg-white/5">
+              {auditLogs.length > 0 ? auditLogs.slice(0, 5).map((log, i) => (
+                <div key={log.id || i} className="flex items-start gap-3 p-3 rounded-lg border border-canvas-border/50 bg-black/5 dark:bg-white/5">
                   <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                    log.type === 'info' ? 'bg-blue-500' :
-                    log.type === 'warning' ? 'bg-amber-500' :
-                    log.type === 'danger' ? 'bg-red-500' : 'bg-emerald-500'
+                    log.action.includes('DELETE') ? 'bg-amber-500' :
+                    log.action.includes('FAIL') ? 'bg-red-500' : 
+                    log.action.includes('DEPLOY') ? 'bg-blue-500' : 'bg-emerald-500'
                   }`} />
                   <div>
-                    <p className="text-sm font-medium text-text-primary">{log.action}</p>
-                    <p className="text-xs text-text-secondary mt-0.5">by {log.user} • {log.time}</p>
+                    <p className="text-sm font-medium text-text-primary capitalize">{log.action.toLowerCase().replace(/_/g, ' ')}</p>
+                    <p className="text-xs text-text-secondary mt-0.5">by {log.user_id.split('-')[0]} • {new Date(log.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-sm text-text-secondary text-center py-4">No recent activity.</p>
+              )}
             </div>
             
             <button className="w-full mt-6 py-2 text-xs font-medium text-text-secondary hover:text-text-primary border border-canvas-border rounded-lg transition-colors">
