@@ -14,15 +14,16 @@ export default function NewProjectPage() {
   const [error, setError]         = useState("");
   const [loading, setLoading]     = useState(false);
 
+  const [suffix] = useState(() => "-" + Math.random().toString(36).substring(2, 6));
+
   function handleNameChange(v: string) {
     setName(v);
-    setNamespace(
-      v.toLowerCase()
+    const base = v.toLowerCase()
        .replace(/[^a-z0-9-]/g, "-")
        .replace(/-+/g, "-")
        .replace(/^-|-$/g, "")
-       .slice(0, 63)
-    );
+       .slice(0, 58); // Leave room for 5 char suffix
+    setNamespace(base ? base + suffix : "");
   }
 
   async function handleSubmit(e: React.FormEvent) {
