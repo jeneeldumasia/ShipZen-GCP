@@ -7,7 +7,10 @@ spec:
   exceptions:
     - policyName: "*"
       ruleNames:
-        - "*"
+        - "privileged"
+        - "autogen-privileged"
+        - "host-namespaces"
+        - "autogen-host-namespaces"
   match:
     any:
       - resources:
