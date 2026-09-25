@@ -30,9 +30,17 @@ export default async function DashboardPage() {
   return (
     <div className="w-full flex flex-col items-center justify-center min-h-[70vh] animate-fade-in">
       {/* Intelligent Greeting */}
-      <div className="text-center mb-24">
-        <h1 className="text-5xl font-display font-bold text-text-primary tracking-tighter mb-4">{greeting}.</h1>
-        <p className="text-lg text-text-secondary font-serif italic tracking-wide">{systemStatus}</p>
+      <div className="w-full max-w-4xl flex items-center justify-between mb-24">
+        <div className="text-left">
+          <h1 className="text-5xl font-display font-bold text-text-primary tracking-tighter mb-4">{greeting}.</h1>
+          <p className="text-lg text-text-secondary font-serif italic tracking-wide">{systemStatus}</p>
+        </div>
+        {projects.length > 0 && (
+          <Link href="/projects/new" className="btn-primary">
+            <Plus size={16} />
+            Create Project
+          </Link>
+        )}
       </div>
 
       {/* The Canvas (Projects as Minimalist Blocks) */}
