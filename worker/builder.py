@@ -97,7 +97,7 @@ class DockerfileBuilder(Builder):
                                 "image": "gcr.io/kaniko-project/executor:latest",
                                 "args": [
                                     "--context=dir:///workspace",
-                                    "--dockerfile=/workspace/Dockerfile",
+                                    "--dockerfile=Dockerfile",
                                     f"--destination={image_uri}",
                                     "--cache=true",
                                     f"--cache-repo={cache_uri}"
@@ -284,7 +284,7 @@ fi
                                 "image": "gcr.io/kaniko-project/executor:latest",
                                 "args": [
                                     "--context=dir:///workspace",
-                                    "--dockerfile=/workspace/.nixpacks/Dockerfile",
+                                    "--dockerfile=.nixpacks/Dockerfile",
                                     f"--destination={image_uri}",
                                     "--cache=true",
                                     f"--cache-repo={cache_uri}"
