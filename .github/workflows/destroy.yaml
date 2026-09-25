@@ -2,8 +2,6 @@ name: Infra Teardown
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *'  # Auto-destroy every 6 hours
 
 permissions:
   id-token: write
