@@ -13,20 +13,20 @@ resources:
 images:
   - name: shipzen-api
     newName: us-central1-docker.pkg.dev/project-ce3f7c39-eceb-4221-a76/shipzen-platform/api
-    newTag: sha-d809c88
+    newTag: sha-791652f
 
   - name: shipzen-controller
     newName: us-central1-docker.pkg.dev/project-ce3f7c39-eceb-4221-a76/shipzen-platform/controller
-    newTag: sha-d809c88
+    newTag: sha-791652f
 
   - name: shipzen-worker
     newName: us-central1-docker.pkg.dev/project-ce3f7c39-eceb-4221-a76/shipzen-platform/worker
-    newTag: sha-d809c88
+    newTag: sha-791652f
 
   - name: shipzen-builder
     newName: us-central1-docker.pkg.dev/project-ce3f7c39-eceb-4221-a76/shipzen-platform/builder
     newTag: latest
   - name: shipzen-ui
     newName: us-central1-docker.pkg.dev/project-ce3f7c39-eceb-4221-a76/shipzen-platform/ui
-    newTag: sha-d809c88
+    newTag: sha-791652f
 
