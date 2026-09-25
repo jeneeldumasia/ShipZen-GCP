@@ -75,7 +75,7 @@ resource "null_resource" "kyverno_builder_exception" {
   provisioner "local-exec" {
     command = <<-EOF
       kubectl apply -f - <<'YAML'
-      apiVersion: kyverno.io/v2
+      apiVersion: policies.kyverno.io/v1
       kind: PolicyException
       metadata:
         name: shipzen-build-buildkit-exception
@@ -86,31 +86,13 @@ resource "null_resource" "kyverno_builder_exception" {
             mount() for nested container builds. Scoped to builder Jobs in
             shipzen-build only. Privileged mode is NOT granted.
       spec:
-        exceptions:
-          - policyName: restrict-seccomp
-            ruleNames:
-              - check-seccomp
-              - check-seccomp-strict
-        match:
-          any:
-            - resources:
-                kinds:
-                  - Job
-                  - Pod
-                namespaces:
-                  - shipzen-build
-                selector:
-                  matchLabels:
-                    shipzen.jeneeldumasia.codes/tier: dockerfile
-            - resources:
-                kinds:
-                  - Job
-                  - Pod
-                namespaces:
-                  - shipzen-build
-                selector:
-                  matchLabels:
-                    shipzen.jeneeldumasia.codes/tier: nixpacks
+        policyRefs:
+          - name: restrict-seccomp
+            kind: ValidatingPolicy
+        matchConditions:
+          - name: match-builder-jobs
+            expression: >
+              object.kind == 'Job' || object.kind == 'Pod'
       YAML
     EOF
   }
