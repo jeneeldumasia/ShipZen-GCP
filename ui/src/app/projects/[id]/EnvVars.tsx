@@ -11,6 +11,7 @@ export function EnvVars({ projectId }: { projectId: string }) {
   const [newKey, setNewKey] = useState("");
   const [newVal, setNewVal] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   useEffect(() => {
     loadKeys();
@@ -44,14 +45,15 @@ export function EnvVars({ projectId }: { projectId: string }) {
     }
   }
 
-  async function handleDelete(key: string) {
-    if (!confirm(`Delete environment variable ${key}?`)) return;
+  async function confirmDelete(key: string) {
     try {
       await api.env.delete(projectId, key);
       await loadKeys();
       toast.success("Environment variable deleted");
     } catch {
       toast.error("Failed to delete environment variable");
+    } finally {
+      setDeletingKey(null);
     }
   }
 
@@ -115,7 +117,7 @@ export function EnvVars({ projectId }: { projectId: string }) {
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">••••••••</td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => handleDelete(k)}
+                        onClick={() => setDeletingKey(k)}
                         className="text-red-500 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Delete"
                       >
@@ -129,6 +131,38 @@ export function EnvVars({ projectId }: { projectId: string }) {
           </div>
         )}
       </div>
+
+      {deletingKey && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-canvas-bg border border-canvas-border rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-fade-in" style={{ animationDuration: '0.2s' }}>
+            <div className="flex items-center gap-3 mb-4 text-danger">
+              <div className="p-2 bg-danger/10 rounded-full">
+                <Trash2 size={20} className="text-danger" />
+              </div>
+              <h2 className="text-xl font-bold text-text-primary tracking-tight">Delete Variable</h2>
+            </div>
+            
+            <p className="text-text-secondary mb-6">
+              Are you sure you want to delete <strong className="text-text-primary font-mono bg-canvas-border/30 px-1 rounded">{deletingKey}</strong>? This action cannot be undone.
+            </p>
+            
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setDeletingKey(null)} 
+                className="px-4 py-2 rounded-lg text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-canvas-border/50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => confirmDelete(deletingKey)} 
+                className="btn-danger"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
