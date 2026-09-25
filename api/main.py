@@ -73,8 +73,25 @@ _REPO_URL_RE = re.compile(
 # Branch name validation regex — shared with webhook handler (CRIT-01)
 _BRANCH_RE = re.compile(r'^[a-zA-Z0-9_.\-/]{1,200}$')
 
-# HIGH-20 Fix: Reserved namespace prefixes that tenants cannot use
-_RESERVED_NS_PREFIXES = ('kube-', 'shipzen-', 'default', 'observability', 'kyverno', 'argocd')
+# Namespace reservation: tenants cannot claim any name used by the platform at
+# the cluster level. Prefixes cover Kubernetes system namespaces; exact names
+# cover every infra namespace that Terraform/Helm installs into this cluster.
+# This list must be updated whenever a new cluster-level namespace is added.
+_RESERVED_NS_PREFIXES: tuple[str, ...] = (
+    'kube-',       # Kubernetes system (kube-system, kube-public, kube-node-lease)
+    'shipzen-',    # Platform core  (shipzen-system, shipzen-build)
+    'gke-',        # GKE managed    (gke-managed-*, gmp-*)
+    'gmp-',        # GKE monitoring
+    'envoy-',      # Envoy gateway system
+)
+_RESERVED_NS_EXACT: frozenset[str] = frozenset({
+    # Kubernetes system
+    'default', 'kube-system', 'kube-public', 'kube-node-lease',
+    # Platform infrastructure
+    'argocd', 'observability', 'kyverno', 'keda',
+    'external-secrets', 'external-dns',
+    'velero',
+})
 
 # PERF-01 Fix: Module-level GCP Secret Manager client singleton
 try:
@@ -219,10 +236,13 @@ class CreateProjectRequest(BaseModel):
                 "namespace must be lowercase alphanumeric with hyphens, 3–63 chars, "
                 "and cannot start or end with a hyphen"
             )
-        # HIGH-20 Fix: Reject reserved Kubernetes namespace prefixes
-        if v in _RESERVED_NS_PREFIXES or any(v.startswith(p) for p in _RESERVED_NS_PREFIXES if p.endswith('-')):
+        # Reject reserved platform/infra namespaces — both exact names and prefixes.
+        # This prevents users from colliding with cluster-level infrastructure
+        # that is never stored in the projects table.
+        if v in _RESERVED_NS_EXACT or any(v.startswith(p) for p in _RESERVED_NS_PREFIXES):
             raise ValueError(
-                f"namespace '{v}' is reserved and cannot be used for tenant projects"
+                f"The namespace '{v}' is reserved for platform use and cannot be "
+                "used for tenant projects. Please choose a different namespace."
             )
         return v
 
