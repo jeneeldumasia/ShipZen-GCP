@@ -345,9 +345,12 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
             shipzen_deployments_total.labels(state="Failed", project_id=project_id).inc()
             error_msg = "Build step failed."
             if stdout_bytes:
-                lines = [line.strip() for line in stdout_bytes.decode('utf-8', errors='replace').splitlines() if line.strip()]
+                # Convert to string and split lines
+                log_str = stdout_bytes.decode('utf-8', errors='replace')
+                lines = [line.strip() for line in log_str.splitlines() if line.strip()]
                 if lines:
-                    error_msg = f"Build failed: {lines[-1]}"[:1000]
+                    # Take the last 5 lines for context
+                    error_msg = f"Build failed: {' | '.join(lines[-5:])}"[:1000]
             
             state_machine.update_state(
                 deployment_id, "Failed", error_msg)
