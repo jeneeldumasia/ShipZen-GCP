@@ -343,8 +343,14 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
             record_build(deployment_id, gcs_log_key, "Failed")
             shipzen_deployment_failure_total.inc()
             shipzen_deployments_total.labels(state="Failed", project_id=project_id).inc()
+            error_msg = "Build step failed."
+            if stdout_bytes:
+                lines = [line.strip() for line in stdout_bytes.decode('utf-8', errors='replace').splitlines() if line.strip()]
+                if lines:
+                    error_msg = f"Build failed: {lines[-1]}"[:1000]
+            
             state_machine.update_state(
-                deployment_id, "Failed", "Build step failed.")
+                deployment_id, "Failed", error_msg)
 
     except Exception as e:
         logger.error(f"Error monitoring job {job_name}: {e}")
