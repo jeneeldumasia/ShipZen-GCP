@@ -52,6 +52,26 @@ jobs:
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: terraform plan -out=tfplan
 
+      - name: Pre-flight - Configure kubectl and force-finalize stuck Terminating namespaces
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }} 2>/dev/null || true
+          # If a previous Helm install failed and left namespaces stuck in Terminating,
+          # Terraform's Helm provider cannot create resources inside them.
+          # Clear finalizers so Kubernetes actually removes them before we apply.
+          for NS in $(kubectl get ns --no-headers 2>/dev/null | awk '$2=="Terminating"{print $1}'); do
+            echo "Forcing finalization of stuck namespace: $NS"
+            kubectl get ns "$NS" -o json \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); d['spec']['finalizers']=[]; print(json.dumps(d))" \
+              | kubectl replace --raw /api/v1/namespaces/"$NS"/finalize -f - || true
+            for i in $(seq 1 6); do
+              kubectl get ns "$NS" >/dev/null 2>&1 || { echo "  $NS is gone."; break; }
+              sleep 5
+            done
+          done
+        continue-on-error: true
+
       - name: Terraform Apply
         working-directory: ./terraform
         env:
