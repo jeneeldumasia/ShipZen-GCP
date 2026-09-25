@@ -32,3 +32,53 @@ resource "google_service_account_iam_member" "velero_workload_identity" {
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.gcp_project}.svc.id.goog[velero/velero]"
 }
+
+resource "helm_release" "velero" {
+  name             = "velero"
+  repository       = "https://vmware-tanzu.github.io/helm-charts"
+  chart            = "velero"
+  version          = "7.2.1"
+  namespace        = "velero"
+  create_namespace = true
+
+  values = [
+    yamlencode({
+      configuration = {
+        backupStorageLocation = [
+          {
+            name     = "default"
+            provider = "gcp"
+            bucket   = google_storage_bucket.velero_backups.name
+          }
+        ]
+      }
+      initContainers = [
+        {
+          name            = "velero-plugin-for-gcp"
+          image           = "velero/velero-plugin-for-gcp:v1.9.0"
+          imagePullPolicy = "IfNotPresent"
+          volumeMounts = [
+            {
+              mountPath = "/target"
+              name      = "plugins"
+            }
+          ]
+        }
+      ]
+      serviceAccount = {
+        server = {
+          create = true
+          name   = "velero"
+          annotations = {
+            "iam.gke.io/gcp-service-account" = google_service_account.velero_sa.email
+          }
+        }
+      }
+      credentials = {
+        useSecret = false
+      }
+    })
+  ]
+
+  depends_on = [time_sleep.wait_for_cluster_auth]
+}

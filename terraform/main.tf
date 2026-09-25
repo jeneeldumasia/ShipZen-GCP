@@ -265,6 +265,28 @@ resource "kubernetes_service_account" "builder_k8s_sa" {
   automount_service_account_token = true
 }
 
+resource "kubernetes_service_account" "worker_k8s_sa" {
+  metadata {
+    name      = "shipzen-worker-sa"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
+    annotations = {
+      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
+    }
+  }
+  automount_service_account_token = true
+}
+
+resource "kubernetes_service_account" "api_k8s_sa" {
+  metadata {
+    name      = "shipzen-api-sa"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
+    annotations = {
+      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
+    }
+  }
+  automount_service_account_token = true
+}
+
 # ── Cloudflare Origin CA Certificate ──────────────────────────────────────────
 resource "tls_private_key" "origin_cert" {
   algorithm = "RSA"
