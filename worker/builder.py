@@ -106,8 +106,7 @@ class DockerfileBuilder(Builder):
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
+                                    "runAsUser": 0,
                                     "allowPrivilegeEscalation": False,
                                     "seccompProfile": {"type": "RuntimeDefault"}
                                 }
@@ -311,8 +310,7 @@ fi
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
                                 "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
+                                    "runAsUser": 0,
                                     "allowPrivilegeEscalation": False,
                                     "seccompProfile": {"type": "RuntimeDefault"}
                                 }
@@ -328,8 +326,7 @@ fi
                                 },
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
                                 "securityContext": {
-                                    "runAsUser": 1000,
-                                    "runAsGroup": 1000,
+                                    "runAsUser": 0,
                                     "allowPrivilegeEscalation": False,
                                     "seccompProfile": {"type": "RuntimeDefault"}
                                 }
