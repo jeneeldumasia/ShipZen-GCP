@@ -77,6 +77,12 @@ resource "helm_release" "velero" {
       credentials = {
         useSecret = false
       }
+      kubectl = {
+        image = {
+          repository = "docker.io/bitnami/kubectl"
+          tag        = "1.30.2"
+        }
+      }
     })
   ]
 
