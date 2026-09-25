@@ -153,6 +153,7 @@ class NixpacksBuilder(Builder):
             clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
         setup_script = f"""
+set -e
 {clone_cmd}
 chmod 777 /workspace
 cd /workspace
