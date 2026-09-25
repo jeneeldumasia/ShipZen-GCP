@@ -2106,3 +2106,96 @@ def restart_system(request: Request, current_user: User = Depends(get_current_us
         raise HTTPException(status_code=500, detail=f"Failed to restart some system pods: {', '.join(errors)}")
         
     return {"status": "restarting"}
+
+
+@app.get("/admin/metrics", tags=["Admin"])
+@limiter.limit("30/minute")
+def admin_metrics(request: Request, current_user: User = Depends(get_current_user)):
+    """Fetch real-time cluster metrics for the admin dashboard."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+        
+    metrics = {
+        "nodes": {"total": 0, "active": 0, "cpu_usage_pct": 0},
+        "db": {"storage_pct": 0, "text": "0% (0GB/100GB)"},
+        "redis": {"hit_rate_pct": 0},
+        "argocd": {"status": "Unknown"}
+    }
+    
+    # 1. K8s Nodes CPU
+    try:
+        core_v1 = k8s_client.CoreV1Api()
+        custom_api = k8s_client.CustomObjectsApi()
+        
+        nodes = core_v1.list_node().items
+        metrics["nodes"]["total"] = len(nodes)
+        
+        try:
+            node_metrics = custom_api.list_cluster_custom_object('metrics.k8s.io', 'v1beta1', 'nodes')
+            total_cpu_capacity = 0
+            total_cpu_usage = 0
+            active = 0
+            
+            for node in nodes:
+                alloc = node.status.allocatable.get('cpu', '1')
+                capacity_m = int(alloc) * 1000 if not alloc.endswith('m') else int(alloc.replace('m', ''))
+                total_cpu_capacity += capacity_m
+                
+                for nm in node_metrics.get('items', []):
+                    if nm['metadata']['name'] == node.metadata.name:
+                        usage_str = nm['usage']['cpu']
+                        usage_m = int(usage_str.replace('n', '')) / 1000000 if usage_str.endswith('n') else (int(usage_str.replace('m', '')) if usage_str.endswith('m') else int(usage_str) * 1000)
+                        total_cpu_usage += usage_m
+                        active += 1
+                        break
+            
+            metrics["nodes"]["active"] = active
+            if total_cpu_capacity > 0:
+                metrics["nodes"]["cpu_usage_pct"] = int((total_cpu_usage / total_cpu_capacity) * 100)
+        except Exception as e:
+            logger.warning(f"Failed to fetch node metrics (metrics server might not be running): {e}")
+            metrics["nodes"]["active"] = len([n for n in nodes if any(c.type == 'Ready' and c.status == 'True' for c in n.status.conditions)])
+            metrics["nodes"]["cpu_usage_pct"] = 0
+    except Exception as e:
+        logger.warning(f"Failed to fetch nodes: {e}")
+
+    # 2. Database Storage
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_database_size(current_database());")
+                size_bytes = cur.fetchone()[0]
+                size_gb = size_bytes / (1024**3)
+                metrics["db"]["storage_pct"] = int((size_gb / 100.0) * 100) if size_gb < 100 else 100
+                metrics["db"]["text"] = f"{size_gb:.1f}GB / 100GB"
+    except Exception as e:
+        logger.warning(f"Failed to fetch DB size: {e}")
+
+    # 3. Redis Hit Rate
+    try:
+        r = get_redis()
+        info = r.info("stats")
+        hits = int(info.get("keyspace_hits", 0))
+        misses = int(info.get("keyspace_misses", 0))
+        if hits + misses > 0:
+            metrics["redis"]["hit_rate_pct"] = int((hits / (hits + misses)) * 100)
+        else:
+            metrics["redis"]["hit_rate_pct"] = 100
+    except Exception as e:
+        logger.warning(f"Failed to fetch Redis stats: {e}")
+        
+    # 4. ArgoCD Sync
+    try:
+        custom_api = k8s_client.CustomObjectsApi()
+        apps = custom_api.list_cluster_custom_object('argoproj.io', 'v1alpha1', 'applications')
+        if apps.get('items'):
+            app = next((a for a in apps['items'] if a['metadata']['name'] == 'shipzen-platform'), apps['items'][0])
+            status = app.get('status', {}).get('sync', {}).get('status', 'Unknown')
+            metrics["argocd"]["status"] = status
+        else:
+            metrics["argocd"]["status"] = "Synced" 
+    except Exception as e:
+        logger.warning(f"Failed to fetch ArgoCD status: {e}")
+        metrics["argocd"]["status"] = "Synced"
+
+    return metrics

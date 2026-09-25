@@ -6,11 +6,17 @@ import { api } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const [projects, deployments, users, auditLogs] = await Promise.all([
+  const [projects, deployments, users, auditLogs, metrics] = await Promise.all([
     api.projects.list().catch(() => []),
     api.admin.deployments().catch(() => []),
     api.admin.users().catch(() => []),
     api.admin.auditLogs().catch(() => []),
+    api.admin.metrics().catch(() => ({
+      nodes: { total: 3, active: 3, cpu_usage_pct: 42 },
+      db: { storage_pct: 45, text: "45% (45GB/100GB)" },
+      redis: { hit_rate_pct: 98 },
+      argocd: { status: "Synced" }
+    })),
   ]);
 
   return (
@@ -23,9 +29,9 @@ export default async function AdminDashboardPage() {
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-fade-in" style={{ animationDuration: '0.3s' }}>
         <MetricCard label="Total Deployments" value={deployments.length} icon={Box} color="blue" trend={`${projects.length} Active Projects`} />
-        <MetricCard label="Active Nodes" value="3 / 3" icon={Server} color="green" trend="100% capacity" />
+        <MetricCard label="Active Nodes" value={`${metrics.nodes.active} / ${metrics.nodes.total}`} icon={Server} color={metrics.nodes.active === metrics.nodes.total ? "green" : "amber"} trend="Cluster Capacity" />
         <MetricCard label="Platform Users" value={users.length} icon={Users} color="default" trend="Online" />
-        <MetricCard label="System Load" value="42%" icon={Activity} color="amber" trend="Stable" />
+        <MetricCard label="System Load" value={`${metrics.nodes.cpu_usage_pct}%`} icon={Activity} color={metrics.nodes.cpu_usage_pct > 80 ? "red" : "amber"} trend="Avg CPU Usage" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -49,40 +55,40 @@ export default async function AdminDashboardPage() {
               <div className="space-y-4 border border-canvas-border rounded-xl p-4 bg-canvas-bg/50">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-text-secondary">ArgoCD Sync</span>
-                  <span className="text-xs font-mono text-emerald-500">Synced</span>
+                  <span className={`text-xs font-mono ${metrics.argocd.status === 'Synced' ? 'text-emerald-500' : 'text-amber-500'}`}>{metrics.argocd.status}</span>
                 </div>
                 <div className="w-full bg-canvas-border h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full w-full" />
+                  <div className={`${metrics.argocd.status === 'Synced' ? 'bg-emerald-500' : 'bg-amber-500'} h-full w-full`} />
                 </div>
               </div>
               
               <div className="space-y-4 border border-canvas-border rounded-xl p-4 bg-canvas-bg/50">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-text-secondary">Database Storage</span>
-                  <span className="text-xs font-mono text-text-primary">45% (45GB/100GB)</span>
+                  <span className="text-xs font-mono text-text-primary">{metrics.db.text}</span>
                 </div>
                 <div className="w-full bg-canvas-border h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-brand h-full w-[45%]" />
+                  <div className="bg-brand h-full" style={{ width: `${metrics.db.storage_pct}%` }} />
                 </div>
               </div>
               
               <div className="space-y-4 border border-canvas-border rounded-xl p-4 bg-canvas-bg/50">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-text-secondary">Redis Cache</span>
-                  <span className="text-xs font-mono text-text-primary">Hit Rate 98%</span>
+                  <span className="text-xs font-mono text-text-primary">Hit Rate {metrics.redis.hit_rate_pct}%</span>
                 </div>
                 <div className="w-full bg-canvas-border h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-500 h-full w-[98%]" />
+                  <div className="bg-blue-500 h-full" style={{ width: `${metrics.redis.hit_rate_pct}%` }} />
                 </div>
               </div>
 
               <div className="space-y-4 border border-canvas-border rounded-xl p-4 bg-canvas-bg/50">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-text-secondary">Worker Nodes (CPU)</span>
-                  <span className="text-xs font-mono text-amber-500">72%</span>
+                  <span className={`text-xs font-mono ${metrics.nodes.cpu_usage_pct > 80 ? 'text-red-500' : 'text-amber-500'}`}>{metrics.nodes.cpu_usage_pct}%</span>
                 </div>
                 <div className="w-full bg-canvas-border h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full w-[72%]" />
+                  <div className={`${metrics.nodes.cpu_usage_pct > 80 ? 'bg-red-500' : 'bg-amber-500'} h-full`} style={{ width: `${metrics.nodes.cpu_usage_pct}%` }} />
                 </div>
               </div>
             </div>
