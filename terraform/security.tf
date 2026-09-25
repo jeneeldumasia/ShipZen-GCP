@@ -21,7 +21,6 @@ resource "helm_release" "kyverno" {
           "[*/*,kube-node-lease,*]",
           "[Node,*,*]",
           "[*/*,observability,*]",
-          "[*/*,shipzen-build,*]",
           "[*/*,velero,*]"
         ]
       }
@@ -47,7 +46,8 @@ resource "helm_release" "kyverno_policies" {
           {
             action = "Audit"
             namespaces = [
-              "observability"
+              "observability",
+              "shipzen-build"
             ]
           }
         ]
