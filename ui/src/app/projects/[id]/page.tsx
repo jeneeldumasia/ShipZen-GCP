@@ -10,6 +10,7 @@ import { DeleteProjectButton } from "./DeleteProjectButton";
 import { EnvVars } from "./EnvVars";
 import { Webhooks } from "./Webhooks";
 import { ProjectShortcuts } from "./ProjectShortcuts";
+import { ProjectProvisioningStatus } from "./ProjectProvisioningStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       <div className="mb-6 -mt-4">
         <StatusBadge status={project.status} size="md" />
       </div>
+
+      <ProjectProvisioningStatus projectId={project.id} initialStatus={project.status} />
 
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
