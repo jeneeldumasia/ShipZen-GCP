@@ -25,7 +25,10 @@ export default async function DashboardPage() {
 
   const allReady = projects.every(p => p.status === "Ready");
   const notReadyCount = projects.filter(p => p.status !== "Ready").length;
-  const systemStatus = allReady ? "All systems operational." : `${notReadyCount} project${notReadyCount > 1 ? 's' : ''} need${notReadyCount === 1 ? 's' : ''} attention.`;
+  let systemStatus = "Welcome to ShipZen.";
+  if (projects.length > 0) {
+    systemStatus = allReady ? "All systems operational." : `${notReadyCount} project${notReadyCount > 1 ? 's' : ''} need${notReadyCount === 1 ? 's' : ''} attention.`;
+  }
 
   return (
     <div className="w-full flex flex-col items-center justify-center min-h-[70vh] animate-fade-in">
