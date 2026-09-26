@@ -23,7 +23,7 @@ The DevBox comes with `code-server` installed, which gives you a full VS Code in
    ```
 3. Open a **new, separate terminal** on your local machine and create a secure tunnel:
    ```powershell
-   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 -- -L 8080:localhost:8080 -N
+   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 8080:localhost:8080"
    ```
 4. Open your web browser and go to `http://localhost:8080`.
 
@@ -31,12 +31,12 @@ The DevBox comes with `code-server` installed, which gives you a full VS Code in
 
 If you prefer a full graphical Linux desktop environment:
 
-1. Open a local terminal and create an RDP tunnel:
+1. Open a local terminal and create an RDP tunnel (using port 3390 locally to avoid conflicts with your Windows PC's own RDP service):
    ```powershell
-   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 -- -L 3389:localhost:3389 -N
+   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 3390:localhost:3389"
    ```
 2. Open **Microsoft Remote Desktop** (or any RDP client) on your computer.
-3. Connect to `localhost:3389`.
+3. Connect to `localhost:3390`.
 
 ## 4. Debugging the GKE Cluster
 
