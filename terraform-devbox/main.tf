@@ -79,6 +79,10 @@ resource "google_compute_instance" "devbox" {
 
   network_interface {
     network = "default"
+    access_config {
+      # Ephemeral public IP to allow outbound internet access for apt-get downloads.
+      # (Ingress is still 100% blocked by GCP default firewall rules).
+    }
   }
 
   service_account {
@@ -89,7 +93,7 @@ resource "google_compute_instance" "devbox" {
   metadata_startup_script = <<-EOT
     #!/bin/bash
     sudo apt-get update
-    sudo apt-get install -y git jq curl wget tmux apt-transport-https ca-certificates gnupg lsb-release kubectl google-cloud-sdk-gke-gcloud-auth-plugin python3 python3-pip python3-venv xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libgbm1 libasound2
+    sudo apt-get install -y git jq curl wget tmux apt-transport-https ca-certificates gnupg lsb-release kubectl google-cloud-cli-gke-gcloud-auth-plugin python3 python3-pip python3-venv xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libgbm1 libasound2
     
     sudo mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
