@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 import os
@@ -26,7 +26,7 @@ os.environ["CONSUMER_GROUP"] = "test_group"
 @pytest.fixture(scope="session")
 def postgres_container():
     with PostgresContainer("mirror.gcr.io/library/postgres:15-alpine", dbname="shipzen") as postgres:
-        os.environ["DATABASE_URL"] = postgres.get_connection_url()
+        os.environ["DATABASE_URL"] = postgres.get_connection_url().replace("+psycopg2", "")
         # Initialize schema
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         conn.autocommit = True
@@ -41,7 +41,7 @@ def postgres_container():
 def redis_container():
     with RedisContainer("mirror.gcr.io/library/redis:7-alpine") as redis_server:
         os.environ["REDIS_HOST"] = redis_server.get_container_host_ip()
-        os.environ["REDIS_PORT"] = redis_server.get_exposed_port(6379)
+        os.environ["REDIS_PORT"] = str(redis_server.get_exposed_port(6379))
         yield redis_server
 
 @pytest.fixture(autouse=True)
@@ -133,12 +133,13 @@ async def test_webhook_handler_hmac_rejection(postgres_container):
         cur.execute("INSERT INTO projects (id, owner_id, name, namespace, webhook_secret) VALUES ('proj3', 'user1', 'p3', 'ns3', 'mysecret')")
     conn.close()
 
+    from starlette.datastructures import Headers
     mock_request = MagicMock(spec=Request)
-    mock_request.headers = {
-        "X-GitHub-Event": "push",
-        "X-Hub-Signature-256": "sha256=invalid_signature_here"
-    }
-    mock_request.body = MagicMock(return_value=b'{"repository": {"clone_url": "http://repo"}}')
+    mock_request.headers = Headers({
+        "x-github-event": "push",
+        "x-hub-signature-256": "sha256=invalid_signature_here"
+    })
+    mock_request.body = AsyncMock(return_value=b'{"repository": {"clone_url": "http://repo"}}')
     
     with pytest.raises(HTTPException) as exc:
         await github_webhook(mock_request, "proj3")
@@ -184,35 +185,30 @@ def test_env_var_secret_id_uses_project_id():
 
     mock_user = User(user_id="user1", role="admin")
 
-    # Capture whatever SecretId is used in the _sm_client.put_secret_value call.
     captured = {}
 
-    def fake_get_secret_value(**kwargs):
-        from botocore.exceptions import ClientError
-        error = {"Error": {"Code": "ResourceNotFoundException", "Message": "not found"}}
-        raise ClientError(error, "GetSecretValue")
+    def fake_access_secret_version(**kwargs):
+        raise Exception("NotFound")
 
     def fake_create_secret(**kwargs):
-        captured["secret_id"] = kwargs.get("Name")
-        return {"ARN": "arn:aws:secretsmanager:us-east-1:000000000000:secret:test"}
+        captured["secret_id"] = kwargs.get("request", {}).get("secret_id")
+        return MagicMock()
 
     with patch("api.main._sm_client") as mock_sm:
-        mock_sm.get_secret_value.side_effect = fake_get_secret_value
-        mock_sm.exceptions.ResourceNotFoundException = type(
-            "ResourceNotFoundException", (Exception,), {}
-        )
+        mock_sm.access_secret_version.side_effect = fake_access_secret_version
         mock_sm.create_secret.side_effect = fake_create_secret
-        mock_sm.put_secret_value.return_value = {}
+        mock_sm.add_secret_version.return_value = MagicMock()
 
         mock_project = {"id": "proj4", "namespace": "ns4", "name": "My Project"}
-        mock_request = MagicMock()
+        from fastapi import Request
+        mock_request = MagicMock(spec=Request)
 
         body = PutEnvVarRequest(key="MY_VAR", value="myval")
         put_env_var(mock_request, "proj4", body, mock_project, mock_user)
 
     # THE REGRESSION GUARD: secret path must contain the UUID, NOT the name
-    assert captured.get("secret_id") == "shipzen/project/proj4", (
-        f"Expected 'shipzen/project/proj4' but got {captured.get('secret_id')!r}"
+    assert captured.get("secret_id") == "shipzen-project-proj4", (
+        f"Expected 'shipzen-project-proj4' but got {captured.get('secret_id')!r}"
     )
 
 # --- 6. Analyze Repo Branch Validation ---
@@ -221,10 +217,10 @@ async def test_analyze_repo_branch_validation():
     """Branch names with spaces / special chars must be rejected with HTTP 400."""
     from api.main import analyze_repo, AnalyzeRequest
     from api.auth import User
-    from fastapi import HTTPException
+    from fastapi import HTTPException, Request
 
     mock_user = User(user_id="user1", role="admin")
-    mock_request = MagicMock()
+    mock_request = MagicMock(spec=Request)
 
     class MockBody:
         repo_url = "https://github.com/test/test.git"

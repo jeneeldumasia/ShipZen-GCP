@@ -4,6 +4,8 @@ from fastapi import HTTPException
 import psycopg2
 import os
 
+from tests.test_core import postgres_container
+
 def test_verify_project_access(postgres_container):
     from api.database import verify_project_access
     from api.auth import User
