@@ -1,0 +1,45 @@
+name: Deploy DevBox
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-devbox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        working-directory: ./terraform-devbox
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ./terraform-devbox
+        env:
+          TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_gcp_region: us-central1
+        run: terraform apply -auto-approve
+
+      - name: Summary
+        run: |
+          echo "### DevBox Deployed 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "You can now connect to your secure DevBox using Google IAP:" >> $GITHUB_STEP_SUMMARY
+          echo '`gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=${{ secrets.GCP_PROJECT_ID }}`' >> $GITHUB_STEP_SUMMARY
