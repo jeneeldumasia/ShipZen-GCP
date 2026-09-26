@@ -15,8 +15,8 @@ spec:
     creationPolicy: Owner
   dataFrom:
     - extract:
-        # Assumes secrets in GCP Secret Manager are stored with shipzen-{project_name} prefix
-        key: shipzen-{{ project_name }}
+        # Secrets in GCP Secret Manager are stored as a JSON object with this key
+        key: shipzen-project-{{ project_id }}
 ---
 apiVersion: apps/v1
 kind: Deployment
