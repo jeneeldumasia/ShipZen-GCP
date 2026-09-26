@@ -25,7 +25,7 @@ os.environ["CONSUMER_GROUP"] = "test_group"
 
 @pytest.fixture(scope="session")
 def postgres_container():
-    with PostgresContainer("postgres:15-alpine", dbname="shipzen") as postgres:
+    with PostgresContainer("mirror.gcr.io/library/postgres:15-alpine", dbname="shipzen") as postgres:
         os.environ["DATABASE_URL"] = postgres.get_connection_url()
         # Initialize schema
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
@@ -39,7 +39,7 @@ def postgres_container():
 
 @pytest.fixture(scope="session")
 def redis_container():
-    with RedisContainer("redis:7-alpine") as redis_server:
+    with RedisContainer("mirror.gcr.io/library/redis:7-alpine") as redis_server:
         os.environ["REDIS_HOST"] = redis_server.get_container_host_ip()
         os.environ["REDIS_PORT"] = redis_server.get_exposed_port(6379)
         yield redis_server
