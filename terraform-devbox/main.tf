@@ -111,6 +111,7 @@ resource "google_compute_instance" "devbox" {
     echo "xfce4-session" | sudo tee /etc/skel/.xsession
     
     # ── Install Browser-based IDE (code-server)
-    curl -fsSL https://code-server.dev/install.sh | sh
+    # Using -4 to force IPv4 and prevent IPv6 connection timeouts
+    curl -fsSL -4 https://code-server.dev/install.sh | sh
   EOT
 }
