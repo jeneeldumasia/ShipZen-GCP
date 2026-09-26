@@ -75,6 +75,8 @@ spec:
                   key: project_id
             - name: ENVIRONMENT
               value: "production"
+            - name: WEB_CONCURRENCY
+              value: "4"
           resources:
             requests:
               cpu: "100m"

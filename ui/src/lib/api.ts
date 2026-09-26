@@ -82,6 +82,7 @@ export interface Project {
   created_at: string;
   deleted_at: string | null;
   webhook_secret?: string;
+  deployments_count?: number;
 }
 
 export interface Deployment {

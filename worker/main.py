@@ -271,32 +271,31 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
         stdout_bytes = b""
         try:
             try:
-                final_log = core_v1.read_namespaced_pod_log(
+                final_log_req = core_v1.read_namespaced_pod_log(
                     name=pod_name,
                     namespace="shipzen-build",
                     follow=False,
-                    _preload_content=True,
+                    _preload_content=False,
                 )
+                stdout_bytes = final_log_req.data
             except Exception as read_e:
                 # If reading main container logs fails (e.g. init container failed), read init container logs
                 logger.warning(f"Failed to read main container log: {read_e}. Trying init containers...")
-                final_log = ""
                 for init_c in ["setup", "git-clone", "nixpacks-generate"]:
                     try:
-                        init_log = core_v1.read_namespaced_pod_log(
+                        init_log_req = core_v1.read_namespaced_pod_log(
                             name=pod_name,
                             namespace="shipzen-build",
                             container=init_c,
                             follow=False,
-                            _preload_content=True,
+                            _preload_content=False,
                         )
-                        if init_log:
-                            final_log += f"\n--- Logs from init container {init_c} ---\n{init_log}"
+                        if init_log_req.data:
+                            stdout_bytes += b"\n--- Logs from init container " + init_c.encode('utf-8') + b" ---\n" + init_log_req.data
                     except Exception:
                         pass
                 
-            if final_log:
-                stdout_bytes = final_log.encode("utf-8") if isinstance(final_log, str) else final_log
+            if stdout_bytes:
                 # Publish any remaining lines not yet sent
                 if len(stdout_bytes) > log_bytes_seen:
                     remaining = stdout_bytes[log_bytes_seen:].decode("utf-8", errors="replace")
