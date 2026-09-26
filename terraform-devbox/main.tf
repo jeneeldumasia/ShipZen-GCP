@@ -99,5 +99,14 @@ resource "google_compute_instance" "devbox" {
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
     sudo chmod 666 /var/run/docker.sock
+    
+    # ── Install Remote Desktop Environment (XFCE + XRDP)
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies xrdp
+    sudo systemctl enable xrdp
+    sudo adduser xrdp ssl-cert
+    echo "xfce4-session" | sudo tee /etc/skel/.xsession
+    
+    # ── Install Browser-based IDE (code-server)
+    curl -fsSL https://code-server.dev/install.sh | sh
   EOT
 }
