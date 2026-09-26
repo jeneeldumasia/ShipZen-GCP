@@ -280,6 +280,19 @@ jobs:
             echo "No ARGOCD_ADMIN_PASSWORD secret provided. Skipping."
           fi
 
+      - name: Debug Builder Pods
+        run: |
+          echo "Checking for failed builder pods..."
+          kubectl get pods -n shipzen-build || true
+          
+          # Fetch logs for any failed pods
+          FAILED_PODS=$(kubectl get pods -n shipzen-build --field-selector=status.phase=Failed -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+          for POD in $FAILED_PODS; do
+            echo "--- Logs for failed pod $POD ---"
+            kubectl logs $POD -n shipzen-build || true
+          done
+        continue-on-error: true
+
       - name: Summary
         run: |
           echo "### Deployment Complete 🚀" >> $GITHUB_STEP_SUMMARY
