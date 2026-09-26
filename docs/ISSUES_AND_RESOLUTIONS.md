@@ -96,7 +96,7 @@ This document tracks recently encountered infrastructure, deployment, and UI iss
 
 ### 19. Artifact Registry Pull Token Not Rotating
 * **Issue:** The Kubernetes cluster used a static GCP token to pull images from Artifact Registry, which would expire every 12 hours, eventually breaking pod restarts.
-* **Resolution:** Integrated External Secrets Operator (ESO) `ECRAuthorizationToken` generator in `tenant.yaml.j2` to dynamically rotate and inject fresh Artifact Registry tokens every hour.
+* **Resolution:** Integrated External Secrets Operator (ESO) `GARAuthorizationToken` generator in `tenant.yaml.j2` to dynamically rotate and inject fresh Artifact Registry tokens every hour.
 * **Did it work?** Yes. 
 
 ### 20. Redis Streams Lack End-to-End Guarantees
@@ -130,7 +130,7 @@ This document tracks recently encountered infrastructure, deployment, and UI iss
 
 ### 26. Artifact Registry Authentication Architecture
 * **Issue:** The builder used a fragile setup fetching temporary Artifact Registry tokens via google-cloud SDK and injecting them into Kubernetes secrets.
-* **Resolution:** Provisioned an GCP Service Account via GKE IRSA dedicated to the builder pods (`ShipZenBuilderSA`). Builder jobs now natively authenticate to Artifact Registry.
+* **Resolution:** Provisioned an GCP Service Account via GKE Workload Identity dedicated to the builder pods (`ShipZenBuilderSA`). Builder jobs now natively authenticate to Artifact Registry.
 
 ## Production Readiness (July 18)
 

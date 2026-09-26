@@ -54,7 +54,7 @@
   - Pass `session.accessToken` as `Authorization: Bearer` on all API calls
   - Show user avatar + name in sidebar footer; replace "Connected" indicator
 - **Admin role:** `https://shipzen.jeneeldumasia.codes/roles` claim in JWT. Admins see all projects across all users.
-- **Env vars needed:** `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_AUDIENCE` — add to `infra/api/deployment.yaml` as Secret refs and `ui` deployment.
+- **Env vars needed:** `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SGARET`, `AUTH0_AUDIENCE` — add to `infra/api/deployment.yaml` as Secret refs and `ui` deployment.
 
 ---
 
@@ -96,7 +96,7 @@ Add `NEXT_PUBLIC_APP_DOMAIN=shipzen.jeneeldumasia.codes` env var to the UI so th
     depends_on = [module.eks]
   }
   ```
-- Add Route53 IRSA role for DNS-01 challenge (needs `route53:ChangeResourceRecordSets` on the hosted zone)
+- Add Route53 Workload Identity role for DNS-01 challenge (needs `route53:ChangeResourceRecordSets` on the hosted zone)
 - Add to `infra/system/`:
   - `clusterissuer.yaml` — Let's Encrypt production issuer using Route53 DNS-01
   - `certificate.yaml` — wildcard cert for `*.shipzen.jeneeldumasia.codes` stored as `shipzen-tls-cert` in `shipzen-system` namespace
@@ -142,7 +142,7 @@ resource "helm_release" "Cluster Autoscaler" {
   depends_on = [module.eks]
 }
 ```
-Also add the required SQS queue for interruption handling and the Cluster Autoscaler IRSA role.
+Also add the required SQS queue for interruption handling and the Cluster Autoscaler Workload Identity role.
 
 ---
 
@@ -474,7 +474,7 @@ Replace the 5s polling `AutoRefresh` on the deployment detail page with a WebSoc
 - [x] `shipzen_drift_total` Gauge → Counter (rate() alerts now work)
 - [x] SLO recording rules cleaned up (removed 3 rules for non-existent metrics)
 - [x] `shipzen-db-credentials`, `shipzen-s3-config`, `shipzen-ecr-config` K8s Secrets via Terraform
-- [x] Controller: ECR_REGISTRY env var wired into tenant namespace template
+- [x] Controller: GAR_REGISTRY env var wired into tenant namespace template
 - [x] UI: dark sidebar layout, custom Tailwind design tokens
 - [x] UI: StatusBadge with animated pulsing dots per state
 - [x] UI: MetricCard, EmptyState, PageHeader, cn() utility

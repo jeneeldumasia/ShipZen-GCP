@@ -18,7 +18,7 @@ This report summarizes the definitive security controls configured and enforced 
 
 ## 3. Secret Management & Identity
 - **External Secrets Operator (ESO):** Replaced native K8s secrets with dynamic syncs from GCP Secret Manager.
-- **IRSA (IAM Roles for Service Accounts):** The cluster utilizes strictly scoped IAM roles bound via OIDC to specific ServiceAccounts (e.g., `external-secrets-sa`, `builder-sa`). Long-lived keys are entirely eradicated.
+- **Workload Identity (IAM Roles for Service Accounts):** The cluster utilizes strictly scoped IAM roles bound via OIDC to specific ServiceAccounts (e.g., `external-secrets-sa`, `builder-sa`). Long-lived keys are entirely eradicated.
 
 ## 4. Build Security
 - **Rootless Kaniko:** Dockerfile fallback mechanism utilizes the `executor` binary to achieve container builds without disabling the OCI process sandbox or requiring Docker-in-Docker (DinD).

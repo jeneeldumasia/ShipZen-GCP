@@ -220,7 +220,7 @@ Developer (Local / cURL)
 4. **GCS Build Log Persistence (`293`):** Configured ephemeral builder pods to stream build outputs directly to GCP GCS buckets (`shipzen-build-logs-*`).
 
 #### Evidence
-* **[Known]** Commit `b7992ae`: *"feat: Implement 3-Tier Ephemeral Builder architecture"*. Commit `425e115`: *"fix: Pass S3_LOG_BUCKET to worker to ensure build logs are recorded properly"*.
+* **[Known]** Commit `b7992ae`: *"feat: Implement 3-Tier Ephemeral Builder architecture"*. Commit `425e115`: *"fix: Pass GCS_LOG_BUCKET to worker to ensure build logs are recorded properly"*.
 * **[Inferred]** Ephemeral build pods decoupled the control plane worker from high-CPU container compilation workloads, allowing Cluster Autoscaler to scale builder compute independently.
 
 #### Architectural Diagram (Phase 5)

@@ -72,7 +72,7 @@ graph LR
 `POST /projects` → inserts a row in `projects` table with `status=Provisioning`. The **Controller** picks this up on its next reconciliation tick (every 60s), renders the [tenant.yaml.j2](file:///c:/Project/ShipZen/controller/templates/tenant.yaml.j2) template, and creates the Kubernetes Namespace, ResourceQuota, LimitRange, NetworkPolicy, RBAC, and Artifact Registry pull secret. Once the namespace is verified as existing, the project moves to `Ready`.
 
 ### 2. User submits a Deployment
-`POST /projects/{id}/deployments` → inserts a `deployments` row with `state=Queued`, auto-generates the image URI (`ECR_URL:deployment_id`), and enqueues a message to `deploy_stream` via Redis Streams.
+`POST /projects/{id}/deployments` → inserts a `deployments` row with `state=Queued`, auto-generates the image URI (`GAR_URL:deployment_id`), and enqueues a message to `deploy_stream` via Redis Streams.
 
 ### 3. Worker picks it up
 The [Worker](file:///c:/Project/ShipZen/worker/main.py) runs an infinite `XREADGROUP` loop on Redis Streams. It validates the message, checks for idempotency (skips if already Building/Deploying/Running), transitions the deployment to `Building`, and launches a single-use Kubernetes Job for the build.
@@ -118,7 +118,7 @@ The project has strong fundamentals:
 - ✅ **HTTP→HTTPS redirect** on the Gateway
 - ✅ **PodDisruptionBudgets** with `maxUnavailable` (not `minAvailable`) — correctly handles single-replica deployments
 - ✅ **Cluster Autoscaler node isolation** — builder and tenant workloads on separate node pools with taints
-- ✅ **IRSA everywhere** — no static GCP credentials in the cluster
+- ✅ **Workload Identity everywhere** — no static GCP credentials in the cluster
 - ✅ **GitHub Actions OIDC** with subject restriction to `main` branch only
 
 
