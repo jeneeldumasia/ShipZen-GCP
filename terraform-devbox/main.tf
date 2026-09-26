@@ -112,6 +112,7 @@ resource "google_compute_instance" "devbox" {
     
     # ── Install Browser-based IDE (code-server)
     # Using -4 to force IPv4 and prevent IPv6 connection timeouts
+    export HOME=/root
     curl -fsSL -4 https://code-server.dev/install.sh | sh
   EOT
 }
