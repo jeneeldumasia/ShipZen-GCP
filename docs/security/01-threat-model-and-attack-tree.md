@@ -26,7 +26,7 @@ The following tree outlines potential attack vectors and the implemented mitigat
   - *Mitigation:* Builder pods are completely isolated in `shipzen-build` namespace with identical NetworkPolicies and PSS hardening.
   - *Mitigation:* NodePool taints ensure builders run on isolated instances (Spot).
 - **Attack Vector B2:** Accessing long-lived registry credentials.
-  - *Mitigation:* IRSA (IAM Roles for Service Accounts) provides short-lived GCP STS tokens to access Artifact Registry. No long-lived Kubernetes Secrets exist.
+  - *Mitigation:* Workload Identity (IAM Roles for Service Accounts) provides short-lived GCP STS tokens to access Artifact Registry. No long-lived Kubernetes Secrets exist.
 
 ### C. Secret Exfiltration
 - **Goal:** Attacker steals API keys or database passwords.

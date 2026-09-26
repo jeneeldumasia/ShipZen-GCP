@@ -22,7 +22,7 @@ graph TD
     subgraph Builder Pool
         Worker --> BuilderQueue[Builder Queue]
         BuilderQueue --> Builder[Cloud Native Buildpacks]
-        Builder --> S3_Logs[GCS Build Logs]
+        Builder --> GCS_Logs[GCS Build Logs]
         Builder --> Registry[Container Registry]
     end
     
@@ -32,7 +32,7 @@ graph TD
     end
     
     subgraph Platform Services
-        ESO[External Secrets Operator] --> AWS_SM[GCP Secret Manager]
+        ESO[External Secrets Operator] --> GCP_SM[GCP Secret Manager]
         Prometheus[Prometheus]
         Grafana[Grafana]
     end

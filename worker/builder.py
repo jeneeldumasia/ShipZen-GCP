@@ -94,7 +94,7 @@ class DockerfileBuilder(Builder):
                         "containers": [
                             {
                                 "name": "kaniko",
-                                "image": "gcr.io/kaniko-project/executor:latest",
+                                "image": "gcr.io/kaniko-project/executor:v1.23.2",
                                 "args": [
                                     "--context=dir:///workspace",
                                     "--dockerfile=Dockerfile",
@@ -264,7 +264,7 @@ fi
                             },
                             {
                                 "name": "nixpacks-generate",
-                                "image": "ghcr.io/railwayapp/nixpacks:latest",
+                                "image": "ghcr.io/railwayapp/nixpacks:ubuntu-1718844893",
                                 "command": ["/bin/sh", "-c", "curl -sSL https://nixpacks.com/install.sh | bash && /usr/local/bin/nixpacks \"$@\"", "--"],
                                 "args": nixpacks_args,
                                 "resources": {
@@ -282,7 +282,7 @@ fi
                         "containers": [
                             {
                                 "name": "kaniko",
-                                "image": "gcr.io/kaniko-project/executor:latest",
+                                "image": "gcr.io/kaniko-project/executor:v1.23.2",
                                 "args": [
                                     "--context=dir:///workspace",
                                     "--dockerfile=.nixpacks/Dockerfile",

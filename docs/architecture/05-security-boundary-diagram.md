@@ -7,11 +7,11 @@ graph TD
     end
     
     subgraph DMZ
-        Cloudflare --> AWS_ALB[GCP Gateway]
+        Cloudflare --> GCP_ALB[GCP Gateway]
     end
     
     subgraph ShipZen Platform [Namespace: shipzen-system]
-        AWS_ALB --> Envoy[Envoy Gateway]
+        GCP_ALB --> Envoy[Envoy Gateway]
         Envoy --> API[API Server]
         API --> Postgres[(PostgresDB)]
         API --> Redis[(Redis)]
@@ -21,7 +21,7 @@ graph TD
     
     subgraph Builder Isolation [Namespace: shipzen-build]
         Worker --> Builder[Builder Pods]
-        Builder -- IRSA --> Artifact Registry[GCP Artifact Registry]
+        Builder -- Workload Identity --> Artifact Registry[GCP Artifact Registry]
         Builder -- NetworkPolicy --> ExternalGit[GitHub]
     end
     
@@ -30,5 +30,5 @@ graph TD
         Pod1 -- Restricted by NetworkPolicy --> Public
     end
     
-    ESO -- IRSA --> SecretsManager[GCP Secret Manager]
+    ESO -- Workload Identity --> SecretsManager[GCP Secret Manager]
 ```

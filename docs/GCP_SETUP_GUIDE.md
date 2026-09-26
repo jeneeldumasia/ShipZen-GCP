@@ -59,11 +59,11 @@ To allow GitHub Actions to safely deploy your infrastructure without using stati
    - `GRAFANA_PASSWORD`: Grafana admin password
    - `TF_API_TOKEN`: Terraform Cloud API token
    - `SHIPZEN_OAUTH_CLIENT_ID`: GitHub OAuth App Client ID
-   - `SHIPZEN_OAUTH_CLIENT_SECRET`: GitHub OAuth App Client Secret
+   - `SHIPZEN_OAUTH_CLIENT_SGARET`: GitHub OAuth App Client Secret
    - `SHIPZEN_GITHUB_APP_ID`: GitHub App ID
    - `SHIPZEN_GITHUB_APP_PRIVATE_KEY`: GitHub App Private Key (PEM format)
-   - `SHIPZEN_GITHUB_APP_WEBHOOK_SECRET`: GitHub App Webhook Secret
-   - `SHIPZEN_AUTH_SECRET`: Random secret for session authentication
+   - `SHIPZEN_GITHUB_APP_WEBHOOK_SGARET`: GitHub App Webhook Secret
+   - `SHIPZEN_AUTH_SGARET`: Random secret for session authentication
 
 ## 5. Set up Terraform Cloud Workspace
 1. Log into [Terraform Cloud](https://app.terraform.io/).
