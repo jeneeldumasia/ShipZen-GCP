@@ -48,7 +48,10 @@ def test_leader_elector_create_and_renew():
         sys.modules.pop(mod, None)
 
     import prometheus_client
-    prometheus_client.REGISTRY = prometheus_client.CollectorRegistry(auto_describe=True)
+    import prometheus_client.core
+    new_registry = prometheus_client.CollectorRegistry(auto_describe=True)
+    prometheus_client.REGISTRY = new_registry
+    prometheus_client.core.REGISTRY = new_registry
 
     with patch("kubernetes.config.load_incluster_config"), patch("kubernetes.config.load_kube_config"):
         import controller.main as ctrl
@@ -95,7 +98,10 @@ def test_controller_workqueue():
         sys.modules.pop(mod, None)
 
     import prometheus_client
-    prometheus_client.REGISTRY = prometheus_client.CollectorRegistry(auto_describe=True)
+    import prometheus_client.core
+    new_registry = prometheus_client.CollectorRegistry(auto_describe=True)
+    prometheus_client.REGISTRY = new_registry
+    prometheus_client.core.REGISTRY = new_registry
 
     with patch("kubernetes.config.load_incluster_config"), patch("kubernetes.config.load_kube_config"):
         from controller.main import _work_queue

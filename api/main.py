@@ -673,8 +673,8 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
     # Format: <gar_registry_url>/<project_id>:<deployment_id>
     # deployment_id as tag gives a unique, traceable, immutable image per deploy.
     if GAR_REGISTRY_URL:
-        # Base registry e.g. us-central1-docker.pkg.dev/PROJECT_ID/shipzen-platform
-        base_registry = GAR_REGISTRY_URL.split("/")[0]
+        # Base registry: hostname + GCP project ID (e.g. us-central1-docker.pkg.dev/project-ce3f7c39-eceb-4221-a76)
+        base_registry = "/".join(GAR_REGISTRY_URL.split("/")[:2])
         image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
     else:
         # Local dev / testing fallback — no GAR configured
@@ -1604,7 +1604,7 @@ async def github_webhook(request: Request, project_id: str):
     deployment_id = str(uuid.uuid4())
     queued_at = str(time.time())
     if GAR_REGISTRY_URL:
-        base_registry = GAR_REGISTRY_URL.split("/")[0]
+        base_registry = "/".join(GAR_REGISTRY_URL.split("/")[:2])
         image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
     else:
         image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"
@@ -1775,7 +1775,7 @@ async def github_app_webhook(request: Request):
         deployment_id = str(uuid.uuid4())
         queued_at = str(time.time())
         if GAR_REGISTRY_URL:
-            base_registry = GAR_REGISTRY_URL.split("/")[0]
+            base_registry = "/".join(GAR_REGISTRY_URL.split("/")[:2])
             image_uri = f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
         else:
             image_uri = f"local/shipzen-builds/{project_id}:{deployment_id}"

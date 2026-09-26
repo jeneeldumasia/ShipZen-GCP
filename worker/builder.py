@@ -217,7 +217,7 @@ fi
             base_uri = base_uri.rsplit(':', 1)[0]
         cache_uri = f"{base_uri}:cache"
 
-        nixpacks_args = ["build", "/workspace", "--out", "/workspace/.nixpacks"]
+        nixpacks_args = ["build", "/workspace", "--out", "/workspace"]
 
         return {
             "apiVersion": "batch/v1",
