@@ -264,7 +264,7 @@ fi
                             },
                             {
                                 "name": "nixpacks-generate",
-                                "image": "ghcr.io/railwayapp/nixpacks:ubuntu-1718844893",
+                                "image": "ghcr.io/railwayapp/nixpacks:latest",
                                 "command": ["/bin/sh", "-c", "curl -sSL https://nixpacks.com/install.sh | bash && /usr/local/bin/nixpacks \"$@\"", "--"],
                                 "args": nixpacks_args,
                                 "resources": {

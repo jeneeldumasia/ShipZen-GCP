@@ -654,6 +654,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         deployment_name=d_id,
                         deployment_id=d_id,
                         namespace=project.namespace,
+                        project_id=project.id,
                         project_name=project.name,
                         image_uri=db_dep.get('image_uri', 'nginx:latest'),
                         port=db_dep.get('port', 8080),
