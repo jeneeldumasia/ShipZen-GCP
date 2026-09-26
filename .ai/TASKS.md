@@ -1,6 +1,8 @@
 # ShipZen-GCP Task Tracker
 
 ## Current (Do This Next)
+- [ ] **Trigger `build-push.yaml`** (auto-triggered by ec76bca push) — will build new worker image with nixpacks output path fix
+- [ ] **Verify build succeeds** end-to-end after new worker image deploys: trigger a deploy on the UI and confirm it goes to "Running"
 - [ ] **Run `apply-only.yaml`** to deploy all fixes and get the site live
   - URL: https://github.com/jeneeldumasia/ShipZen-GCP/actions/workflows/apply-only.yaml
   - Expected outcome: all pods Running, LoadBalancer provisioned, DNS updated
@@ -17,6 +19,9 @@ Nothing — all secrets are present, all code fixes are committed.
 - [ ] Test end-to-end: connect a GitHub repo via UI, trigger a build
 
 ## Completed
+- ✅ **B-01**: Nixpacks image tag `ubuntu-1718844893` deleted upstream → switched to `:latest` (commit 2197632)
+- ✅ **B-02**: Nixpacks `--out /workspace/.nixpacks` generated Dockerfile at `/workspace/.nixpacks/.nixpacks/Dockerfile`; kaniko couldn't find it → `--out /workspace` now generates `/workspace/.nixpacks/Dockerfile` (commit ec76bca)
+- ✅ **B-03**: `controller/templates/app-deployment.yaml.j2` ExternalSecret `key: shipzen-project-{{ project_name }}` → `{{ project_id }}` (commit 2197632)
 - ✅ Phase 1: API runtime crash fix, 5 silent error bugs, worker startup fragility, missing GCP_PROJECT.
 - ✅ Phase 1: CI `deploy.yaml` updated with `TF_VAR_redis_password` and GitHub App variables.
 - ✅ Phase 1: `argocd.tf` private key /tmp disk write security hole fixed.

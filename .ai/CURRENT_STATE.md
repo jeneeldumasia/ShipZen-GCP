@@ -46,15 +46,17 @@ Before the next deployment, several new GitHub Secrets must be configured for th
   - **Low (3)**: Bare except blocks; duplicate imports cleanup; UI startupProbe; worker HOSTNAME env var
 
 ## Active Blocker
-**Missing GitHub Secrets for CI Deployment**
-The following secrets need to be added to the GitHub repository before running CI:
-- `REDIS_PASSWORD`
-- `SHIPZEN_GITHUB_APP_ID`
-- `SHIPZEN_APP_INSTALLATION_ID`
-- `SHIPZEN_GITHUB_APP_PRIVATE_KEY`
+**None** — All secrets are present, code is committed and pushed. Waiting for `build-push.yaml` CI to build new worker image with the nixpacks fix (ec76bca).
+
+## Recently Fixed (Live Production Builds)
+- **B-01**: Nixpacks image tag `ubuntu-1718844893` deleted upstream → changed to `:latest` (commit 2197632)
+- **B-02**: Nixpacks `--out /workspace/.nixpacks` generated Dockerfile at wrong nested path `.nixpacks/.nixpacks/Dockerfile` → changed to `--out /workspace` so Dockerfile lands at `.nixpacks/Dockerfile` (commit ec76bca)
+- **B-03**: `app-deployment.yaml.j2` ExternalSecret keyed by `project_name` instead of `project_id` → fixed template + controller context (commit 2197632)
 
 ## Known Issues
 1. LoadBalancer not provisioned - resolves after pods are healthy and ArgoCD syncs.
+2. Worker image in cluster is sha-2197632 (has B-01 fix). B-02 fix (ec76bca) will land once `build-push.yaml` CI completes and ArgoCD syncs.
+
 
 ## What Will Happen on Next apply-only.yaml Run
 1. Terraform uses new secrets to provision ArgoCD GitHub App credentials reliably.
