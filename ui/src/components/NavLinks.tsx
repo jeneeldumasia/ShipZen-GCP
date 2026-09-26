@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Settings, FolderGit2 } from "lucide-react";
+import { LayoutDashboard, Settings, FolderGit2, Plus } from "lucide-react";
 
 export function NavLinks({ isAdmin }: { isAdmin?: boolean }) {
   const pathname = usePathname();
@@ -10,8 +10,11 @@ export function NavLinks({ isAdmin }: { isAdmin?: boolean }) {
   return (
     <>
       <NavPill href="/" icon={<LayoutDashboard size={15} />} label="Dashboard" active={pathname === "/"} />
-      <NavPill href="/projects" icon={<FolderGit2 size={15} />} label="Projects" active={pathname.startsWith("/projects")} />
+      <NavPill href="/projects" icon={<FolderGit2 size={15} />} label="Projects" active={pathname.startsWith("/projects") && pathname !== "/projects/new"} />
       {isAdmin && <NavPill href="/admin" icon={<Settings size={15} />} label="Admin" active={pathname.startsWith("/admin")} />}
+      
+      <div className="w-px h-4 bg-canvas-border mx-1 hidden sm:block" />
+      <NavPill href="/projects/new" icon={<Plus size={15} />} label="New Project" active={pathname === "/projects/new"} />
     </>
   );
 }

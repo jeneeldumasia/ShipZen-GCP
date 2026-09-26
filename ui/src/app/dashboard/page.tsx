@@ -25,9 +25,17 @@ export default async function DashboardPage() {
 
   const allReady = projects.every(p => p.status === "Ready");
   const notReadyCount = projects.filter(p => p.status !== "Ready").length;
+  
   let systemStatus = "Welcome to ShipZen.";
   if (projects.length > 0) {
-    systemStatus = allReady ? "All systems operational." : `${notReadyCount} project${notReadyCount > 1 ? 's' : ''} need${notReadyCount === 1 ? 's' : ''} attention.`;
+    const hasDeployments = projects.some(p => p.deployments_count && p.deployments_count > 0);
+    if (!hasDeployments) {
+      systemStatus = "Ready for your first deployment.";
+    } else if (allReady) {
+      systemStatus = "All systems operational.";
+    } else {
+      systemStatus = `${notReadyCount} project${notReadyCount > 1 ? 's' : ''} need${notReadyCount === 1 ? 's' : ''} attention.`;
+    }
   }
 
   return (

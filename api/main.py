@@ -356,7 +356,8 @@ def list_projects(
                 if current_user.is_admin:
                     cur.execute(
                         """
-                        SELECT p.*, u.email as owner_email 
+                        SELECT p.*, u.email as owner_email,
+                               (SELECT COUNT(*) FROM deployments d WHERE d.project_id = p.id) as deployments_count
                         FROM projects p
                         LEFT JOIN users u ON p.owner_id = u.id
                         WHERE p.deleted_at IS NULL 
@@ -368,7 +369,8 @@ def list_projects(
                     # HIGH-15 Fix: Include projects where user is a member, not just owner
                     cur.execute(
                         """
-                        SELECT DISTINCT p.*, u.email as owner_email 
+                        SELECT DISTINCT p.*, u.email as owner_email,
+                               (SELECT COUNT(*) FROM deployments d WHERE d.project_id = p.id) as deployments_count
                         FROM projects p
                         LEFT JOIN users u ON p.owner_id = u.id
                         LEFT JOIN project_members pm ON p.id = pm.project_id
@@ -755,11 +757,13 @@ def cancel_deployment(request: Request, project_id: str, deployment_id: str, pro
             if deployment["state"] not in ("Queued", "Building", "Deploying", "Verifying"):
                 raise HTTPException(status_code=400, detail="Cannot cancel a deployment that is not active")
 
-            # Update DB state
+            # Update DB state with optimistic concurrency
             cur.execute(
-                "UPDATE deployments SET state = 'Failed', last_error = 'Cancelled by user', updated_at = NOW() WHERE deployment_id = %s",
+                "UPDATE deployments SET state = 'Failed', last_error = 'Cancelled by user', updated_at = NOW() WHERE deployment_id = %s AND state IN ('Queued', 'Building', 'Deploying', 'Verifying')",
                 (deployment_id,)
             )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=409, detail="Deployment state changed before cancellation could complete")
         conn.commit()
 
     # Attempt to kill Kubernetes Job

@@ -49,9 +49,8 @@ Before the next deployment, several new GitHub Secrets must be configured for th
 **Missing GitHub Secrets for CI Deployment**
 The following secrets need to be added to the GitHub repository before running CI:
 - `REDIS_PASSWORD`
-- `SHIPZEN_GITHUB_TOKEN`
 - `SHIPZEN_GITHUB_APP_ID`
-- `SHIPZEN_GITHUB_APP_INSTALLATION_ID`
+- `SHIPZEN_APP_INSTALLATION_ID`
 - `SHIPZEN_GITHUB_APP_PRIVATE_KEY`
 
 ## Known Issues

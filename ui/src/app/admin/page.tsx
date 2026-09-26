@@ -102,19 +102,27 @@ export default async function AdminDashboardPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
                 <RefreshCw size={20} />
-                <span className="text-xs font-medium">Force Sync</span>
+                <span className="text-xs font-medium text-center">Force Argo Sync</span>
               </button>
               <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
                 <Database size={20} />
-                <span className="text-xs font-medium">Backup DB</span>
+                <span className="text-xs font-medium text-center">Trigger DB Backup</span>
               </button>
               <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
                 <Shield size={20} />
-                <span className="text-xs font-medium">Rotate Keys</span>
+                <span className="text-xs font-medium text-center">Rotate Webhooks</span>
               </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary opacity-50 cursor-not-allowed">
+              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
                 <Server size={20} />
-                <span className="text-xs font-medium">Restart Pods</span>
+                <span className="text-xs font-medium text-center">Restart API</span>
+              </button>
+              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
+                <Network size={20} />
+                <span className="text-xs font-medium text-center">Re-provision DNS</span>
+              </button>
+              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary text-danger hover:text-danger hover:border-danger/40 hover:bg-danger/5">
+                <Activity size={20} />
+                <span className="text-xs font-medium text-center">Purge Cache</span>
               </button>
             </div>
             <p className="text-xs text-text-secondary mt-4 text-center">
