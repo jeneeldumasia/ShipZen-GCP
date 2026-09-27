@@ -106,6 +106,7 @@ See: [Quick Start Guide](QUICK_START.md)
 
 - **[Quick Start](QUICK_START.md)** - Common issues and quick fixes
 - **[GCP Setup Guide](docs/GCP_SETUP_GUIDE.md)** - Complete setup instructions
+- **[Project Structure Guide](docs/PROJECT_STRUCTURE_GUIDE.md)** - How to structure your app for ShipZen deployments
 - **[Migration Summary](MIGRATION_SUMMARY.md)** - AWS→GCP migration details
 - **[Fix Summary](FIX_SUMMARY.md)** - Recent fixes and improvements
 - **[Architecture Docs](docs/architecture/)** - System design and diagrams
