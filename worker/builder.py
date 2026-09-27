@@ -19,7 +19,7 @@ logger = logging.getLogger('builder')
 
 class Builder(ABC):
     @abstractmethod
-    def detect(self, workspace_path: str) -> bool:
+    def detect(self, workspace_path: str, overrides: dict = None) -> bool:
         """Return True if this builder can handle the repository."""
 
     @abstractmethod
@@ -28,8 +28,10 @@ class Builder(ABC):
 
 
 class DockerfileBuilder(Builder):
-    def detect(self, workspace_path: str) -> bool:
-        return os.path.exists(os.path.join(workspace_path, "Dockerfile"))
+    def detect(self, workspace_path: str, overrides: dict = None) -> bool:
+        overrides = overrides or {}
+        context_dir = overrides.get("buildContext", "").strip("/")
+        return os.path.exists(os.path.join(workspace_path, context_dir, "Dockerfile"))
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
         # CRIT-01 Fix: Use environment variables instead of f-string interpolation
@@ -48,6 +50,9 @@ class DockerfileBuilder(Builder):
         if ':' in base_uri.split('/')[-1]:
             base_uri = base_uri.rsplit(':', 1)[0]
         cache_uri = f"{base_uri}:cache"
+
+        context_dir = overrides.get("buildContext", "").strip("/")
+        kaniko_context = f"dir:///workspace/{context_dir}" if context_dir else "dir:///workspace"
 
         return {
             "apiVersion": "batch/v1",
@@ -96,7 +101,7 @@ class DockerfileBuilder(Builder):
                                 "name": "kaniko",
                                 "image": "gcr.io/kaniko-project/executor:v1.23.2",
                                 "args": [
-                                    "--context=dir:///workspace",
+                                    f"--context={kaniko_context}",
                                     "--dockerfile=Dockerfile",
                                     f"--destination={image_uri}",
                                     "--cache=true",
@@ -129,7 +134,7 @@ class DockerfileBuilder(Builder):
 
 
 class NixpacksBuilder(Builder):
-    def detect(self, workspace_path: str) -> bool:
+    def detect(self, workspace_path: str, overrides: dict = None) -> bool:
         return True  # Fallback for all other repos
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
@@ -209,7 +214,9 @@ fi
             base_uri = base_uri.rsplit(':', 1)[0]
         cache_uri = f"{base_uri}:cache"
 
-        nixpacks_args = ["build", "/workspace", "--out", "/workspace"]
+        context_dir = overrides.get("buildContext", "").strip("/")
+        build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
+        nixpacks_args = ["build", build_path, "--out", "/workspace"]
 
         return {
             "apiVersion": "batch/v1",
