@@ -107,7 +107,7 @@ jobs:
           # Update newTag ONLY for the components built in this workflow
           for c in ["api", "ui", "controller", "worker"]:
               content = re.sub(
-                  rf'(name: shipzen-{c}\n\s+newName:[^\n]+\n\s+newTag:) [^\n]+',
+                  rf'(name: shipzen-{c}\n\s+newTag:) [^\n]+',
                   rf'\1 {tag}',
                   content
               )
