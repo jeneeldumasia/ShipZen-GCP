@@ -412,11 +412,13 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         os.makedirs(workspace, exist_ok=True)
         subprocess.run(["git", "clone", "--depth=1", "--filter=blob:none", "--sparse", "--branch",
                        branch, clone_url, workspace], check=True, timeout=120)
-        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "shipzen.yaml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
+        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "shipzen.yaml", "deployhub.yml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
 
         # Check overrides
         overrides = {}
         config_path = os.path.join(workspace, "shipzen.yaml")
+        if not os.path.exists(config_path):
+            config_path = os.path.join(workspace, "deployhub.yml")
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 cfg = yaml.safe_load(f)
@@ -460,7 +462,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         builders = [DockerfileBuilder(), NixpacksBuilder()]
         selected_builder = None
         for b in builders:
-            if b.detect(workspace):
+            if b.detect(workspace, overrides):
                 selected_builder = b
                 break
 
