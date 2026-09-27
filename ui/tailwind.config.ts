@@ -63,6 +63,7 @@ const config: Config = {
         "float":      "float 6s ease-in-out infinite",
         "mesh-shift": "meshShift 15s ease-in-out infinite alternate",
         "blob":       "blob 7s infinite",
+        "indeterminate": "indeterminate 1.5s infinite linear",
       },
       keyframes: {
         slideIn: {
