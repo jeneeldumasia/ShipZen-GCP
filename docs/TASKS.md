@@ -67,7 +67,7 @@
 
 Update `controller/templates/app-deployment.yaml.j2` hostname to:
 ```
-{{ deployment_id[:8] }}.{{ project_name }}.shipzen.jeneeldumasia.codes
+{{ deployment_id[:8] }}-{{ project_name }}-shipzen.jeneeldumasia.codes
 ```
 
 Update `gateway/gateway.yaml` listeners to:
@@ -289,7 +289,7 @@ After DNS-1 is fixed, the deployment detail page shows a prominent live banner w
 ```
 ● Live   https://a1b2c3d4.my-project.shipzen.jeneeldumasia.codes   [Open ↗] [Copy]
 ```
-- URL constructed as `{deployment_id.slice(0,8)}.{project_name}.shipzen.jeneeldumasia.codes`
+- URL constructed as `{deployment_id.slice(0,8)}-{project_name}-shipzen.jeneeldumasia.codes`
 - Read `NEXT_PUBLIC_APP_DOMAIN` env var so the domain is not hardcoded in UI code
 - Copy button uses `navigator.clipboard.writeText()`
 - Only shown when `state === "Running"` — hidden otherwise
