@@ -151,12 +151,28 @@ async def outbox_relay():
         if not events:
             await asyncio.sleep(1)
 
+async def cache_eviction_listener():
+    """Listen for cross-replica cache eviction events."""
+    while True:
+        try:
+            pubsub = _aioredis_client.pubsub()
+            await pubsub.subscribe("shipzen:events:cache_evict")
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    user_id = message["data"].decode("utf-8") if isinstance(message["data"], bytes) else message["data"]
+                    evict_user_token_cache(user_id)
+        except Exception as e:
+            logger.error(f"Cache eviction listener error: {e}")
+            await asyncio.sleep(5)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     task = asyncio.create_task(outbox_relay())
+    evict_task = asyncio.create_task(cache_eviction_listener())
     yield
     task.cancel()
+    evict_task.cancel()
     try:
         await task
     except asyncio.CancelledError:
@@ -569,6 +585,10 @@ def remove_project_member(
 
             # Instantly evict cached permissions for removed user
             evict_user_token_cache(target_user_id)
+            try:
+                _redis_client.publish("shipzen:events:cache_evict", target_user_id)
+            except Exception as e:
+                logger.warning(f"Failed to publish cache_evict event: {e}")
 
             return {"message": "Member removed"}
 
@@ -1893,6 +1913,10 @@ def update_user_role(request: Request, user_id: str, body: UpdateRoleRequest, cu
             
         # Instantly evict the demoted/promoted user's tokens to prevent stale access
         evict_user_token_cache(user_id)
+        try:
+            _redis_client.publish("shipzen:events:cache_evict", user_id)
+        except Exception as e:
+            logger.warning(f"Failed to publish cache_evict event: {e}")
     except HTTPException:
         raise
     except Exception as e:
@@ -2148,7 +2172,10 @@ def admin_metrics(request: Request, current_user: User = Depends(get_current_use
                 for nm in node_metrics.get('items', []):
                     if nm['metadata']['name'] == node.metadata.name:
                         usage_str = nm['usage']['cpu']
-                        usage_m = int(usage_str.replace('n', '')) / 1000000 if usage_str.endswith('n') else (int(usage_str.replace('m', '')) if usage_str.endswith('m') else int(usage_str) * 1000)
+                        try:
+                            usage_m = int(usage_str.replace('n', '')) / 1000000 if usage_str.endswith('n') else (int(usage_str.replace('m', '')) if usage_str.endswith('m') else int(usage_str) * 1000)
+                        except ValueError:
+                            usage_m = 0
                         total_cpu_usage += usage_m
                         active += 1
                         break

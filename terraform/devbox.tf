@@ -81,6 +81,6 @@ resource "google_compute_instance" "devbox" {
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
     # Allow non-root docker access globally (since it's a private devbox)
-    sudo chmod 666 /var/run/docker.sock
+    sudo usermod -aG docker jeneeldumasia
   EOT
 }

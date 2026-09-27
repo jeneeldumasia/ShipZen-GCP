@@ -19,7 +19,7 @@ from kubernetes.client.rest import ApiException
 from config import config
 from queue_client import QueueClient
 from state_machine import StateMachine, DeploymentState
-from builder import DockerfileBuilder, RailpackBuilder, NixpacksBuilder
+from builder import DockerfileBuilder, NixpacksBuilder
 from metrics import (
     start_metrics_server,
     shipzen_build_duration_seconds,
@@ -35,57 +35,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger('worker')
 
 
-def get_github_app_token(repo_url: str) -> str:
-    app_id = os.environ.get("GITHUB_APP_ID")
-    private_key = os.environ.get("GITHUB_APP_PRIVATE_KEY")
-    if not app_id or not private_key or not repo_url.startswith("https://github.com/"):
-        return None
-    
-    try:
-        # Parse owner/repo from URL
-        parts = repo_url.rstrip("/").split("/")
-        owner, repo = parts[-2], parts[-1]
-        if repo.endswith(".git"):
-            repo = repo[:-4]
-
-        import jwt
-        import requests
-        
-        now = int(time.time())
-        payload = {
-            "iat": now - 60,
-            "exp": now + (10 * 60),
-            "iss": app_id
-        }
-        
-        # Format the private key if it was passed without newlines
-        if "\\n" in private_key:
-            private_key = private_key.replace("\\n", "\n")
-            
-        encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
-        
-        # 1. Get Installation ID for this repo
-        headers = {
-            "Authorization": f"Bearer {encoded_jwt}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        resp = requests.get(f"https://api.github.com/repos/{owner}/{repo}/installation", headers=headers, timeout=10)
-        if resp.status_code != 200:
-            logger.warning(f"Could not find GitHub App installation for {owner}/{repo}: {resp.status_code} {resp.text}")
-            return None
-            
-        installation_id = resp.json()["id"]
-        
-        # 2. Create Installation Access Token
-        token_resp = requests.post(f"https://api.github.com/app/installations/{installation_id}/access_tokens", headers=headers, timeout=10)
-        if token_resp.status_code != 201:
-            logger.warning(f"Failed to create GitHub App installation token: {token_resp.status_code} {token_resp.text}")
-            return None
-            
-        return token_resp.json()["token"]
-    except Exception as e:
-        logger.error(f"Error fetching GitHub App token: {e}")
-        return None
+from shipzen_common.github_app import get_github_app_token
 
 
 try:
@@ -462,7 +412,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         os.makedirs(workspace, exist_ok=True)
         subprocess.run(["git", "clone", "--depth=1", "--filter=blob:none", "--sparse", "--branch",
                        branch, clone_url, workspace], check=True, timeout=120)
-        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "--skip-checks", "shipzen.yaml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
+        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "shipzen.yaml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
 
         # Check overrides
         overrides = {}
@@ -507,7 +457,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
                     pass
 
         # Builder detection
-        builders = [DockerfileBuilder(), RailpackBuilder(), NixpacksBuilder()]
+        builders = [DockerfileBuilder(), NixpacksBuilder()]
         selected_builder = None
         for b in builders:
             if b.detect(workspace):
@@ -598,14 +548,22 @@ def main():
                 for msg_id, data in claimed:
                     shipzen_retry_total.inc()
                     _semaphore.acquire()
-                    _executor.submit(process_message, queue, state_machine, msg_id, data)
+                    try:
+                        _executor.submit(process_message, queue, state_machine, msg_id, data)
+                    except Exception:
+                        _semaphore.release()
+                        raise
 
             messages = queue.get_messages(count=5, block_ms=2000)
             if messages:
                 for stream_name, msg_list in messages:
                     for msg_id, data in msg_list:
                         _semaphore.acquire()
-                        _executor.submit(process_message, queue, state_machine, msg_id, data)
+                        try:
+                            _executor.submit(process_message, queue, state_machine, msg_id, data)
+                        except Exception:
+                            _semaphore.release()
+                            raise
 
             # Heartbeat: update the liveness timestamp on every successful iteration
             _last_loop_tick = time.time()

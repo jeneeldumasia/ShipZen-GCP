@@ -48,6 +48,7 @@ jobs:
         run: |
           IMAGE=$GAR_REGISTRY/shipzen-platform/${{ matrix.component }}
           TAG=$(git rev-parse --short HEAD)
+          cp -r shipzen_common ./${{ matrix.component }}/shipzen_common || true
           docker build \
             -t $IMAGE:sha-$TAG \
             -t $IMAGE:latest \
@@ -101,13 +102,7 @@ jobs:
           with open(path, "r") as f:
               content = f.read()
 
-          # Update newName for all components (including builder) to avoid hardcoding Account ID
-          for c in ["api", "ui", "controller", "worker", "builder"]:
-              content = re.sub(
-                  rf'(name: shipzen-{c}\n\s+newName:) [^\n]+',
-                  rf'\1 {registry}/shipzen-platform/{c}',
-                  content
-              )
+          # newName is now managed via ArgoCD kustomize.images overlay.
 
           # Update newTag ONLY for the components built in this workflow
           for c in ["api", "ui", "controller", "worker"]:
