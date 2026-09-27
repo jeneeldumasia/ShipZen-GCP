@@ -102,7 +102,7 @@ resource "google_compute_instance" "devbox" {
     sudo apt-get update
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
-    sudo chmod 666 /var/run/docker.sock
+    sudo usermod -aG docker jeneeldumasia
     
     # ── Install Remote Desktop Environment (XFCE + XRDP)
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies xrdp
