@@ -4,5 +4,10 @@
     "js-yaml": "^4.3.2",
     "md-to-pdf": "^5.2.5",
     "puppeteer": "^25.2.1"
+  },
+  "scripts": {
+    "postinstall": "cd ui && npm install",
+    "build": "cd ui && npm run build",
+    "start": "cd ui && npm run start"
   }
 }

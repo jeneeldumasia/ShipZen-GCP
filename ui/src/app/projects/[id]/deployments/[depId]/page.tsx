@@ -8,6 +8,7 @@ import { RestartAppButton } from "./RestartAppButton";
 import { CancelDeployButton } from "./CancelDeployButton";
 import { ProgressBar } from "./ProgressBar";
 import { LiveLogPanel } from "./LiveLogPanel";
+import { CopyErrorButton } from "./CopyErrorButton";
 import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
@@ -114,8 +115,9 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
         <div className="max-w-2xl mx-auto mt-8 p-6 border border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400 font-mono text-sm">
           <div className="flex items-center gap-2 mb-2 font-bold uppercase tracking-widest text-xs">
             <Terminal size={14} /> Critical Failure
+            <CopyErrorButton text={deployment.last_error} />
           </div>
-          {deployment.last_error}
+          <div className="whitespace-pre-wrap">{deployment.last_error}</div>
         </div>
       )}
 
