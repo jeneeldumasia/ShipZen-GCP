@@ -125,15 +125,7 @@ class DockerfileBuilder(Builder):
         }
 
 
-class RailpackBuilder(Builder):
-    def detect(self, workspace_path: str) -> bool:
-        # Tier 3 fallback
-        return os.path.exists(os.path.join(workspace_path, "Cargo.toml")) or os.path.exists(os.path.join(workspace_path, "bun.lockb"))
 
-    def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
-        # For now, Railpack uses Nixpacks as a placeholder until native compiler images are built
-        b = NixpacksBuilder()
-        return b.generate_job_manifest(deployment_id, repo_url, branch, image_uri, overrides)
 
 
 class NixpacksBuilder(Builder):
@@ -207,7 +199,7 @@ server.listen(PORT, () => console.log(`Static server listening on port ${PORT} s
 EOF
 # Inject start script
 if [ -f package.json ]; then
-  sed -i 's/"scripts": {/"scripts": { "start": "node server.cjs",/' package.json
+  python3 -c "import json; d=json.load(open('package.json')); d.setdefault('scripts', {})['start'] = 'node server.cjs'; json.dump(d, open('package.json','w'), indent=2)"
 fi
 """
 

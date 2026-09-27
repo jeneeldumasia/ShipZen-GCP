@@ -75,12 +75,12 @@ class LeaderElector:
     def try_acquire_or_renew(self) -> bool:
         now = datetime.datetime.now(datetime.timezone.utc)
         try:
-            lease = k8s_coordination_api.read_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace)
+            lease = k8s_coordination_api.read_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, _request_timeout=self.renew_deadline)
             spec = lease.spec
             if spec.holder_identity == self.holder_identity:
                 spec.renew_time = now
                 spec.lease_duration_seconds = self.lease_duration
-                k8s_coordination_api.replace_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, body=lease)
+                k8s_coordination_api.replace_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, body=lease, _request_timeout=self.renew_deadline)
                 self.is_leader = True
                 return True
             else:
@@ -96,7 +96,7 @@ class LeaderElector:
                         spec.renew_time = now
                         spec.lease_duration_seconds = self.lease_duration
                         spec.lease_transitions = (spec.lease_transitions or 0) + 1
-                        k8s_coordination_api.replace_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, body=lease)
+                        k8s_coordination_api.replace_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, body=lease, _request_timeout=self.renew_deadline)
                         self.is_leader = True
                         return True
                 self.is_leader = False
@@ -114,7 +114,7 @@ class LeaderElector:
                     )
                 )
                 try:
-                    k8s_coordination_api.create_namespaced_lease(namespace=self.lease_namespace, body=new_lease)
+                    k8s_coordination_api.create_namespaced_lease(namespace=self.lease_namespace, body=new_lease, _request_timeout=self.renew_deadline)
                     logger.info(f"Acquired new leader lease {self.lease_name} as {self.holder_identity}")
                     self.is_leader = True
                     return True
@@ -133,10 +133,10 @@ class LeaderElector:
     def release(self):
         if self.is_leader:
             try:
-                lease = k8s_coordination_api.read_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace)
+                lease = k8s_coordination_api.read_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, _request_timeout=self.renew_deadline)
                 if lease.spec.holder_identity == self.holder_identity:
                     lease.spec.holder_identity = None
-                    k8s_coordination_api.replace_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, body=lease)
+                    k8s_coordination_api.replace_namespaced_lease(name=self.lease_name, namespace=self.lease_namespace, body=lease, _request_timeout=self.renew_deadline)
                     logger.info(f"Successfully released leader lease {self.lease_name}")
             except Exception as e:
                 logger.warning(f"Failed to release lease cleanly: {e}")
@@ -187,28 +187,7 @@ TENANT_REPO_URL = os.environ.get("TENANT_REPO_URL", "https://github.com/jeneeldu
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 
-def get_github_app_token(repo_url: str) -> str:
-    if not GITHUB_APP_ID or not GITHUB_APP_PRIVATE_KEY or not repo_url.startswith("https://github.com/"):
-        return None
-    try:
-        parts = repo_url.rstrip("/").split("/")
-        owner, repo = parts[-2], parts[-1]
-        if repo.endswith(".git"):
-            repo = repo[:-4]
-        now = int(time.time())
-        payload = {"iat": now - 60, "exp": now + (10 * 60), "iss": GITHUB_APP_ID}
-        pk = GITHUB_APP_PRIVATE_KEY.replace("\\n", "\n")
-        encoded_jwt = jwt.encode(payload, pk, algorithm="RS256")
-        headers = {"Authorization": f"Bearer {encoded_jwt}", "Accept": "application/vnd.github.v3+json"}
-        resp = requests.get(f"https://api.github.com/repos/{owner}/{repo}/installation", headers=headers, timeout=10)
-        if resp.status_code != 200: return None
-        installation_id = resp.json()["id"]
-        token_resp = requests.post(f"https://api.github.com/app/installations/{installation_id}/access_tokens", headers=headers, timeout=10)
-        if token_resp.status_code != 201: return None
-        return token_resp.json()["token"]
-    except Exception as e:
-        logger.error(f"Error fetching GitHub App token: {e}")
-        return None
+from shipzen_common.github_app import get_github_app_token
 
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
     token = get_github_app_token(TENANT_REPO_URL)
@@ -263,16 +242,30 @@ jinja_env = Environment(loader=FileSystemLoader("templates"))
 # Keys are project IDs; values are consecutive failure counts.
 # Entries for terminated projects are pruned during each full reconcile sweep.
 _project_failures: dict = {}
+_deployment_failures: dict = {}
 
 
 def ensure_gar_repository(project_id: str):
     # GCP Artifact Registry handles package creation automatically on push
     pass
 
+from google.cloud import artifactregistry_v1
+
 def delete_gar_repository(project_id: str):
-    # TODO: Implement GAR package deletion if needed for cleanup
-    # Currently a no-op for GCP migration
-    pass
+    if not GCP_PROJECT or not GCP_REGION or not GAR_REGISTRY:
+        logger.warning(f"GAR configuration missing. Cannot delete package for {project_id}.")
+        return
+
+    try:
+        repo_id = GAR_REGISTRY.split('/')[-1]
+        parent = f"projects/{GCP_PROJECT}/locations/{GCP_REGION}/repositories/{repo_id}/packages/{project_id}"
+        
+        client = artifactregistry_v1.ArtifactRegistryClient()
+        operation = client.delete_package(name=parent)
+        operation.result()  # Wait for deletion
+        logger.info(f"Successfully deleted GAR package for project {project_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete GAR package for project {project_id}: {e}")
 
 
 db_pool = None
@@ -283,7 +276,7 @@ def get_db_connection():
     if db_pool is None:
         with _db_pool_lock:
             if db_pool is None:  # Re-check after acquiring lock
-                db_pool = ThreadedConnectionPool(1, 2, DATABASE_URL)
+                db_pool = ThreadedConnectionPool(1, 20, DATABASE_URL)
     conn = db_pool.getconn()
     conn.autocommit = False
     return conn
@@ -669,22 +662,27 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                 if k8s_dep:
                     k8s_dep = k8s_dep_names[d_id]
                     ready_replicas = k8s_dep.status.ready_replicas or 0
+                    is_progressing = any(c.type == 'Progressing' and c.status == 'True' and c.reason != 'NewReplicaSetAvailable' for c in (k8s_dep.status.conditions or []))
+
                     if ready_replicas == 0 and db_dep['state'] == 'Running':
-                        shipzen_drift_total.inc()
-                        logger.warning(
-                            f"Drift: Deployment {d_id} is failing in K8s.")
-                        cur.execute(
-                            "UPDATE deployments SET state = %s, last_error = %s WHERE deployment_id = %s;",
-                            ('Failed', 'Kubernetes Deployment Failed/CrashLoopBackOff', d_id)
-                        )
-                        conn.commit()
-                        try:
-                            _redis_client.publish(f"shipzen:status:{d_id}", json.dumps(
-                                {"state": "Failed", "last_error": "Kubernetes Deployment Failed/CrashLoopBackOff"}))
-                        except Exception as pub_e:
+                        _deployment_failures[d_id] = _deployment_failures.get(d_id, 0) + 1
+                        if _deployment_failures[d_id] >= 2 and not is_progressing:
+                            shipzen_drift_total.inc()
                             logger.warning(
-                                f"Failed to publish to Redis: {pub_e}")
+                                f"Drift: Deployment {d_id} is failing in K8s (CrashLoopBackOff).")
+                            cur.execute(
+                                "UPDATE deployments SET state = %s, last_error = %s WHERE deployment_id = %s;",
+                                ('Failed', 'Kubernetes Deployment Failed/CrashLoopBackOff', d_id)
+                            )
+                            conn.commit()
+                            try:
+                                _redis_client.publish(f"shipzen:status:{d_id}", json.dumps(
+                                    {"state": "Failed", "last_error": "Kubernetes Deployment Failed/CrashLoopBackOff"}))
+                            except Exception as pub_e:
+                                logger.warning(
+                                    f"Failed to publish to Redis: {pub_e}")
                     elif ready_replicas == 0 and db_dep['state'] in ['Deploying', 'Verifying']:
+                        _deployment_failures.pop(d_id, None)
                         import datetime
                         time_since_update = (datetime.datetime.now(datetime.timezone.utc) - db_dep['updated_at'].astimezone(datetime.timezone.utc)).total_seconds()
                         if time_since_update > 300:
@@ -701,6 +699,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                             except Exception as pub_e:
                                 logger.warning(f"Failed to publish to Redis: {pub_e}")
                     elif ready_replicas > 0 and db_dep['state'] in ['Deploying', 'Verifying']:
+                        _deployment_failures.pop(d_id, None)
                         logger.info(
                             f"Deployment {d_id} is now Running (Ready Replicas: {ready_replicas})")
                         cur.execute(

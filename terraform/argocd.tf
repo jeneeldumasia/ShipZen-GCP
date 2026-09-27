@@ -38,19 +38,14 @@ resource "null_resource" "argocd_github_app" {
     }
     command = <<EOT
       gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
-      
-      printf '%s' "$GITHUB_APP_PRIVATE_KEY" > /tmp/github-app-key.pem
-      
-      # Create GitHub App credentials secret for ArgoCD
-      kubectl create secret generic github-app-repo-creds -n argocd \
+      # Create GitHub App credentials secret for ArgoCD securely without temp files
+      printf '%s' "$GITHUB_APP_PRIVATE_KEY" | kubectl create secret generic github-app-repo-creds -n argocd \
         --from-literal=type=git \
         --from-literal=url=https://github.com/jeneeldumasia \
         --from-literal=githubAppID=${var.github_app_id} \
         --from-literal=githubAppInstallationID=${var.github_app_installation_id} \
-        --from-file=githubAppPrivateKey=/tmp/github-app-key.pem \
+        --from-file=githubAppPrivateKey=/dev/stdin \
         --dry-run=client -o yaml | kubectl apply -f -
-      
-      rm -f /tmp/github-app-key.pem
       
       kubectl label secret github-app-repo-creds -n argocd \
         argocd.argoproj.io/secret-type=repo-creds --overwrite
@@ -82,6 +77,13 @@ spec:
     repoURL: "https://github.com/jeneeldumasia/ShipZen-GCP.git"
     targetRevision: HEAD
     path: infra
+    kustomize:
+      images:
+        - shipzen-api=us-central1-docker.pkg.dev/${var.gcp_project}/shipzen-platform/api
+        - shipzen-controller=us-central1-docker.pkg.dev/${var.gcp_project}/shipzen-platform/controller
+        - shipzen-worker=us-central1-docker.pkg.dev/${var.gcp_project}/shipzen-platform/worker
+        - shipzen-builder=us-central1-docker.pkg.dev/${var.gcp_project}/shipzen-platform/builder
+        - shipzen-ui=us-central1-docker.pkg.dev/${var.gcp_project}/shipzen-platform/ui
   destination:
     server: https://kubernetes.default.svc
     namespace: shipzen-system

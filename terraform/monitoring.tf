@@ -85,12 +85,7 @@ resource "helm_release" "kube_prometheus_stack" {
 
   set {
     name  = "grafana.grafana\\.ini.auth\\.anonymous.enabled"
-    value = "true"
-  }
-
-  set {
-    name  = "grafana.grafana\\.ini.auth\\.anonymous.org_role"
-    value = "Viewer"
+    value = "false"
   }
 
   # Enable the Grafana sidecar to pick up ConfigMap-based dashboards
