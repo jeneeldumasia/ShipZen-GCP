@@ -67,7 +67,7 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
   const needsLiveUpdates = isActive;
   const shortId = deployment.deployment_id.slice(0, 8);
   const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN;
-  const appUrl = appDomain ? `http://${shortId}-${project.name}.${appDomain}` : `http://localhost:${deployment.port}`;
+  const appUrl = appDomain ? `http://${shortId}-${project.name}-${appDomain}` : `http://localhost:${deployment.port}`;
 
   return (
     <div className="w-full animate-fade-in relative">
