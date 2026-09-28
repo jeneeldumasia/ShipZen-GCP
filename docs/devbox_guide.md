@@ -1,62 +1,166 @@
 # ShipZen DevBox Guide
 
-The **ShipZen DevBox** is a persistent, highly secure `e2-medium` VM running Debian 12 in your GCP project's `default` VPC. It is designed to let you safely run the Antigravity IDE, manage your GKE cluster, and debug issues without triggering local security policies (like ESET).
+The **ShipZen DevBox** is a persistent, highly secure VM running Debian 12 in your GCP project's `default` VPC. It is designed to let you safely run the Antigravity IDE / VS Code, manage your GKE cluster, build containers, and debug issues without triggering local security policies.
 
-## 1. Connecting to the DevBox
+---
 
-The DevBox has **no public IP address**. All connections are routed securely through Google's Identity-Aware Proxy (IAP). 
+## 1. Connecting via SSH (IAP Tunnel)
 
-To connect, run this command from your local terminal:
+The DevBox is secured behind Google Cloud's Identity-Aware Proxy (IAP). Ingress is completely blocked by firewall, and access is authenticated directly through your GCP IAM credentials.
+
+Connect from your local terminal:
 
 ```powershell
 gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76
 ```
 
-## 2. Option A: Using the Browser-Based IDE (code-server)
+---
 
-The DevBox comes with `code-server` installed, which gives you a full VS Code interface directly in your browser.
+## 2. Option A: Browser-Based IDE (`code-server`)
 
-1. SSH into the DevBox using the command above.
-2. Start the code-server:
+The DevBox comes with `code-server` installed, giving you a full VS Code interface directly inside any browser.
+
+1. SSH into the DevBox:
    ```bash
    code-server --bind-addr 127.0.0.1:8080 --auth none
    ```
-3. Open a **new, separate terminal** on your local machine and create a secure tunnel:
+2. Open a separate terminal on your local machine and create an SSH tunnel:
    ```powershell
    gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 8080:localhost:8080"
    ```
-4. Open your web browser and go to `http://localhost:8080`.
-
-## 3. Option B: Using Full Remote Desktop (XFCE4 + XRDP)
-
-If you prefer a full graphical Linux desktop environment:
-
-1. Open a local terminal and create an RDP tunnel (using port 3390 locally to avoid conflicts with your Windows PC's own RDP service):
-   ```powershell
-   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 3390:localhost:3389"
+3. Open your browser and navigate to:
+   ```text
+   http://localhost:8080
    ```
-2. Open **Microsoft Remote Desktop** (or any RDP client) on your computer.
-3. Connect to `localhost:3390`.
 
-## 4. Debugging the GKE Cluster
+---
 
-Since the DevBox is authenticated via its Service Account, it has full Admin access to your GKE cluster and Artifact Registry.
+## 3. Option B: Remote Desktop (XRDP — XFCE4 / KDE Plasma)
 
-Once you are SSH'd into the DevBox (or using the terminal inside the browser IDE), you can run:
+### 3.1 First-Time Setup: Set User Password
+GCP Linux instances do not have passwords enabled by default. Before connecting to XRDP for the first time, SSH into the DevBox and set a password:
+
+```bash
+# Check your username
+whoami
+
+# Set your password
+sudo passwd $USER
+```
+
+### 3.2 Establish the RDP Tunnel
+From your local Windows terminal, forward local port `3390` to remote port `3389` (port 3390 avoids conflicts with local Windows RDP):
+
+```powershell
+gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 3390:localhost:3389"
+```
+
+### 3.3 Connect with Remote Desktop
+1. Open **Remote Desktop Connection** (`mstsc.exe`).
+2. Computer: `localhost:3390`
+3. Enter your username (from `whoami`, e.g. `jeneeld7492`) and the password you set.
+
+---
+
+## 4. Switching Desktop Environments (XFCE vs. KDE Plasma)
+
+### Using KDE Plasma
+If you install KDE Plasma (`sudo apt-get install -y kde-plasma-desktop`), configure your session properly to enable software rendering and D-Bus integration:
+
+1. Configure `~/.xsession` for your user:
+   ```bash
+   cat << 'EOF' > ~/.xsession
+   #!/bin/bash
+   export XDG_CURRENT_DESKTOP=KDE
+   export XDG_SESSION_DESKTOP=KDE
+   export DESKTOP_SESSION=plasma
+   export LIBGL_ALWAYS_SOFTWARE=1
+   export QT_X11_NO_MITSHM=1
+
+   # Launch KDE inside a D-Bus session
+   exec dbus-run-session startplasma-x11
+   EOF
+
+   chmod +x ~/.xsession
+   ```
+
+2. Set KDE as the system-wide default:
+   ```bash
+   sudo update-alternatives --set x-session-manager /usr/bin/startplasma-x11
+   ```
+
+3. Restart XRDP:
+   ```bash
+   sudo systemctl restart xrdp
+   ```
+
+### Switching back to XFCE
+```bash
+echo "startxfce4" > ~/.xsession
+sudo update-alternatives --set x-session-manager /usr/bin/startxfce4
+sudo systemctl restart xrdp
+```
+
+---
+
+## 5. Hardware & Resizing
+
+The DevBox is running on a high-performance **`c2-standard-4`** instance (4 dedicated Compute-Optimized vCPUs, 16GB RAM). This tier provides dedicated physical CPU execution and ample memory for KDE Plasma, Docker, local builds, and multiple IDE instances without CPU throttling or memory swapping.
+
+Changing the machine type in the future remains an **in-place hardware upgrade**. Your boot disk, code, logins, installed tools, and Docker images will **NOT** be deleted.
+
+### To resize in the future via `gcloud`:
+```bash
+# 1. Stop the instance
+gcloud compute instances stop shipzen-devbox --zone=us-central1-a
+
+# 2. Resize machine type
+gcloud compute instances set-machine-type shipzen-devbox --zone=us-central1-a --machine-type=<NEW_TYPE>
+
+# 3. Start the instance
+gcloud compute instances start shipzen-devbox --zone=us-central1-a
+```
+
+*Remember to update `machine_type = "e2-standard-4"` in [terraform-devbox/main.tf](file:///c:/Project/ShipZen-GCP/terraform-devbox/main.tf) to avoid configuration drift.*
+
+---
+
+## 6. Troubleshooting Common Issues
+
+### XRDP Crashes Immediately After Password
+1. **Stale X11 sockets**: Run:
+   ```bash
+   sudo rm -rf /tmp/.X11-unix/* /tmp/.X*-lock
+   sudo systemctl restart xrdp
+   ```
+2. **Missing D-Bus or OpenGL Crash**: Ensure `LIBGL_ALWAYS_SOFTWARE=1` and `dbus-run-session` are set in `~/.xsession` (see Section 4).
+3. **Out of Memory**: Check RAM with `free -h`. If memory is exhausted, restart heavy background containers or resize the instance.
+4. **Inspect logs**:
+   ```bash
+   tail -n 50 ~/.xsession-errors
+   sudo tail -n 50 /var/log/xrdp-sesman.log
+   ```
+
+---
+
+## 7. Debugging the GKE Cluster
+
+Since the DevBox is authenticated via its Service Account (`shipzen-devbox-sa`), it has container admin access to your cluster and Artifact Registry.
 
 ```bash
 # Get cluster credentials
 gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project=project-ce3f7c39-eceb-4221-a76
 
-# Check for failed builder pods
+# Inspect builder pods and logs
 kubectl get pods -n shipzen-build
-
-# View logs for a specific pod
 kubectl logs <pod-name> -n shipzen-build
 ```
 
-## 5. Deletion Protection
+---
 
-The DevBox is protected by `deletion_protection = true` in Terraform. This ensures that a `terraform destroy` run against your main infrastructure will never accidentally delete your DevBox.
+## 8. Deletion Protection
 
-If you intentionally want to delete the DevBox, you must temporarily set `deletion_protection = false` in `terraform-devbox/main.tf`, deploy that change, and then destroy the VM.
+The DevBox is protected by `deletion_protection = true` in Terraform. This ensures a `terraform destroy` targeting cluster resources will never accidentally wipe the DevBox.
+
+If you intentionally want to decommission the DevBox, first set `deletion_protection = false` in `terraform-devbox/main.tf`, run `terraform apply`, and then proceed with destruction.
+
