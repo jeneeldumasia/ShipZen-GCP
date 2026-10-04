@@ -204,6 +204,7 @@ server.listen(PORT, () => console.log(`Static server listening on port ${PORT} s
 EOF
 # Inject start script
 if [ -f package.json ]; then
+  apk add --no-cache python3
   python3 -c "import json; d=json.load(open('package.json')); d.setdefault('scripts', {})['start'] = 'node server.cjs'; json.dump(d, open('package.json','w'), indent=2)"
 fi
 """
