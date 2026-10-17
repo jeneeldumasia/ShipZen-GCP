@@ -219,6 +219,19 @@ fi
         build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
         nixpacks_args = ["build", build_path, "--out", "/workspace"]
 
+        nixpacks_cmd = (
+            "curl -sSL https://nixpacks.com/install.sh | bash && "
+            "/usr/local/bin/nixpacks \"$@\" && "
+            "if [ -f /workspace/.nixpacks/build.sh ] && [ -f /workspace/.nixpacks/Dockerfile ]; then "
+            "echo 'Injecting Nixpacks build-args into Dockerfile for Kaniko...' && "
+            "grep -o -- '--build-arg [^ ]*' /workspace/.nixpacks/build.sh | while read -r flag arg; do "
+            "if [ -n \"$arg\" ]; then "
+            "if grep -q 'WORKDIR /app/' /workspace/.nixpacks/Dockerfile; then "
+            "sed -i \"/WORKDIR \\/app\\//a ENV $arg\" /workspace/.nixpacks/Dockerfile; "
+            "else echo \"ENV $arg\" >> /workspace/.nixpacks/Dockerfile; fi; "
+            "fi; done; fi"
+        )
+
         return {
             "apiVersion": "batch/v1",
             "kind": "Job",
@@ -265,7 +278,7 @@ fi
                             {
                                 "name": "nixpacks-generate",
                                 "image": "ghcr.io/railwayapp/nixpacks:latest",
-                                "command": ["/bin/sh", "-c", "curl -sSL https://nixpacks.com/install.sh | bash && /usr/local/bin/nixpacks \"$@\"", "--"],
+                                "command": ["/bin/sh", "-c", nixpacks_cmd, "--"],
                                 "args": nixpacks_args,
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
