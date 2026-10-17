@@ -105,6 +105,49 @@ except Exception:
     _gcs_client = None
 GCP_PROJECT = os.getenv('GCP_PROJECT', '')
 
+def ensure_project_secret(project_id: str):
+    """Ensure that an empty JSON secret exists in GCP Secret Manager for the project."""
+    if not _sm_client or not GCP_PROJECT:
+        return
+    secret_id = f"shipzen-project-{project_id}"
+    parent = f"projects/{GCP_PROJECT}"
+    try:
+        _sm_client.create_secret(
+            request={
+                "parent": parent,
+                "secret_id": secret_id,
+                "secret": {"replication": {"automatic": {}}},
+            }
+        )
+    except Exception:
+        pass  # Secret already exists
+    try:
+        name = f"{parent}/secrets/{secret_id}/versions/latest"
+        _sm_client.access_secret_version(request={"name": name})
+    except Exception:
+        try:
+            _sm_client.add_secret_version(
+                request={
+                    "parent": f"{parent}/secrets/{secret_id}",
+                    "payload": {"data": b"{}"},
+                }
+            )
+            logger.info(f"Initialized Secret Manager secret {secret_id}")
+        except Exception as e:
+            logger.warning(f"Could not add version for secret {secret_id}: {e}")
+
+def delete_project_secret(project_id: str):
+    """Delete the project's secret from GCP Secret Manager."""
+    if not _sm_client or not GCP_PROJECT:
+        return
+    secret_id = f"shipzen-project-{project_id}"
+    name = f"projects/{GCP_PROJECT}/secrets/{secret_id}"
+    try:
+        _sm_client.delete_secret(request={"name": name})
+        logger.info(f"Deleted Secret Manager secret {secret_id}")
+    except Exception as e:
+        logger.warning(f"Could not delete secret {secret_id}: {e}")
+
 # Kubernetes namespace name rules: lowercase alphanumeric and hyphens, 3–63 chars
 _NAMESPACE_RE = re.compile(r'^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$')
 
@@ -168,6 +211,16 @@ async def cache_eviction_listener():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    def _bootstrap_secrets():
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM projects WHERE deleted_at IS NULL;")
+                    for row in cur.fetchall():
+                        ensure_project_secret(row[0])
+        except Exception as err:
+            logger.warning(f"Failed to bootstrap project secrets: {err}")
+    asyncio.create_task(asyncio.to_thread(_bootstrap_secrets))
     task = asyncio.create_task(outbox_relay())
     evict_task = asyncio.create_task(cache_eviction_listener())
     yield
@@ -349,6 +402,8 @@ def create_project(request: Request, body: CreateProjectRequest, current_user: U
         details={"name": body.name, "namespace": body.namespace},
     )
 
+    ensure_project_secret(project_id)
+
     try:
         _redis_client.publish("shipzen:events:project_reconcile", json.dumps({"project_id": project_id, "event": "project_created"}))
     except Exception as pub_err:
@@ -448,6 +503,8 @@ def delete_project(request: Request, project_id: str, project: dict = Depends(ve
         resource_id=project_id,
         details={},
     )
+
+    delete_project_secret(project_id)
 
     try:
         _redis_client.publish("shipzen:events:project_reconcile", json.dumps({"project_id": project_id, "event": "project_deleted"}))

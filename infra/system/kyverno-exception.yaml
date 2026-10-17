@@ -45,3 +45,35 @@ spec:
         - shipzen-system
         names:
         - "*promtail*"
+---
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: promtail-host-path-exception
+  namespace: shipzen-system
+  annotations:
+    shipzen.io/reason: "Promtail DaemonSet requires hostPath volume to read container logs from /var/log/pods."
+spec:
+  policyRefs:
+    - name: disallow-host-path
+      kind: ValidatingPolicy
+  matchConditions:
+    - name: match-promtail
+      expression: "object.kind == 'DaemonSet' || object.kind == 'Pod'"
+---
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: node-exporter-vpol-exception
+  namespace: observability
+  annotations:
+    shipzen.io/reason: "Node-exporter requires host namespaces and hostPath volumes."
+spec:
+  policyRefs:
+    - name: disallow-host-namespaces
+      kind: ValidatingPolicy
+    - name: disallow-host-path
+      kind: ValidatingPolicy
+  matchConditions:
+    - name: match-node-exporter
+      expression: "object.kind == 'DaemonSet' || object.kind == 'Pod'"
