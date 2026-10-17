@@ -89,7 +89,7 @@ resource "google_compute_router_nat" "nat" {
 resource "google_container_cluster" "primary" {
   name           = "shipzen-cluster"
   location       = var.gcp_region
-  node_locations = ["us-central1-a"] # Single zone for dev (was 3 zones)
+  node_locations = ["us-central1-c"] # Single zone for dev (switched from us-central1-a to avoid stockout)
   network        = google_compute_network.vpc.name
   subnetwork     = google_compute_subnetwork.subnet.name
 
