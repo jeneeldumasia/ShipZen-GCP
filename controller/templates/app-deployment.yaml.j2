@@ -66,6 +66,8 @@ spec:
           env:
             - name: PORT
               value: "{{ port | default(8080) }}"
+            - name: NIXPACKS_SPA_OUTPUT_DIR
+              value: "dist"
           resources:
             requests:
               cpu: 100m
