@@ -230,13 +230,20 @@ resource "google_project_iam_member" "builder_gcs_writer" {
   member  = "serviceAccount:${google_service_account.builder_sa.email}"
 }
 
+resource "google_project_iam_member" "builder_secret_manager" {
+  project = var.gcp_project
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.builder_sa.email}"
+}
+
 resource "google_service_account_iam_binding" "builder_workload_identity" {
   service_account_id = google_service_account.builder_sa.name
   role               = "roles/iam.workloadIdentityUser"
   members = [
     "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-build/shipzen-builder-sa]",
     "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-worker-sa]",
-    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-api-sa]"
+    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-api-sa]",
+    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-controller-sa]"
   ]
 }
 
@@ -279,6 +286,17 @@ resource "kubernetes_service_account" "worker_k8s_sa" {
 resource "kubernetes_service_account" "api_k8s_sa" {
   metadata {
     name      = "shipzen-api-sa"
+    namespace = kubernetes_namespace.shipzen_system.metadata[0].name
+    annotations = {
+      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
+    }
+  }
+  automount_service_account_token = true
+}
+
+resource "kubernetes_service_account" "controller_k8s_sa" {
+  metadata {
+    name      = "shipzen-controller-sa"
     namespace = kubernetes_namespace.shipzen_system.metadata[0].name
     annotations = {
       "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email

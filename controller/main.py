@@ -267,6 +267,51 @@ def delete_gar_repository(project_id: str):
     except Exception as e:
         logger.error(f"Failed to delete GAR package for project {project_id}: {e}")
 
+def ensure_project_secret(project_id: str):
+    if not GCP_PROJECT:
+        return
+    secret_id = f"shipzen-project-{project_id}"
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        parent = f"projects/{GCP_PROJECT}"
+        try:
+            client.create_secret(
+                request={
+                    "parent": parent,
+                    "secret_id": secret_id,
+                    "secret": {"replication": {"automatic": {}}},
+                }
+            )
+        except Exception:
+            pass
+        try:
+            name = f"{parent}/secrets/{secret_id}/versions/latest"
+            client.access_secret_version(request={"name": name})
+        except Exception:
+            client.add_secret_version(
+                request={
+                    "parent": f"{parent}/secrets/{secret_id}",
+                    "payload": {"data": b"{}"},
+                }
+            )
+            logger.info(f"Initialized Secret Manager secret {secret_id}")
+    except Exception as e:
+        logger.warning(f"Could not ensure secret {secret_id}: {e}")
+
+def delete_project_secret(project_id: str):
+    if not GCP_PROJECT:
+        return
+    secret_id = f"shipzen-project-{project_id}"
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{GCP_PROJECT}/secrets/{secret_id}"
+        client.delete_secret(request={"name": name})
+        logger.info(f"Successfully deleted Secret Manager secret {secret_id}")
+    except Exception as e:
+        logger.warning(f"Could not delete secret {secret_id}: {e}")
+
 
 db_pool = None
 _db_pool_lock = threading.Lock()
@@ -536,6 +581,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
 
                 if check_namespace_exists(project.namespace):
                     ensure_gar_repository(project.id)
+                    ensure_project_secret(project.id)
                     project_cur.execute(
                         "UPDATE projects SET status = %s WHERE id = %s;",
                         (ProjectStatus.READY.value, project.id)
@@ -558,6 +604,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                     project_conn.commit()
                 else:
                     delete_gar_repository(project.id)
+                    delete_project_secret(project.id)
                     # HIGH-08 Fix: Update status to Terminated instead of hard-deleting the row
                     # to preserve audit log foreign keys and history
                     project_cur.execute(
@@ -642,6 +689,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                     shipzen_drift_total.inc()
                     logger.warning(
                         f"Drift: Deployment {d_id} is missing or drifted in K8s. Reconciling...")
+                    ensure_project_secret(project.id)
                     template = jinja_env.get_template("app-deployment.yaml.j2")
                     manifests = template.render(
                         deployment_name=d_id,
