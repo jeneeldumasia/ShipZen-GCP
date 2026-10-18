@@ -44,7 +44,7 @@ function Pulse({ state, url }: { state: string, url?: string }) {
           rel="noopener noreferrer"
           className="mt-16 text-3xl font-display font-bold text-text-primary hover:text-brand transition-colors border-b-2 border-transparent hover:border-brand pb-1"
         >
-          {url.replace("http://", "")}
+          {url.replace("https://", "").replace("http://", "")}
         </a>
       )}
     </div>
@@ -66,8 +66,7 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
   const isActive = ["Queued", "Building", "Deploying", "Verifying"].includes(deployment.state);
   const needsLiveUpdates = isActive;
   const shortId = deployment.deployment_id.slice(0, 8);
-  const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN;
-  const appUrl = appDomain ? `http://${shortId}-${project.name}-${appDomain}` : `http://localhost:${deployment.port}`;
+  const appUrl = appDomain ? `https://${shortId}-${project.name}-${appDomain}` : `http://localhost:${deployment.port}`;
 
   return (
     <div className="w-full animate-fade-in relative">
