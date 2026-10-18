@@ -105,7 +105,10 @@ class DockerfileBuilder(Builder):
                                     "--dockerfile=Dockerfile",
                                     f"--destination={image_uri}",
                                     "--cache=true",
-                                    f"--cache-repo={cache_uri}"
+                                    f"--cache-repo={cache_uri}",
+                                    "--cache-copy-layers=true",
+                                    "--cache-ttl=168h",
+                                    "--compressed-caching=false"
                                 ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
@@ -301,7 +304,10 @@ fi
                                     "--dockerfile=.nixpacks/Dockerfile",
                                     f"--destination={image_uri}",
                                     "--cache=true",
-                                    f"--cache-repo={cache_uri}"
+                                    f"--cache-repo={cache_uri}",
+                                    "--cache-copy-layers=true",
+                                    "--cache-ttl=168h",
+                                    "--compressed-caching=false"
                                 ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
