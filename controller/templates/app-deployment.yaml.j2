@@ -79,12 +79,19 @@ spec:
           ports:
             - name: http
               containerPort: {{ port | default(8080) }}
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: "{{ health_check_path | default('/') }}"
               port: {{ port | default(8080) }}
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: Service
