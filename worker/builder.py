@@ -122,7 +122,7 @@ class DockerfileBuilder(Builder):
                             }
                         ],
                         "volumes": [
-                            {"name": "workspace", "emptyDir": {}}
+                            {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
                         ]
                     }
                 }
@@ -318,7 +318,7 @@ fi
                             }
                         ],
                         "volumes": [
-                            {"name": "workspace", "emptyDir": {}}
+                            {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
                         ]
                     }
                 }
