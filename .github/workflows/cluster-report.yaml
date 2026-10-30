@@ -62,4 +62,7 @@ jobs:
 
           note "Controller log (last 40 lines)" "$(kubectl logs -n shipzen-system deploy/shipzen-controller --tail=40 2>&1)"
 
+          note "Gateway load balancer (external IP and allowed source ranges)" "$(kubectl get svc -A -l gateway.envoyproxy.io/owning-gateway-name=shipzen-gateway \
+            -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,EXTERNAL-IP:.status.loadBalancer.ingress[0].ip,SOURCE-RANGES:.spec.loadBalancerSourceRanges' 2>&1)"
+
           note "Tenant namespaces" "$(kubectl get ns -l shipzen.jeneeldumasia.codes/tenant=true 2>&1)"
