@@ -1,0 +1,67 @@
+name: Security Check
+
+# Verifies what the build pods' identity can and cannot do, by running a
+# throwaway pod (deleted afterwards) with the same Kubernetes service account
+# that Kaniko builds use. Builds run untrusted user Dockerfiles, so this
+# identity must be able to push images and nothing else.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  builder-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Probe the builder identity
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project "$PROJECT"
+
+          cat > /tmp/probe.sh <<'EOF'
+          set -u
+          P="$1"
+          check() {  # check <label> <expect: allow|deny> <command...>
+            label="$1"; expect="$2"; shift 2
+            if out=$("$@" 2>&1); then got=allow; else got=deny; fi
+            if [ "$got" = "$expect" ]; then mark=PASS; else mark=FAIL; fi
+            echo "$mark | $label | expected $expect, got $got | $(echo "$out" | tail -n1 | cut -c1-140)"
+          }
+          echo "identity: $(gcloud config get-value account 2>/dev/null)"
+          check "list Secret Manager secrets"        deny  gcloud secrets list --project "$P" --limit 1
+          check "read the GitHub App secret"         deny  gcloud secrets versions access latest --secret shipzen-github-app --project "$P"
+          check "list build-log buckets"             deny  gcloud storage buckets list --project "$P"
+          check "list platform images"               deny  gcloud artifacts docker images list "us-central1-docker.pkg.dev/$P/shipzen-platform" --limit 1
+          check "list tenant build images"           allow gcloud artifacts docker images list "us-central1-docker.pkg.dev/$P/shipzen-builds" --limit 1
+          EOF
+
+          kubectl delete pod iam-probe -n shipzen-build --ignore-not-found
+          kubectl create configmap iam-probe -n shipzen-build --from-file=probe.sh=/tmp/probe.sh --dry-run=client -o yaml | kubectl apply -f -
+          kubectl run iam-probe -n shipzen-build --restart=Never --image=google/cloud-sdk:slim \
+            --overrides='{"spec":{"serviceAccountName":"shipzen-builder-sa","tolerations":[{"key":"shipzen.jeneeldumasia.codes/dedicated","operator":"Equal","value":"builder","effect":"NoSchedule"}],"volumes":[{"name":"p","configMap":{"name":"iam-probe"}}],"containers":[{"name":"iam-probe","image":"google/cloud-sdk:slim","command":["bash","/probe/probe.sh","'"$PROJECT"'"],"volumeMounts":[{"name":"p","mountPath":"/probe"}]}]}}'
+          kubectl wait pod/iam-probe -n shipzen-build --for=jsonpath='{.status.phase}'=Succeeded --timeout=300s || true
+          RESULT="$(kubectl logs iam-probe -n shipzen-build 2>&1 | sed "s/$PROJECT/<project>/g")"
+          kubectl delete pod iam-probe -n shipzen-build --ignore-not-found
+          kubectl delete configmap iam-probe -n shipzen-build --ignore-not-found
+
+          echo "$RESULT"
+          body="${RESULT//'%'/'%25'}"; body="${body//$'\n'/%0A}"
+          if echo "$RESULT" | grep -q "^FAIL"; then
+            echo "::error title=Builder identity has access it should not::$body"; exit 1
+          fi
+          echo "::notice title=Builder identity: push-only confirmed::$body"
