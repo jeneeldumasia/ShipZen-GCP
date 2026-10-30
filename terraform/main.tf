@@ -213,27 +213,23 @@ resource "google_storage_bucket" "build_logs" {
 }
 
 # ── Workload Identity: Builder SA ─────────────────────────────────────────────
+# Used ONLY by build pods in shipzen-build, which run untrusted user Dockerfiles
+# (Kaniko executes RUN steps with this identity, and any RUN step can fetch a
+# token from the metadata server). It may push images to the tenant build
+# repository and nothing else. It previously held project-wide Secret Manager
+# admin, Storage object admin and Artifact Registry writer, and was shared with
+# the API, worker and controller.
 resource "google_service_account" "builder_sa" {
   account_id   = "shipzen-builder-sa"
-  display_name = "ShipZen Builder Service Account"
+  display_name = "ShipZen Builder Service Account (push to shipzen-builds only)"
 }
 
-resource "google_project_iam_member" "builder_ar_writer" {
-  project = var.gcp_project
-  role    = "roles/artifactregistry.writer"
-  member  = "serviceAccount:${google_service_account.builder_sa.email}"
-}
-
-resource "google_project_iam_member" "builder_gcs_writer" {
-  project = var.gcp_project
-  role    = "roles/storage.objectAdmin"
-  member  = "serviceAccount:${google_service_account.builder_sa.email}"
-}
-
-resource "google_project_iam_member" "builder_secret_manager" {
-  project = var.gcp_project
-  role    = "roles/secretmanager.admin"
-  member  = "serviceAccount:${google_service_account.builder_sa.email}"
+resource "google_artifact_registry_repository_iam_member" "builder_push" {
+  project    = var.gcp_project
+  location   = google_artifact_registry_repository.shipzen_builds.location
+  repository = google_artifact_registry_repository.shipzen_builds.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.builder_sa.email}"
 }
 
 resource "google_service_account_iam_binding" "builder_workload_identity" {
@@ -241,9 +237,46 @@ resource "google_service_account_iam_binding" "builder_workload_identity" {
   role               = "roles/iam.workloadIdentityUser"
   members = [
     "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-build/shipzen-builder-sa]",
+  ]
+}
+
+# ── Workload Identity: Platform SA ────────────────────────────────────────────
+# Used by ShipZen's own services (API, worker, controller).
+#   API:        creates/updates/deletes per-project secrets; reads build logs
+#   worker:     writes build logs; reads image config from shipzen-builds
+#   controller: ensures/deletes project secrets; deletes images of deleted projects
+resource "google_service_account" "platform_sa" {
+  account_id   = "shipzen-platform-sa"
+  display_name = "ShipZen Platform Services (API, worker, controller)"
+}
+
+resource "google_project_iam_member" "platform_secret_manager" {
+  project = var.gcp_project
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+resource "google_storage_bucket_iam_member" "platform_build_logs" {
+  bucket = google_storage_bucket.build_logs.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "platform_builds_admin" {
+  project    = var.gcp_project
+  location   = google_artifact_registry_repository.shipzen_builds.location
+  repository = google_artifact_registry_repository.shipzen_builds.name
+  role       = "roles/artifactregistry.repoAdmin"
+  member     = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+resource "google_service_account_iam_binding" "platform_workload_identity" {
+  service_account_id = google_service_account.platform_sa.name
+  role               = "roles/iam.workloadIdentityUser"
+  members = [
     "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-worker-sa]",
     "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-api-sa]",
-    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-controller-sa]"
+    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-system/shipzen-controller-sa]",
   ]
 }
 
@@ -277,7 +310,7 @@ resource "kubernetes_service_account" "worker_k8s_sa" {
     name      = "shipzen-worker-sa"
     namespace = kubernetes_namespace.shipzen_system.metadata[0].name
     annotations = {
-      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
+      "iam.gke.io/gcp-service-account" = google_service_account.platform_sa.email
     }
   }
   automount_service_account_token = true
@@ -288,7 +321,7 @@ resource "kubernetes_service_account" "api_k8s_sa" {
     name      = "shipzen-api-sa"
     namespace = kubernetes_namespace.shipzen_system.metadata[0].name
     annotations = {
-      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
+      "iam.gke.io/gcp-service-account" = google_service_account.platform_sa.email
     }
   }
   automount_service_account_token = true
@@ -299,7 +332,7 @@ resource "kubernetes_service_account" "controller_k8s_sa" {
     name      = "shipzen-controller-sa"
     namespace = kubernetes_namespace.shipzen_system.metadata[0].name
     annotations = {
-      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
+      "iam.gke.io/gcp-service-account" = google_service_account.platform_sa.email
     }
   }
   automount_service_account_token = true
@@ -345,7 +378,7 @@ resource "google_secret_manager_secret_version" "cloudflare_origin_cert" {
 resource "google_secret_manager_secret_iam_member" "cert_access" {
   secret_id = google_secret_manager_secret.cloudflare_origin_cert.id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.builder_sa.email}" # Reusing builder_sa for simplicity in this migration
+  member    = "serviceAccount:${google_service_account.platform_sa.email}"
 }
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
