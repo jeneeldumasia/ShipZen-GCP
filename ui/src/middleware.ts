@@ -1,7 +1,8 @@
 import { auth } from "@/auth"
 
 export default auth((req) => {
-  const isAuth = !!req.auth;
+  // A session whose GitHub token couldn't be refreshed is treated as signed out.
+  const isAuth = !!req.auth && !(req.auth as { error?: string }).error;
   const isPublicPage = req.nextUrl.pathname === "/";
   
   if (!isAuth && !isPublicPage) {
