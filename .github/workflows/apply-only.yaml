@@ -51,7 +51,7 @@ jobs:
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
-        run: bash ../scripts/adopt-orphaned-resources.sh
+        run: bash ../scripts/ci-run.sh "Adopt orphaned resources" bash ../scripts/adopt-orphaned-resources.sh
 
       - name: Terraform Plan
         working-directory: ./terraform
@@ -65,7 +65,7 @@ jobs:
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
-        run: terraform plan -out=tfplan
+        run: bash ../scripts/ci-run.sh "Terraform Plan" terraform plan -no-color -input=false -out=tfplan
 
       - name: Pre-flight - Configure kubectl and force-finalize stuck Terminating namespaces
         run: |
@@ -100,7 +100,7 @@ jobs:
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: |
-          if ! terraform apply -auto-approve tfplan; then
+          if ! bash ../scripts/ci-run.sh "Terraform Apply" terraform apply -no-color -input=false -auto-approve tfplan; then
             echo "::error::Terraform Apply failed! Dumping cluster state for debugging..."
             kubectl get pods -n shipzen-system || true
             kubectl describe pods -n shipzen-system || true
