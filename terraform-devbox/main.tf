@@ -103,7 +103,13 @@ resource "google_compute_instance" "devbox" {
     sudo apt-get update
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
-    sudo usermod -aG docker jeneeldumasia
+    # Docker access for the people who log in. OS Login / guest-agent accounts are
+    # created on first SSH, possibly before this script has created the docker group,
+    # so (re)apply on every boot to every human account (UID 1000-59999).
+    # The docker group is root-equivalent; that is acceptable on a single-owner devbox.
+    getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' | while read -r u; do
+      sudo usermod -aG docker "$u"
+    done
     
     # ── Install Remote Desktop Environment (XFCE + XRDP)
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies xrdp

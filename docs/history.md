@@ -1,5 +1,8 @@
 # 🚀 ShipZen: Repository Evolution, Architectural Journey & Complete Codebase Master Guide
 
+> **Historical document.** This tells how ShipZen evolved, from DeployHub on AWS to ShipZen on GCP, and it describes each phase as it was at the time.
+> For how the platform works today, see [architecture.md](architecture.md).
+
 > **Repository:** `jeneeldumasia/ShipZen` (formerly `DeployHub`)  
 > **Total Commits Analyzed:** 635 Commits (406 Substantive Engineering Commits + 229 GitOps Auto-Tag Releases)  
 > **Date Range:** June 1, 2026 – August 25, 2026  
@@ -19,7 +22,7 @@
    - [Phase 6: Cloudflare Origin CA & Realtime WebSocket Telemetry](#phase-6-cloudflare-origin-ca--realtime-websocket-telemetry)
    - [Phase 7: Full Observability Stack & Multi-Tenant Collaboration](#phase-7-full-observability-stack--multi-tenant-collaboration)
    - [Phase 8: Security Audit & UI "Zenith" Redesign](#phase-8-security-audit--ui-zenith-redesign)
-   - [Phase 9: Secret Manager Migration & Kyverno Policy Hardening](#phase-9-secrets-manager-migration--kyverno-policy-hardening)
+   - [Phase 9: Secret Manager Migration & Kyverno Policy Hardening](#phase-9-secret-manager-migration--kyverno-policy-hardening)
    - [Phase 10: Multi-Region Readiness & DLQ Atomicity](#phase-10-multi-region-readiness--dlq-atomicity)
 4. [Major Turning Points & Architectural Shifts](#4-major-turning-points--architectural-shifts)
 5. [Component Lifecycles & Evolution](#5-component-lifecycles--evolution)
@@ -43,8 +46,8 @@ Modern developers want the simplicity of Vercel or Render ("git push to deploy")
 5. Real-time build logs and deployment health metrics are streamed back to the developer via WebSockets and Prometheus/Grafana.
 
 ### The Evolutionary Narrative
-* **The "DeployHub" Inception:** The platform began on June 1, 2026, under the name **DeployHub**. The early prototype used traditional GCP ALBs, static builder containers, and external Auth0 tokens.
-* **Overcoming Sandbox & Learner Lab Realities:** Early engineering ran into severe GCP account constraints (IAM permission boundaries, EBS volume type restrictions requiring `gp2` over `gp3`, and tight instance quotas requiring `t3.large`/`m7i-flex.large`).
+* **The "DeployHub" Inception:** The platform began on June 1, 2026, under the name **DeployHub**. The early prototype used traditional GCP Load Balancers, static builder containers, and external Auth0 tokens.
+* **Overcoming Sandbox & Learner Lab Realities:** Early engineering ran into severe GCP account constraints (IAM permission boundaries, Persistent Disk volume type restrictions requiring `pd-standard` over `pd-balanced`, and tight instance quotas requiring `e2-medium`/`c2-standard-4`).
 * **The ShipZen Rebranding & GitOps Loop:** The platform was renamed to **ShipZen**, adopting a modern Next.js dashboard and building an automated GitOps release pipeline where GitHub Actions automatically commits `sha-xxxxxx` image tags to `infra/kustomization.yaml`, prompting ArgoCD to trigger rolling cluster deployments.
 * **Process Isolation via 3-Tier Builders:** Recognizing the security risks of building arbitrary user code inside the main worker process, the team refactored the build system into dynamic, ephemeral Pods executed in a dedicated `shipzen-build` namespace with Pod Security Standards tuning and GCS log streaming.
 * **Networking Modernization:** The brittle GCP Gateway ingress setup was replaced with **Envoy Gateway** (Kubernetes Gateway API) and Cloudflare Origin CA certificates, eliminating Let's Encrypt rate limits and cert-manager webhook races.
@@ -60,7 +63,7 @@ timeline
     section Phase 1 (Jun 1 - Jun 10)
         Genesis & Scaffolding : Commit 001 - 050
         DeployHub Architecture : GKE 1.36, Bitnami Postgres, Redis Streams
-        Learner Lab Adaptations : gp2 EBS Volumes, t3.large node groups
+        Learner Lab Adaptations : pd-standard Persistent Disks, e2-medium node groups
     section Phase 2 (Jun 12 - Jun 17)
         Envoy Gateway : Commit 051 - 111
         Gateway API Adoption : gateway.envoyproxy.io/v1alpha1
@@ -108,7 +111,7 @@ timeline
 ### Phase 1: Genesis & Infrastructure Scaffolding ("DeployHub")
 * **Commit Range:** `001 – 050`
 * **Date Range:** June 01, 2026 – June 10, 2026
-* **Key Commits:** [`b1e9bb9`](file:///c:/Project/ShipZen/b1e9bb9), [`36a4133`](file:///c:/Project/ShipZen/36a4133), [`03a4ad7`](file:///c:/Project/ShipZen/03a4ad7), [`04f75e8`](file:///c:/Project/ShipZen/04f75e8)
+* **Key Commits:** `b1e9bb9`, `36a4133`, `03a4ad7`, `04f75e8`
 
 #### What Existed Before
 * Greenfield repository. No code, no IaC, no deployment pipelines.
@@ -123,7 +126,7 @@ timeline
 3. **GCP Learner Lab Adaptation (`013–050`):** Addressed strict cloud sandbox limits by downgrading storage classes from `gp3` to `gp2` and switching node instance types from `m7i-flex.large` to `t3.large`.
 
 #### Evidence
-* **[Known]** Commit `b1e9bb9` message: *"feat: initial commit of DeployHub platform architecture"*. Commit `03a4ad7`: *"fix: downgrade postgres storage class to gp2 to unblock GCP student account EBS constraints"*.
+* **[Known]** Commit `b1e9bb9` message: *"feat: initial commit of DeployHub platform architecture"*. Commit `03a4ad7`: *"fix: downgrade postgres storage class to pd-standard to unblock GCP student account persistent disk constraints"*.
 * **[Inferred]** The rapid churn of commits `021–036` shows that running Helm charts and custom CRDs inside a single Terraform run led to race conditions with the Kubernetes discovery cache, requiring explicit `time_sleep` and discovery cache flushes.
 
 #### Architectural Diagram (Phase 1)
@@ -149,7 +152,7 @@ Developer (Local / cURL)
 ### Phase 2: Gateway API, Cloudflare & Teardown Hardening
 * **Commit Range:** `051 – 111`
 * **Date Range:** June 12, 2026 – June 17, 2026
-* **Key Commits:** [`068`](file:///c:/Project/ShipZen/33ac2a4), [`076`](file:///c:/Project/ShipZen/a7d9dc2), [`078`](file:///c:/Project/ShipZen/58e33cf), [`093`](file:///c:/Project/ShipZen/77d6ce2), [`094`](file:///c:/Project/ShipZen/5181770)
+* **Key Commits:** `068`, `076`, `078`, `093`, `094`
 
 #### What Existed Before
 * The platform used GCP Load Balancer Controller (Gateway) for Ingress. Teardowns via `terraform destroy` frequently deadlocked due to orphaned Target Groups, lingering Cloudflare DNS records, and Kyverno admission webhooks.
@@ -168,7 +171,7 @@ Developer (Local / cURL)
 ### Phase 3: The Great Rebrand (ShipZen) & UI Foundations
 * **Commit Range:** `112 – 165`
 * **Date Range:** June 17, 2026 – June 18, 2026
-* **Key Commits:** [`112`](file:///c:/Project/ShipZen/bc591b7), [`124`](file:///c:/Project/ShipZen/af5c4c0), [`133`](file:///c:/Project/ShipZen/cf06d68), [`134`](file:///c:/Project/ShipZen/a9518ca), [`148`](file:///c:/Project/ShipZen/13f5345)
+* **Key Commits:** `112`, `124`, `133`, `134`, `148`
 
 #### What Existed Before
 * Backend-only platform called DeployHub with minimal UI and manual image deployments.
@@ -188,7 +191,7 @@ Developer (Local / cURL)
 ### Phase 4: Auth Evolution (GitHub OAuth) & Database RBAC
 * **Commit Range:** `166 – 227`
 * **Date Range:** June 18, 2026 – June 19, 2026
-* **Key Commits:** [`188`](file:///c:/Project/ShipZen/2179d9e), [`194`](file:///c:/Project/ShipZen/db049af), [`206`](file:///c:/Project/ShipZen/c519152), [`222`](file:///c:/Project/ShipZen/e0778b6), [`228`](file:///c:/Project/ShipZen/f21a90e)
+* **Key Commits:** `188`, `194`, `206`, `222`, `228`
 
 #### What Existed Before
 * Mock authentication / Auth0 prototype tokens with no true multi-tenant user boundary in PostgreSQL.
@@ -208,7 +211,7 @@ Developer (Local / cURL)
 ### Phase 5: 3-Tier Ephemeral Builder Architecture
 * **Commit Range:** `228 – 315`
 * **Date Range:** June 19, 2026 – June 22, 2026
-* **Key Commits:** [`264`](file:///c:/Project/ShipZen/b7992ae), [`266`](file:///c:/Project/ShipZen/a02f0c9), [`277`](file:///c:/Project/ShipZen/1f140ae), [`293`](file:///c:/Project/ShipZen/425e115), [`294`](file:///c:/Project/ShipZen/0327810)
+* **Key Commits:** `264`, `266`, `277`, `293`, `294`
 
 #### What Existed Before
 * Monolithic worker executed builds in-process or via static shared builder containers, presenting security vulnerabilities and noisy neighbor issues.
@@ -250,7 +253,7 @@ Developer (Local / cURL)
 ### Phase 6: Cloudflare Origin CA & Realtime WebSocket Telemetry
 * **Commit Range:** `316 – 420`
 * **Date Range:** June 23, 2026 – June 25, 2026
-* **Key Commits:** [`319`](file:///c:/Project/ShipZen/fc02bd8), [`335`](file:///c:/Project/ShipZen/d8e99e6), [`356`](file:///c:/Project/ShipZen/59f6efd), [`391`](file:///c:/Project/ShipZen/ca2901c), [`400`](file:///c:/Project/ShipZen/e8ea0e2)
+* **Key Commits:** `319`, `335`, `356`, `391`, `400`
 
 #### What Existed Before
 * Let's Encrypt managed by `cert-manager` (frequent rate-limit issues and webhook sync delays). Frontend polled REST endpoints for build logs.
@@ -270,7 +273,7 @@ Developer (Local / cURL)
 ### Phase 7: Full Observability Stack & Multi-Tenant Collaboration
 * **Commit Range:** `421 – 466`
 * **Date Range:** June 26, 2026 – June 27, 2026
-* **Key Commits:** [`425`](file:///c:/Project/ShipZen/77fbc99), [`427`](file:///c:/Project/ShipZen/57da4ad), [`430`](file:///c:/Project/ShipZen/e180e4b), [`445`](file:///c:/Project/ShipZen/9c9359d), [`451`](file:///c:/Project/ShipZen/f4ba8b4), [`452`](file:///c:/Project/ShipZen/43d34a2)
+* **Key Commits:** `425`, `427`, `430`, `445`, `451`, `452`
 
 #### What Existed Before
 * Basic metrics with no unified dashboards. Single-user project ownership model.
@@ -289,7 +292,7 @@ Developer (Local / cURL)
 ### Phase 8: Security Audit & UI "Zenith" Redesign
 * **Commit Range:** `467 – 551`
 * **Date Range:** July 06, 2026 – July 15, 2026
-* **Key Commits:** [`481`](file:///c:/Project/ShipZen/093c6c7), [`496`](file:///c:/Project/ShipZen/2b5335a), [`508`](file:///c:/Project/ShipZen/adf10a3), [`537`](file:///c:/Project/ShipZen/9a1e56d), [`545`](file:///c:/Project/ShipZen/1417c0e)
+* **Key Commits:** `481`, `496`, `508`, `537`, `545`
 
 #### What Existed Before
 * Legacy UI aesthetics with high visual noise. Authentication fallback permitted test tokens in permissive configurations.
@@ -308,7 +311,7 @@ Developer (Local / cURL)
 ### Phase 9: Secret Manager Migration & Kyverno Policy Hardening
 * **Commit Range:** `552 – 600`
 * **Date Range:** July 18, 2026 – July 19, 2026
-* **Key Commits:** [`559`](file:///c:/Project/ShipZen/2ee36b9), [`562`](file:///c:/Project/ShipZen/0aa4084), [`578`](file:///c:/Project/ShipZen/586f452), [`586`](file:///c:/Project/ShipZen/e194c84), [`591`](file:///c:/Project/ShipZen/efbede5), [`599`](file:///c:/Project/ShipZen/92bb616)
+* **Key Commits:** `559`, `562`, `578`, `586`, `591`, `599`
 
 #### What Existed Before
 * Secrets (Redis passwords, GitHub App private keys) were injected as static Kubernetes secrets or raw Terraform variables. Next.js was running older router logic.
@@ -327,7 +330,7 @@ Developer (Local / cURL)
 ### Phase 10: Multi-Region Readiness & DLQ Atomicity
 * **Commit Range:** `601 – 635`
 * **Date Range:** August 24, 2026 – August 25, 2026
-* **Key Commits:** [`601`](file:///c:/Project/ShipZen/64fa437), [`610`](file:///c:/Project/ShipZen/1246c02), [`619`](file:///c:/Project/ShipZen/fc3b84e), [`626`](file:///c:/Project/ShipZen/78ae331), [`631`](file:///c:/Project/ShipZen/567a0b0), [`635`](file:///c:/Project/ShipZen/6c1217a)
+* **Key Commits:** `601`, `610`, `619`, `626`, `631`, `635`
 
 #### What Existed Before
 * Hardcoded GCP region strings (`us-east-1`, `ap-south-1`) in Kustomize manifests and CI workflows. Potential message loss if worker crashed between processing and acknowledgment.
