@@ -126,14 +126,18 @@ def graph(title, targets, description, unit="none", w=12, h=8, stack=False, colo
 
 
 def table(title, expr, description, columns, w=24, h=7, no_value="Nothing to show", sort=None, value_text=None,
-          empty_cell=None):
+          empty_cell=None, widths=None):
     """Instant-query table showing only `columns` ({label: header}), plus the value if 'Value' is listed.
     value_text: {header: {raw value: (shown text, colour or None)}} to translate cell values."""
     overrides = [{"matcher": {"id": "byName", "options": header},
                   "properties": [{"id": "mappings", "value": [{"type": "value", "options": {
                       raw: ({"text": txt, "color": c} if c else {"text": txt}) for raw, (txt, c) in m.items()}}]},
-                                 {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}
+                                 ] + ([{"id": "custom.cellOptions", "value": {"type": "color-text"}}]
+                                      if any(c for _, c in m.values()) else [])}
                  for header, m in (value_text or {}).items()]
+    if widths:
+        overrides += [{"matcher": {"id": "byName", "options": header},
+                       "properties": [{"id": "custom.width", "value": px}]} for header, px in widths.items()]
     # no_value is what an empty table says; a blank cell in a non-empty table says empty_cell[header] or "—".
     overrides += [{"matcher": {"id": "byName", "options": header},
                    "properties": [{"id": "noValue", "value": (empty_cell or {}).get(header, "—")}]}
@@ -275,7 +279,7 @@ overview = dashboard(
               {"alertname": "Problem", "severity": "How serious", "namespace": "Where"},
               w=20, h=6, no_value="Nothing is wrong right now",
               value_text={"Problem": {k: (v, None) for k, v in PROBLEM_TEXT.items()}, "How serious": SEVERITY_TEXT},
-              empty_cell={"Where": "Whole platform"}),
+              empty_cell={"Where": "Whole platform"}, widths={"Problem": 380, "How serious": 170}),
 
         row("Apps (last 24 hours)"),
         stat("Apps online", tenant_apps_online, "User apps with at least one copy running and answering.",
