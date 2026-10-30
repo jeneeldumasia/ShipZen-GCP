@@ -1,30 +1,26 @@
+# Who may open connections to the ShipZen platform pods (enforced by GKE
+# Dataplane V2). Tenant apps and build Jobs are deliberately absent: untrusted
+# code must not reach the API, Redis or anything else in shipzen-system except
+# through the public gateway like any visitor.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: deny-tenant-ingress
   namespace: shipzen-system
 spec:
-  podSelector: {} # Selects all pods in shipzen-system
+  podSelector: {}
   policyTypes:
     - Ingress
   ingress:
-    # Allow traffic from within the shipzen-system namespace itself
-    - from:
+    - from:   # platform components talking to each other (API ↔ Redis, etc.)
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: shipzen-system
-    # Allow traffic from the Envoy Gateway namespace (if deployed externally) or itself
-    - from:
+    - from:   # the public gateway (UI, API routes)
         - namespaceSelector:
             matchLabels:
-              gateway.envoyproxy.io/system: "true"
-    # Allow Prometheus scraping from monitoring namespaces (if any)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-    # Prometheus (kube-prometheus-stack) actually runs in 'observability'.
-    - from:
+              kubernetes.io/metadata.name: envoy-gateway-system
+    - from:   # Prometheus scraping, Grafana reading Loki, Alertmanager
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

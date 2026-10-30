@@ -5029,3 +5029,44 @@ data:
         }
       ]
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-text
+  namespace: observability
+data:
+  alert-text.json: |-
+    {
+      "problems": {
+        "ShipZenServiceDown": "A ShipZen service is down",
+        "GatewayDown": "Websites are unreachable (gateway down)",
+        "DeployQueueDown": "The deploy queue is down",
+        "DatabaseUnreachable": "The database cannot be reached",
+        "AppOffline": "An app is offline",
+        "AppKeepsCrashing": "An app keeps crashing",
+        "AppErrorsHigh": "An app is returning many errors",
+        "DeploysStuckInQueue": "Deploys are stuck waiting",
+        "DeploysGaveUp": "Some deploys failed for good",
+        "ServersAlmostFull": "Servers are almost full",
+        "KubePodCrashLooping": "A program keeps crashing",
+        "KubePodNotReady": "A program is not starting",
+        "KubeDeploymentReplicasMismatch": "A service is not fully running",
+        "KubeDeploymentRolloutStuck": "An update is stuck",
+        "KubeStatefulSetReplicasMismatch": "A storage service is not fully running",
+        "KubeJobFailed": "A background job failed",
+        "KubePersistentVolumeFillingUp": "A storage disk is filling up",
+        "NodeFilesystemSpaceFillingUp": "A server disk is filling up",
+        "NodeFilesystemAlmostOutOfSpace": "A server disk is almost full",
+        "KubeCPUOvercommit": "Not enough spare processing power",
+        "KubeMemoryOvercommit": "Not enough spare memory",
+        "KubeNodeNotReady": "A server is not responding",
+        "TargetDown": "Monitoring cannot reach something",
+        "PrometheusOperatorRejectedResources": "A monitoring setting was rejected"
+      },
+      "severity": {
+        "critical": "Urgent",
+        "high": "High",
+        "warning": "Should be checked"
+      }
+    }

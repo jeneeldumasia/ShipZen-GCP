@@ -117,9 +117,11 @@ Each project gets its own namespace, rendered from
 - labels `shipzen.jeneeldumasia.codes/tenant=true` and the project id; Pod Security `restricted`
 - `ResourceQuota tenant-quota` (4 CPU / 8 Gi requested, 20 pods) and a `LimitRange`
 - a default service account with no token mounted
-- NetworkPolicies meant to admit only gateway traffic, and to keep tenants out of
-  `shipzen-system`. **They are not enforced today**: the cluster has no network
-  policy provider enabled. See [security.md](security.md#known-gaps).
+- a NetworkPolicy, enforced by GKE Dataplane V2: traffic in only from the Envoy
+  gateway and its own pods; traffic out only to DNS, its own pods and the public
+  internet. Never to other tenants, the platform, nodes, Cloud SQL or the metadata
+  server. Build Jobs get the same treatment, and `shipzen-system` only accepts
+  traffic from itself, the gateway and monitoring.
 - RBAC limited to reading its own ConfigMaps
 
 The controller re-renders `tenant.yaml` for existing projects about every 20
@@ -150,7 +152,7 @@ All of it is Terraform in `terraform/` (state in HCP Terraform, org
 GitHub Actions:
 
 - VPC `shipzen-vpc` with Cloud NAT and private services access for Cloud SQL
-- GKE `shipzen-cluster` (regional control plane in `us-central1`, nodes in `us-central1-c`), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
+- GKE `shipzen-cluster` (regional control plane in `us-central1`, nodes in `us-central1-c`, Dataplane V2), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
 - Cloud SQL `shipzen-postgres` (private IP)
 - Artifact Registry, GCS buckets, Secret Manager, service accounts and IAM
 - Helm releases for every operator above, then ArgoCD, which takes over `infra/`

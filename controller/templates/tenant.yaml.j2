@@ -54,36 +54,42 @@ metadata:
   name: tenant-isolation
   namespace: {{ namespace }}
 spec:
+  # Enforced by GKE Dataplane V2. A tenant may receive traffic only from the
+  # Envoy gateway and from its own pods, and may talk only to DNS, its own pods
+  # and the public internet: never to other tenants, the platform, the nodes,
+  # Cloud SQL or the metadata server. scripts/netpolicy-probe.sh checks this.
   podSelector: {}
   policyTypes:
     - Ingress
     - Egress
-  # Default deny all ingress unless specifically allowed via Gateway
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: shipzen-system
+              kubernetes.io/metadata.name: envoy-gateway-system
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: envoy-gateway
+              app.kubernetes.io/name: envoy
+    - from:
+        - podSelector: {}
   egress:
-    # Explicitly allow DNS
     - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
-    # Block internal Kubernetes API & Metadata endpoint
+    - to:
+        - podSelector: {}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8      # Typical Cluster VPC/Pod CIDR
+              - 10.0.0.0/8         # nodes, pods, Cloud SQL, private endpoint
               - 172.16.0.0/12
               - 192.168.0.0/16
-              - 100.64.0.0/10   # Carrier-grade NAT / EKS VPC CNI secondary ranges
-              - 169.254.169.254/32 # Block IMDS explicitly as requested
+              - 100.64.0.0/10
+              - 34.118.224.0/20    # cluster Service IPs
+              - 169.254.0.0/16     # metadata server
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

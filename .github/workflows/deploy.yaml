@@ -127,6 +127,12 @@ jobs:
 
       - name: Push Secrets to GCP Secret Manager
         run: |
+          # WhatsApp alert destination: placeholder only if missing (Deploy Secrets fills it).
+          gcloud secrets describe shipzen-whatsapp >/dev/null 2>&1 || {
+            gcloud secrets create shipzen-whatsapp --replication-policy="automatic"
+            echo -n '{"phone": "", "apikey": ""}' | gcloud secrets versions add shipzen-whatsapp --data-file=-
+          }
+
           echo "Pushing GitHub OAuth Secret..."
           gcloud secrets create shipzen-github --replication-policy="automatic" 2>/dev/null || true
           echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | gcloud secrets versions add shipzen-github --data-file=-

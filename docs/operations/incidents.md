@@ -8,6 +8,7 @@ are kept where the lesson still applies.
 
 | Problem | Cause | Fix |
 |---|---|---|
+| Tenant and build pods could reach the API, Redis, Grafana, Cloud SQL and the metadata server | No NetworkPolicy enforcement on the cluster; the tenant policy also named the wrong gateway | Dataplane V2, corrected policies, and a probe in **Security Check** |
 | Template changes never reached existing apps (a removed metrics check kept alerting for smoke-test) | `tenant.yaml` was written only while a project was being provisioned | The controller re-renders it for Ready projects about every 20 min (#21) |
 | Slack alerts never sent | The Slack webhook was a placeholder, so the operator rejected the whole routing config. Deploy workflows also reset the secret on every run. | Routing disabled until a real webhook exists. Workflows now create the placeholder only if missing (#20, this change). |
 | Grafana showed 33 dashboards, mostly "No data" | Stock dashboards switched off with the wrong Helm key; ShipZen dashboards queried names that don't exist; Loki not connected | Four generated dashboards, Loki datasource, Envoy scraping (#19) |

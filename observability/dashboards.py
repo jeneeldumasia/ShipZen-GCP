@@ -552,6 +552,12 @@ def render() -> str:
             js = json.dumps(dash, indent=2, ensure_ascii=False)
             body.append(f"  {name}: |-\n" + "\n".join("    " + line for line in js.splitlines()) + "\n")
         docs.append("".join(body))
+    # The same plain-language problem names, for the WhatsApp alert relay
+    # (infra/system/alert-relay.yaml), so Grafana and WhatsApp say the same thing.
+    text = json.dumps({"problems": PROBLEM_TEXT, "severity": {k: v[0] for k, v in SEVERITY_TEXT.items()}},
+                      indent=2, ensure_ascii=False)
+    docs.append("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: alert-text\n  namespace: observability\ndata:\n"
+                "  alert-text.json: |-\n" + "\n".join("    " + line for line in text.splitlines()) + "\n")
     return "---\n".join(docs)
 
 

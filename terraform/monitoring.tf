@@ -185,6 +185,47 @@ resource "helm_release" "kube_prometheus_stack" {
     value = "10Gi"
   }
 
+  # Alertmanager: send every warning/critical alert group to the WhatsApp relay
+  # (infra/system/alert-relay.yaml) by webhook, when it fires and when it clears.
+  # The inhibit rules are the chart's defaults, repeated because this replaces
+  # the whole config.
+  values = [yamlencode({
+    alertmanager = {
+      config = {
+        global = { resolve_timeout = "5m" }
+        route = {
+          receiver        = "null"
+          group_by        = ["alertname", "namespace"]
+          group_wait      = "1m"
+          group_interval  = "5m"
+          repeat_interval = "12h"
+          routes = [
+            { receiver = "null", matchers = ["alertname =~ \"Watchdog|InfoInhibitor\""] },
+            { receiver = "whatsapp", matchers = ["severity =~ \"critical|high|warning\""] },
+          ]
+        }
+        receivers = [
+          { name = "null" },
+          {
+            name = "whatsapp"
+            webhook_configs = [{
+              url           = "http://alert-relay.observability.svc.cluster.local:8080/alert"
+              send_resolved = true
+              max_alerts    = 10
+            }]
+          },
+        ]
+        inhibit_rules = [
+          { source_matchers = ["severity = critical"], target_matchers = ["severity =~ warning|info"], equal = ["namespace", "alertname"] },
+          { source_matchers = ["severity = warning"], target_matchers = ["severity = info"], equal = ["namespace", "alertname"] },
+          { source_matchers = ["alertname = InfoInhibitor"], target_matchers = ["severity = info"], equal = ["namespace"] },
+          { target_matchers = ["alertname = InfoInhibitor"] },
+        ]
+        templates = ["/etc/alertmanager/config/*.tmpl"]
+      }
+    }
+  })]
+
   timeout    = 900
   depends_on = [time_sleep.wait_for_cluster_auth, helm_release.postgresql, helm_release.kyverno_policies]
 }

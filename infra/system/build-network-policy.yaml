@@ -1,0 +1,41 @@
+# Build Jobs run untrusted Dockerfiles. They may fetch from the internet and push
+# to Artifact Registry (via their Workload Identity), and nothing else: no other
+# pods, no platform services, no nodes, no Cloud SQL. Nothing may connect in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-isolation
+  namespace: shipzen-build
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - ports:   # DNS
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:      # GKE metadata server, for the push-only builder identity
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - port: 988
+          protocol: TCP
+    - to:      # the public internet only
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 34.118.224.0/20
+              - 169.254.0.0/16
