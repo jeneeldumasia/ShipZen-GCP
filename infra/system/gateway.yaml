@@ -11,6 +11,32 @@ spec:
         type: LoadBalancer
         annotations:
           networking.gke.io/load-balancer-type: "External"
+        # Only accept traffic from Cloudflare. Every public hostname is proxied
+        # through Cloudflare (ExternalDNS --cloudflare-proxied); without this the
+        # load balancer IP could be hit directly with a Host header, bypassing
+        # Cloudflare's DDoS protection, WAF and bot filtering. GKE turns this
+        # into a VPC firewall rule; its own health-check ranges are unaffected.
+        # Source: https://www.cloudflare.com/ips-v4 (update if Cloudflare adds ranges).
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              loadBalancerSourceRanges:
+                - 173.245.48.0/20
+                - 103.21.244.0/22
+                - 103.22.200.0/22
+                - 103.31.4.0/22
+                - 141.101.64.0/18
+                - 108.162.192.0/18
+                - 190.93.240.0/20
+                - 188.114.96.0/20
+                - 197.234.240.0/22
+                - 198.41.128.0/17
+                - 162.158.0.0/15
+                - 104.16.0.0/13
+                - 104.24.0.0/14
+                - 172.64.0.0/13
+                - 131.0.72.0/22
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
