@@ -29,7 +29,9 @@ REGION="${REGION:-us-central1}"
 
 summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >> "$GITHUB_STEP_SUMMARY"; echo "$*"; }
 
-VOLUMES="labels.goog-k8s-cluster-name=$CLUSTER AND labels.goog-gke-volume:* \
+# goog-gke-volume carries an empty value, and gcloud's presence test (labels.x:*)
+# does not match empty values; compare with '' instead (checked against live disks).
+VOLUMES="labels.goog-k8s-cluster-name=$CLUSTER AND labels.goog-gke-volume='' \
 AND description~'kubernetes.io/created-for/pvc'"
 FILTER="$VOLUMES AND -users:* AND -labels.reclaim-policy-gke-io=retain"
 
