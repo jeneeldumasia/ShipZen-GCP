@@ -735,7 +735,12 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                     ready_replicas = k8s_dep.status.ready_replicas or 0
                     is_progressing = any(c.type == 'Progressing' and c.status == 'True' and c.reason != 'NewReplicaSetAvailable' for c in (k8s_dep.status.conditions or []))
 
-                    if ready_replicas == 0 and db_dep['state'] == 'Running':
+                    # A previous release that the controller itself scaled to 0 (when a
+                    # newer one went live) has no ready pods by design. Treating it as a
+                    # crash loop marked every superseded release Failed, which also left
+                    # Rollback with nothing to roll back to.
+                    intentionally_scaled_down = (db_dep.get('replicas') or 0) == 0
+                    if ready_replicas == 0 and db_dep['state'] == 'Running' and not intentionally_scaled_down:
                         _deployment_failures[d_id] = _deployment_failures.get(d_id, 0) + 1
                         if _deployment_failures[d_id] >= 2 and not is_progressing:
                             shipzen_drift_total.inc()
