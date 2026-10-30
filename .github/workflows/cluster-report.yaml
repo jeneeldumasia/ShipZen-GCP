@@ -55,6 +55,10 @@ jobs:
           note "shipzen-platform: sync conditions and last operation" "$(kubectl get application shipzen-platform -n argocd \
             -o jsonpath='{range .status.conditions[*]}{.type}: {.message}{"\n"}{end}{.status.operationState.message}{"\n"}{range .status.resources[?(@.status!="Synced")]}OutOfSync: {.kind}/{.name} ({.namespace}){"\n"}{end}' 2>&1)"
 
+          note "Persistent disks (name | users | labels | created-for)" "$(gcloud compute disks list --project ${{ secrets.GCP_PROJECT_ID }} \
+            --filter="name~'^pvc-'" \
+            --format='value(name,zone.basename(),sizeGb,users.len(),labels,description.slice(0:140),creationTimestamp.date())' 2>&1)"
+
           note "Warning events in shipzen-system" "$(kubectl get events -n shipzen-system --field-selector type=Warning \
             --sort-by=.lastTimestamp -o custom-columns='WHEN:.lastTimestamp,OBJECT:.involvedObject.name,REASON:.reason,MESSAGE:.message' 2>&1 | tail -n 25)"
 
