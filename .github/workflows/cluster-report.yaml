@@ -62,6 +62,10 @@ jobs:
             --filter="name~'^pvc-'" \
             --format='value(name,zone.basename(),sizeGb,users.len(),labels,description.slice(0:140),creationTimestamp.date())' 2>&1)"
 
+          note "DEBUG smoke-test" "$(kubectl get pods,deploy -n smoke-test -o wide 2>&1 | cut -c1-200)
+          $(kubectl get events -n smoke-test --sort-by=.lastTimestamp 2>&1 | tail -8 | cut -c1-220)
+          $(gcloud artifacts docker images list us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/shipzen-builds --limit 5 2>&1 | cut -c1-150)"
+
           note "Orphaned PVC disks (would be deleted by teardown)" "$(scripts/cleanup-orphaned-disks.sh ${{ secrets.GCP_PROJECT_ID }} shipzen-cluster 2>&1)"
 
           note "Warning events in shipzen-system" "$(kubectl get events -n shipzen-system --field-selector type=Warning \
