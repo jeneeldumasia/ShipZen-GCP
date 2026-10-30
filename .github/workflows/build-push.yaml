@@ -152,3 +152,42 @@ jobs:
           done
           echo "ERROR: failed to push after 5 attempts"
           exit 1
+
+      - name: Install kubectl auth plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Roll the platform to the new images
+        # The ArgoCD Application overrides image names (to add the registry path)
+        # and that override drops the newTag from infra/kustomization.yaml, so the
+        # pods kept running ':latest' and never rolled when a new image was built.
+        # Pin the exact tag in the Application's override instead; ArgoCD then
+        # syncs a changed pod spec and rolls the Deployments.
+        env:
+          GAR_REGISTRY: "us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}"
+        run: |
+          TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
+          if ! gcloud container clusters get-credentials shipzen-cluster --region us-central1 \
+               --project ${{ secrets.GCP_PROJECT_ID }} 2>/dev/null; then
+            echo "Cluster not running; skipping rollout (the next apply deploys :latest)."
+            exit 0
+          fi
+          if ! kubectl get application shipzen-platform -n argocd >/dev/null 2>&1; then
+            echo "ArgoCD Application not found; skipping rollout."
+            exit 0
+          fi
+          IMAGES=""
+          for c in api controller worker ui; do   # only images this workflow builds
+            IMAGES="$IMAGES\"shipzen-$c=$GAR_REGISTRY/shipzen-platform/$c:$TAG\","
+          done
+          kubectl patch application shipzen-platform -n argocd --type merge \
+            -p "{\"spec\":{\"source\":{\"kustomize\":{\"images\":[${IMAGES%,}]}}}}"
+          kubectl annotate application shipzen-platform -n argocd argocd.argoproj.io/refresh=hard --overwrite
+          echo "Pinned platform images to $TAG"
+          for d in shipzen-api shipzen-worker shipzen-controller shipzen-ui; do
+            for i in $(seq 1 30); do
+              img=$(kubectl get deploy $d -n shipzen-system -o jsonpath='{.spec.template.spec.containers[0].image}')
+              case "$img" in *":$TAG") break ;; esac
+              sleep 10
+            done
+            kubectl rollout status deploy/$d -n shipzen-system --timeout=300s
+          done

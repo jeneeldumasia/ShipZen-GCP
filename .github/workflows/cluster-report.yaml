@@ -33,7 +33,12 @@ jobs:
 
           note() {  # note <title> <text>: one annotation, newlines escaped, capped at ~60 lines
             local body
-            body="$(printf '%s' "$2" | tail -n 60 | sed -e 's/%/%25/g')"
+            # Redact anything that looks like a credential before it becomes a public annotation.
+            body="$(printf '%s' "$2" | tail -n 60 \
+              | sed -E -e 's/ya29\.[A-Za-z0-9._-]+/ya29.<redacted>/g' \
+                       -e 's/(gh[pousr]_)[A-Za-z0-9]{20,}/\1<redacted>/g' \
+                       -e 's/(-p|--password|token[=:]) *[^ ]{16,}/\1 <redacted>/gI' \
+              | sed -e 's/%/%25/g')"
             body="${body//$'\n'/%0A}"
             echo "::notice title=$1::${body:-<empty>}"
           }
