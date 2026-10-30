@@ -16,6 +16,9 @@ resources:
   - kyverno-exception.yaml
   - build-namespace-exception.yaml
   - grafana-dashboards.yaml
+  - grafana-datasources.yaml
+  - gateway-metrics.yaml
+  - shipzen-alerts.yaml
   - github-app-secret.yaml
   - github-secret.yaml
   - rate-limit.yaml

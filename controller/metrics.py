@@ -28,6 +28,12 @@ shipzen_active_deployments = Gauge(
 )
 
 
+shipzen_database_up = Gauge(
+    'shipzen_database_up',
+    '1 if this controller could run a query against Postgres on its last check, else 0'
+)
+
+
 def start_metrics_server(port: int = 9090):
     # Fix: was 8080, which collides with the controller's own app port.
     # Metrics now bind on 9090.

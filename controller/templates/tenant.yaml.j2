@@ -113,21 +113,3 @@ roleRef:
   kind: Role
   name: tenant-runner
   apiGroup: rbac.authorization.k8s.io
-
----
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: tenant-pod-monitor
-  namespace: {{ namespace }}
-  labels:
-    release: kube-prometheus-stack
-spec:
-  selector:
-    matchExpressions:
-      - key: app
-        operator: Exists
-  podMetricsEndpoints:
-    - port: http
-      path: /metrics
-

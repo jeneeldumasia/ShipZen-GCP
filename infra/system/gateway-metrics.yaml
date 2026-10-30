@@ -1,0 +1,26 @@
+# Scrape the Envoy proxy that fronts every site. Envoy Gateway exposes its
+# Prometheus stats on the proxy pods' "metrics" port (19001). This is where the
+# Grafana dashboards get visitor counts, error rates and response times per app:
+# Envoy names each upstream "httproute/<namespace>/<route>/rule/<n>".
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-proxy
+  namespace: envoy-gateway-system
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: proxy
+      app.kubernetes.io/managed-by: envoy-gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s
+      # Keep only the per-route request stats the dashboards and alerts use;
+      # the full Envoy stats set is thousands of series per route.
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: envoy_cluster_upstream_rq_(total|xx|time_bucket|time_count|time_sum)
+          action: keep
