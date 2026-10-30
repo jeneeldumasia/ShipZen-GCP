@@ -152,9 +152,26 @@ async def get_current_user(
             timeout=5
         )
         if resp.status_code != 200:
+            # Every non-200 used to be reported as "Invalid GitHub token", which
+            # hid rate limiting and GitHub outages behind a misleading 401.
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            logger.warning(
+                f"GitHub /user returned {resp.status_code} "
+                f"(rate-limit remaining={remaining}): {resp.text[:200]}")
+            if resp.status_code == 401:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="GitHub token is invalid, expired or revoked. Sign in again.",
+                )
+            if resp.status_code in (403, 429) and remaining == "0":
+                raise HTTPException(
+                    status_code=503,
+                    detail="GitHub API rate limit reached for this account; try again shortly.",
+                    headers={"Retry-After": resp.headers.get("Retry-After", "60")},
+                )
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid GitHub token",
+                status_code=503,
+                detail=f"GitHub returned {resp.status_code} while checking your sign-in; try again.",
             )
 
         gh_user = resp.json()
