@@ -1,0 +1,125 @@
+# ShipZen's own alert rules. Firing alerts appear on the Grafana "ShipZen — Overview"
+# page under "Problems right now" (names are translated to plain words there, see
+# PROBLEM_TEXT in observability/dashboards.py, so add any new alert to that map too).
+#
+# Every expression uses a metric that something in this repo actually exports;
+# tests/test_regressions.py checks that.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shipzen-alerts
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: shipzen-platform
+      rules:
+        - alert: ShipZenServiceDown
+          expr: |
+            sum by (namespace, deployment) (
+              kube_deployment_status_replicas_available{namespace="shipzen-system", deployment=~"shipzen-(ui|api|worker|controller)"}
+            ) == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ShipZen {{ $labels.deployment }} has no running copies"
+
+        - alert: GatewayDown
+          expr: |
+            (sum(kube_deployment_status_replicas_available{namespace="envoy-gateway-system", deployment=~"envoy-shipzen-system-.*"}) or vector(0)) == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: envoy-gateway-system
+          annotations:
+            summary: "The Envoy gateway has no running copies; every site is unreachable"
+
+        - alert: DeployQueueDown
+          expr: |
+            (sum(kube_statefulset_status_replicas_ready{namespace="shipzen-system", statefulset="redis-master"}) or vector(0)) == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: shipzen-system
+          annotations:
+            summary: "Redis (deploy queue) is down; new deploys cannot be queued"
+
+        - alert: DatabaseUnreachable
+          expr: max(shipzen_database_up) == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: shipzen-system
+          annotations:
+            summary: "The controller cannot query Postgres"
+
+        - alert: DeploysStuckInQueue
+          expr: max(shipzen_queue_depth) > 10
+          for: 10m
+          labels:
+            severity: warning
+            namespace: shipzen-system
+          annotations:
+            summary: "{{ $value }} deploys have been waiting for a builder for 10+ minutes"
+
+        - alert: DeploysGaveUp
+          expr: max(shipzen_dlq_depth) > 0
+          for: 5m
+          labels:
+            severity: warning
+            namespace: shipzen-system
+          annotations:
+            summary: "{{ $value }} deploys are in the dead-letter queue after exhausting retries"
+
+        - alert: ServersAlmostFull
+          expr: |
+            sum(kube_pod_container_resource_requests{resource="cpu"} and on (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Running"} == 1))
+              / sum(kube_node_status_allocatable{resource="cpu"}) > 0.9
+            or
+            sum(kube_pod_container_resource_requests{resource="memory"} and on (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Running"} == 1))
+              / sum(kube_node_status_allocatable{resource="memory"}) > 0.9
+          for: 15m
+          labels:
+            severity: warning
+            namespace: cluster
+          annotations:
+            summary: "Over 90% of node CPU or memory is booked; new apps may not fit"
+
+    - name: shipzen-apps
+      rules:
+        # Tenant namespaces are the ones carrying the controller's tenant-quota ResourceQuota.
+        - alert: AppOffline
+          expr: |
+            (sum by (namespace) (kube_deployment_spec_replicas) > 0)
+            and on (namespace) (sum by (namespace) (kube_deployment_status_replicas_available) == 0)
+            and on (namespace) kube_resourcequota{resourcequota="tenant-quota", resource="pods", type="hard"}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "App {{ $labels.namespace }} should be running but has no ready copies"
+
+        - alert: AppKeepsCrashing
+          expr: |
+            sum by (namespace) (increase(kube_pod_container_status_restarts_total[15m])) > 3
+            and on (namespace) kube_resourcequota{resourcequota="tenant-quota", resource="pods", type="hard"}
+          labels:
+            severity: warning
+          annotations:
+            summary: "App {{ $labels.namespace }} restarted more than 3 times in 15 minutes"
+
+        - alert: AppErrorsHigh
+          expr: |
+            (
+              sum by (namespace) (label_replace(rate(envoy_cluster_upstream_rq_xx{envoy_response_code_class="5"}[5m]), "namespace", "$1", "envoy_cluster_name", "httproute/([^/]+)/.*"))
+              / sum by (namespace) (label_replace(rate(envoy_cluster_upstream_rq_total[5m]), "namespace", "$1", "envoy_cluster_name", "httproute/([^/]+)/.*"))
+            ) > 0.05
+            and on (namespace) sum by (namespace) (label_replace(rate(envoy_cluster_upstream_rq_total[5m]), "namespace", "$1", "envoy_cluster_name", "httproute/([^/]+)/.*")) > 0.1
+            and on (namespace) kube_resourcequota{resourcequota="tenant-quota", resource="pods", type="hard"}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Over 5% of requests to {{ $labels.namespace }} are failing with 5xx"

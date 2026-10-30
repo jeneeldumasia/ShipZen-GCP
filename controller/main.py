@@ -29,6 +29,7 @@ from metrics import (
     shipzen_reconciliation_duration_seconds,
     shipzen_deployment_success_total,
     shipzen_active_deployments,
+    shipzen_database_up,
     start_metrics_server
 )
 
@@ -405,6 +406,35 @@ def close_db_connection(conn):
         db_pool.putconn(conn)
     else:
         conn.close()
+
+
+DB_PING_EVERY = 30  # seconds
+_last_db_ping = 0.0
+
+
+def _ping_database():
+    """Set shipzen_database_up from a trivial query. Runs on every replica so the
+    signal survives a leader change; a broken connection is discarded, not pooled."""
+    global _last_db_ping
+    if time.time() - _last_db_ping < DB_PING_EVERY:
+        return
+    _last_db_ping = time.time()
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+        conn.rollback()
+        shipzen_database_up.set(1)
+        close_db_connection(conn)
+    except Exception as e:
+        shipzen_database_up.set(0)
+        logger.warning(f"Database health check failed: {e}")
+        if conn is not None and db_pool is not None:
+            try:
+                db_pool.putconn(conn, close=True)
+            except Exception:
+                pass
 
 
 def _wait_for_schema(max_attempts: int = 30, delay: int = 10):
@@ -1041,6 +1071,7 @@ def main():
                     logger.info("Pod is currently in Standby (follower mode). Active leader holds lease.")
                     standby_logged = True
 
+            _ping_database()
             _health["loop_tick"] = time.time()
             _health["leader"] = elector.is_leader
             time.sleep(2)

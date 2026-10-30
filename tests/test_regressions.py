@@ -240,15 +240,33 @@ def test_tenant_appset_cascades_deletes():
     assert "resources-finalizer.argocd.argoproj.io" in appset["spec"]["template"]["metadata"]["finalizers"]
 
 
-def test_alert_rules_only_query_exported_metrics():
+def test_alert_rules_and_dashboards_only_query_exported_metrics():
     import re
     exported = set()
     for f in ("worker/metrics.py", "controller/metrics.py", "api/main.py"):
         exported |= set(re.findall(r"['\"](shipzen_[a-z_]+)['\"]", (ROOT / f).read_text()))
-    rules = (ROOT / "observability/alerts/platform-alerts.yaml").read_text() + (ROOT / "observability/slos.yaml").read_text()
+    rules = (ROOT / "infra/system/shipzen-alerts.yaml").read_text() + (ROOT / "infra/system/grafana-dashboards.yaml").read_text()
     used = {m.rstrip("_") for m in re.findall(r"\b(shipzen_[a-z_]+?)(?:_bucket|_count|_sum)?\b(?=[\[{(\s>])", rules)}
     missing = {m for m in used if m not in exported and not m.startswith("shipzen_io")}
     assert not missing, f"rules query metrics nothing exports: {missing}"
+
+
+def test_grafana_dashboards_are_generated_from_source():
+    """infra/system/grafana-dashboards.yaml must be the output of observability/dashboards.py."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("dashboards", ROOT / "observability/dashboards.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    assert (ROOT / "infra/system/grafana-dashboards.yaml").read_text() == mod.render(), \
+        "run: python observability/dashboards.py"
+
+
+def test_every_shipzen_alert_has_plain_language_text():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("dashboards", ROOT / "observability/dashboards.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    rules = yaml.safe_load((ROOT / "infra/system/shipzen-alerts.yaml").read_text())
+    names = {r["alert"] for g in rules["spec"]["groups"] for r in g["rules"]}
+    assert names <= set(mod.PROBLEM_TEXT), f"add to PROBLEM_TEXT: {names - set(mod.PROBLEM_TEXT)}"
 
 
 @pytest.mark.parametrize("gh_status,remaining,expected", [(401, "4999", 401), (403, "0", 503), (502, None, 503)])
