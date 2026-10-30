@@ -20,4 +20,3 @@ What's open, most important first. Done items are deleted, not ticked:
 
 ## Housekeeping
 10. Clear out root-level leftovers: one-off test scripts (`test_k8s_*.py`, `test_db.py`), lint and test output files (`*_results.txt`), `commit_history_parsed.txt`, `dev_commits.txt`, `patch.yaml`, `karpenter-patch.yaml`, `update_aws_to_gcp.py`, and the AWS cleanup script.
-11. Bring `.ai/` (context files for coding assistants) in line with these docs, or point it at them.
