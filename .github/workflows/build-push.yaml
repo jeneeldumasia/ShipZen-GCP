@@ -19,6 +19,8 @@ jobs:
       contents: write
       id-token: write
     strategy:
+      # Let every component finish so one failure doesn't hide the others' status.
+      fail-fast: false
       matrix:
         component: [api, ui, controller, worker]
     steps:
@@ -49,12 +51,12 @@ jobs:
           IMAGE=$GAR_REGISTRY/shipzen-platform/${{ matrix.component }}
           TAG=$(git rev-parse --short HEAD)
           cp -r shipzen_common ./${{ matrix.component }}/shipzen_common || true
-          docker build \
+          bash scripts/ci-run.sh "docker build ${{ matrix.component }}" docker build \
             -t $IMAGE:sha-$TAG \
             -t $IMAGE:latest \
             ./${{ matrix.component }}
-          docker push $IMAGE:sha-$TAG
-          docker push $IMAGE:latest
+          bash scripts/ci-run.sh "docker push ${{ matrix.component }}" docker push $IMAGE:sha-$TAG
+          bash scripts/ci-run.sh "docker push ${{ matrix.component }}:latest" docker push $IMAGE:latest
 
   update-kustomization:
     # Single job — runs after ALL matrix builds succeed.
