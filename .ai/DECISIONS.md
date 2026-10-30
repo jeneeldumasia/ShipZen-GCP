@@ -6,9 +6,9 @@
 - **Cost**: ~$121/month (was ~$300/month on AWS with 3 zones)
 
 ## Single Zone for Development
-- **Decision**: us-central1-a only
+- **Decision**: us-central1-c only (moved from us-central1-a after a stockout)
 - **Reason**: Save ~$179/month vs 3-zone setup
-- **Revert**: Set `node_locations = ["us-central1-a","us-central1-b","us-central1-c"]` in terraform/main.tf
+- **Revert**: Set `node_locations` to several zones in terraform/main.tf
 
 ## GitHub App Authentication (No PATs)
 - **Decision**: ArgoCD uses GitHub App for private repo access
@@ -16,15 +16,14 @@
 - **Secret**: `github-app-shipzen` in argocd namespace, label `repo-creds`
 - **Variables**: SHIPZEN_GITHUB_APP_ID, SHIPZEN_APP_INSTALLATION_ID, SHIPZEN_GITHUB_APP_PRIVATE_KEY
 
-## Manual Workflow Execution Only
-- **Decision**: No auto-deploy on git push
-- **Reason**: User preference for manual control, prevents accidental deploys
-- **Workflows**: apply-only.yaml (normal updates), destroy-and-deploy.yaml (nuclear), destroy.yaml (teardown)
+## Infrastructure Workflows Are Manual; Images Build on Push
+- **Decision**: Terraform runs only when started by hand (apply-only, deploy, destroy). Pushes to main that touch api/ui/worker/controller build and roll out images automatically (build-push.yaml).
+- **Reason**: Infrastructure changes are deliberate; code changes should reach the running platform without a manual step.
 
-## Auto-Destroy Every 6 Hours
-- **Decision**: destroy.yaml runs on cron `0 */6 * * *`
-- **Reason**: Dev environment, prevent runaway GCP costs if forgotten
-- **Override**: Cancel the workflow manually to keep infra alive
+## Auto-Destroy After 24 Hours
+- **Decision**: auto-destroy.yaml checks every 3 h (`0 */3 * * *`) and triggers destroy.yaml once the cluster is older than 24 h
+- **Reason**: Runs on credits; prevent runaway GCP costs if forgotten
+- **Override**: Disable the auto-destroy workflow in GitHub to keep infra alive longer
 
 ## Terraform State in HCP Terraform
 - **Decision**: Terraform Cloud backend
@@ -81,3 +80,12 @@
 ## Real Health Checks for Worker
 - **Decision**: Replace default Prometheus `/` endpoint with a custom `/healthz` HTTP server.
 - **Reason**: The original endpoint returned 200 OK unconditionally. The new `/healthz` pings Redis and verifies the main message loop hasn't stalled, allowing Kubernetes liveness probes to actually detect broken workers.
+
+## Newer decisions (Oct 2026). Details in docs/decisions.md
+- **Builder identity split**: `shipzen-builder-sa` push-only; platform services on `shipzen-platform-sa`. Verified by Security Check.
+- **Gateway behind Cloudflare only**: `loadBalancerSourceRanges` = Cloudflare IPv4 ranges.
+- **Images pinned per commit**: Build and Push writes `sha-<commit>` into infra/kustomization.yaml. Never `:latest`.
+- **Dataplane V2 for network isolation**: set at cluster creation, with `ignore_changes` so apply-only never replaces the cluster.
+- **Dashboards as code**: observability/dashboards.py generates the Grafana ConfigMaps and the alert wording; Grafana UI edits don't persist.
+- **Alerts via webhook to WhatsApp**: Alertmanager → alert-relay → CallMeBot. Event-driven only, never polled.
+- **Disk cleanup scoped by GKE labels**: only unattached disks labelled for shipzen-cluster, only once the cluster is gone.
