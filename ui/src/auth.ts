@@ -35,6 +35,41 @@ if (githubClientId && githubClientSecret) {
   )
 }
 
+type Token = Record<string, unknown>
+
+// Exchange the refresh token for a new access token (GitHub rotates both).
+// On failure the session is marked with an error; middleware then sends the
+// user back to the sign-in page instead of leaving them on a broken dashboard.
+async function refreshGitHubToken(token: Token): Promise<Token> {
+  if (!token.refreshToken || !githubClientId || !githubClientSecret) {
+    return { ...token, error: "RefreshTokenError" }
+  }
+  try {
+    const res = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: githubClientId,
+        client_secret: githubClientSecret,
+        grant_type: "refresh_token",
+        refresh_token: token.refreshToken,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok || data.error || !data.access_token) throw new Error(data.error || String(res.status))
+    return {
+      ...token,
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token ?? token.refreshToken,
+      expiresAt: data.expires_in ? Math.floor(Date.now() / 1000) + Number(data.expires_in) : undefined,
+      error: undefined,
+    }
+  } catch (e) {
+    console.error("GitHub token refresh failed:", e)
+    return { ...token, error: "RefreshTokenError" }
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   secret: process.env.AUTH_SECRET || process.env.SHIPZEN_AUTH_SECRET,
@@ -53,12 +88,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, account }) {
       if (account) {
         token.accessToken = account.access_token || "stub-token"
+        // GitHub App user tokens expire after 8 hours. Keep what we need to
+        // refresh them; without this every session broke 8 hours after sign-in
+        // (the UI stayed "logged in" while every API call returned 401).
+        token.refreshToken = account.refresh_token
+        token.expiresAt = account.expires_at // seconds since epoch
+        delete token.error
+        return token
       }
-      return token
+      const expiresAt = token.expiresAt as number | undefined
+      if (!expiresAt || Date.now() < (expiresAt - 60) * 1000) return token
+      return refreshGitHubToken(token)
     },
     async session({ session, token }) {
       // @ts-expect-error custom property
       session.accessToken = token.accessToken
+      // @ts-expect-error custom property
+      session.error = token.error
       return session
     },
   },
