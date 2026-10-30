@@ -21,6 +21,16 @@ GITHUB_ENABLED = (
     bool(os.getenv("OAUTH_CLIENT_ID"))
 )
 
+def _csv_env(name: str) -> set:
+    return {v.strip().lower() for v in os.getenv(name, "").split(",") if v.strip()}
+
+
+# GitHub logins allowed to use the platform. Anyone with a GitHub account could
+# previously sign in, create projects and run builds on the cluster.
+# Empty/unset keeps the old open behaviour (local development only).
+ALLOWED_GITHUB_USERS = _csv_env("ALLOWED_GITHUB_USERS")
+
+
 # M-6 Fix: Reusable httpx.AsyncClient singleton to avoid per-request overhead
 _http_client = httpx.AsyncClient(
     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
@@ -167,6 +177,12 @@ async def get_current_user(
             "login": gh_user["login"],
             "email": email or gh_user.get("email")
         }
+        if ALLOWED_GITHUB_USERS and user_info["login"].lower() not in ALLOWED_GITHUB_USERS:
+            logger.warning(f"Rejected sign-in from GitHub user '{user_info['login']}' (not in ALLOWED_GITHUB_USERS)")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This ShipZen instance is invite-only. Your GitHub account is not on the allowlist.",
+            )
     except httpx.RequestError as e:
         logger.error(f"GitHub API request failed: {e}")
         # Update circuit breaker state atomically
@@ -187,7 +203,7 @@ async def get_current_user(
         _github_cb_open = False
 
     from database import get_or_create_user
-    db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"])
+    db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"], user_info["login"])
     user = User(user_id=user_info["id"], role=db_user["role"])
     with _cache_lock:
         _token_cache[cache_key] = user
