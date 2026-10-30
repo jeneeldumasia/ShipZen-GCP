@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import logging
 import yaml
@@ -204,7 +205,7 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
     
     sha = None
-    resp = requests.get(api_url, headers=headers)
+    resp = requests.get(api_url, headers=headers, timeout=15)
     if resp.status_code == 200:
         sha = resp.json()["sha"]
     elif resp.status_code != 404:
@@ -214,7 +215,7 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     if delete:
         if sha:
             data = {"message": f"Delete {path}", "sha": sha, "branch": "main"}
-            requests.delete(api_url, headers=headers, json=data)
+            requests.delete(api_url, headers=headers, json=data, timeout=15)
         return
 
     data = {
@@ -225,7 +226,7 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     if sha:
         data["sha"] = sha
         
-    res = requests.put(api_url, headers=headers, json=data)
+    res = requests.put(api_url, headers=headers, json=data, timeout=15)
     if res.status_code not in (200, 201):
         logger.error(f"Failed to commit to Git: {res.status_code} {res.text}")
 
@@ -237,6 +238,18 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
 
 jinja_env = Environment(loader=FileSystemLoader("templates"))
+
+
+def _k8s_slug(value: str, max_len: int = 40) -> str:
+    """Reduce free text to a DNS-label-safe slug before it touches YAML.
+
+    Project names are user input and end up in label values and hostnames in
+    the GitOps repo. Raw, a quote or newline in a name let a tenant inject
+    extra Kubernetes objects that ArgoCD applies; even an innocent space
+    produced an invalid label and a failed sync.
+    """
+    slug = re.sub(r"[^a-z0-9-]+", "-", (value or "").lower()).strip("-")
+    return slug[:max_len].strip("-") or "app"
 
 # H-8 Fix: Module-level declaration — avoids lazy globals() check on every reconcile tick.
 # Keys are project IDs; values are consecutive failure counts.
@@ -696,7 +709,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         deployment_id=d_id,
                         namespace=project.namespace,
                         project_id=project.id,
-                        project_name=project.name,
+                        project_name=_k8s_slug(project.name),
                         image_uri=db_dep.get('image_uri', 'nginx:latest'),
                         port=db_dep.get('port', 8080),
                         replicas=db_dep.get('replicas', 1),

@@ -367,7 +367,6 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
             f"Deployment {deployment_id} is a rollback, skipping build.")
         state_machine.update_state(deployment_id, "Deploying")
         queue.ack_message(message_id)
-        # HIGH-03 Fix: Removed _semaphore.release() from here because the finally block handles it
         return
 
     logger.info(f"Processing deployment {deployment_id}")
@@ -517,6 +516,21 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
                 core_v1.delete_namespaced_secret(name=github_secret_name, namespace="shipzen-build")
             except Exception as e:
                 logger.warning(f"Failed to delete GitHub token secret {github_secret_name}: {e}")
+
+
+def _process_and_release(queue: QueueClient, state_machine: StateMachine, message_id: str, data: dict):
+    """Run process_message and always give the worker slot back.
+
+    process_message has several early returns (rollbacks, duplicate deliveries,
+    invalid payloads) that happen before its try/finally. Releasing the slot
+    there meant each of those leaked one of the MAX_WORKERS slots; after 20 the
+    main loop blocked forever in _semaphore.acquire().
+    """
+    try:
+        process_message(queue, state_machine, message_id, data)
+    except Exception:
+        logger.exception(f"Unhandled error processing message {message_id}")
+    finally:
         _semaphore.release()
 
 
@@ -551,7 +565,7 @@ def main():
                     shipzen_retry_total.inc()
                     _semaphore.acquire()
                     try:
-                        _executor.submit(process_message, queue, state_machine, msg_id, data)
+                        _executor.submit(_process_and_release, queue, state_machine, msg_id, data)
                     except Exception:
                         _semaphore.release()
                         raise
@@ -562,7 +576,7 @@ def main():
                     for msg_id, data in msg_list:
                         _semaphore.acquire()
                         try:
-                            _executor.submit(process_message, queue, state_machine, msg_id, data)
+                            _executor.submit(_process_and_release, queue, state_machine, msg_id, data)
                         except Exception:
                             _semaphore.release()
                             raise

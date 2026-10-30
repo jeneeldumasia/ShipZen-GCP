@@ -19,6 +19,14 @@ if not DATABASE_URL:
 db_pool = None
 _db_pool_lock = threading.Lock()
 
+# psycopg2's ThreadedConnectionPool raises PoolError the moment it runs out of
+# connections instead of waiting. Under any DB slowness that turned queued
+# requests into instant 500s. A semaphore in front of the pool makes callers
+# wait (bounded) for a free connection, and fail with a clear 503 if they can't.
+DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "5"))
+DB_POOL_WAIT_SECONDS = float(os.environ.get("DB_POOL_WAIT_SECONDS", "10"))
+_pool_slots = threading.BoundedSemaphore(DB_POOL_MAX)
+
 
 class PooledConnectionWrapper:
     def __init__(self, conn, pool):
@@ -33,8 +41,13 @@ class PooledConnectionWrapper:
         try:
             self._conn.__exit__(exc_type, exc_val, exc_tb)
         finally:
+            self._release()
+
+    def _release(self):
+        if self._conn is not None:
             self._pool.putconn(self._conn)
             self._conn = None  # Prevent double put
+            _pool_slots.release()
 
     def cursor(self, *args, **kwargs):
         return self._conn.cursor(*args, **kwargs)
@@ -46,9 +59,7 @@ class PooledConnectionWrapper:
         self._conn.rollback()
 
     def close(self):
-        if self._conn:
-            self._pool.putconn(self._conn)
-            self._conn = None
+        self._release()
 
 
 def get_connection():
@@ -56,8 +67,15 @@ def get_connection():
     if db_pool is None:                     # fast path — no lock once initialised
         with _db_pool_lock:
             if db_pool is None:             # double-checked locking
-                db_pool = ThreadedConnectionPool(1, 5, dsn=DATABASE_URL)
-    conn = db_pool.getconn()
+                db_pool = ThreadedConnectionPool(1, DB_POOL_MAX, dsn=DATABASE_URL)
+    if not _pool_slots.acquire(timeout=DB_POOL_WAIT_SECONDS):
+        raise HTTPException(status_code=503, detail="Database busy, please retry",
+                            headers={"Retry-After": "2"})
+    try:
+        conn = db_pool.getconn()
+    except Exception:
+        _pool_slots.release()
+        raise
     return PooledConnectionWrapper(conn, db_pool)
 
 
@@ -164,10 +182,29 @@ def init_db():
         logger.error(f"Failed to read/initialize database schema: {e}")
 
 
+WRITE_ROLES = ("owner", "editor")
+
+
+def verify_project_write_access(
+    project_id: str,
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """Like verify_project_access, but viewers are rejected (403).
+
+    Use on every endpoint that changes state: deploys, rollbacks, cancels,
+    restarts, env vars and secrets.
+    """
+    return _check_project_access(project_id, current_user, required_roles=WRITE_ROLES)
+
+
 def verify_project_access(
     project_id: str,
     current_user: User = Depends(get_current_user)
 ) -> dict:
+    return _check_project_access(project_id, current_user)
+
+
+def _check_project_access(project_id: str, current_user: User, required_roles: tuple = None) -> dict:
     with get_connection() as conn:
         with conn.cursor(cursor_factory=DictCursor) as cur:
             if current_user.role == 'admin':
@@ -180,7 +217,7 @@ def verify_project_access(
                 return dict(project)
             else:
                 cur.execute("""
-                    SELECT p.* FROM projects p
+                    SELECT p.*, pm.role AS member_role FROM projects p
                     JOIN project_members pm ON pm.project_id = p.id
                     WHERE p.id = %s AND pm.user_id = %s AND p.deleted_at IS NULL;
                 """, (project_id, current_user.user_id))
@@ -188,4 +225,10 @@ def verify_project_access(
                 if not project:
                     raise HTTPException(
                         status_code=403, detail="You do not have access to this project")
-                return dict(project)
+                project = dict(project)
+                member_role = project.pop("member_role")
+                if required_roles and member_role not in required_roles:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Your role on this project ('{member_role}') is read-only")
+                return project
