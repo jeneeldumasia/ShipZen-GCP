@@ -64,7 +64,7 @@ UP_MAPPINGS = [
 ]
 
 
-def status(title, expr, description, w=3, h=4):
+def status(title, expr, description, w=6, h=3):
     """Green 'Working' / red 'Down' tile. expr must evaluate to 1 or 0."""
     return {
         "type": "stat", "title": title, "description": description, "w": w, "h": h,
@@ -125,7 +125,8 @@ def graph(title, targets, description, unit="none", w=12, h=8, stack=False, colo
     }
 
 
-def table(title, expr, description, columns, w=24, h=7, no_value="Nothing to show", sort=None, value_text=None):
+def table(title, expr, description, columns, w=24, h=7, no_value="Nothing to show", sort=None, value_text=None,
+          empty_cell=None):
     """Instant-query table showing only `columns` ({label: header}), plus the value if 'Value' is listed.
     value_text: {header: {raw value: (shown text, colour or None)}} to translate cell values."""
     overrides = [{"matcher": {"id": "byName", "options": header},
@@ -133,6 +134,10 @@ def table(title, expr, description, columns, w=24, h=7, no_value="Nothing to sho
                       raw: ({"text": txt, "color": c} if c else {"text": txt}) for raw, (txt, c) in m.items()}}]},
                                  {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}
                  for header, m in (value_text or {}).items()]
+    # no_value is what an empty table says; a blank cell in a non-empty table says empty_cell[header] or "—".
+    overrides += [{"matcher": {"id": "byName", "options": header},
+                   "properties": [{"id": "noValue", "value": (empty_cell or {}).get(header, "—")}]}
+                  for header in columns.values()]
     return {
         "type": "table", "title": title, "description": description, "w": w, "h": h,
         "targets": [_target(expr, instant=True, fmt="table")],
@@ -269,7 +274,8 @@ overview = dashboard(
               "Empty means nothing is wrong.",
               {"alertname": "Problem", "severity": "How serious", "namespace": "Where"},
               w=20, h=6, no_value="Nothing is wrong right now",
-              value_text={"Problem": {k: (v, None) for k, v in PROBLEM_TEXT.items()}, "How serious": SEVERITY_TEXT}),
+              value_text={"Problem": {k: (v, None) for k, v in PROBLEM_TEXT.items()}, "How serious": SEVERITY_TEXT},
+              empty_cell={"Where": "Whole platform"}),
 
         row("Apps (last 24 hours)"),
         stat("Apps online", tenant_apps_online, "User apps with at least one copy running and answering.",

@@ -7,7 +7,11 @@ resources:
   - schema-configmap.yaml
   - schema-job.yaml
   - servicemonitors.yaml
-  - alertmanager-config.yaml
+  # alertmanager-config.yaml routes alerts to Slack/PagerDuty. Disabled: the Slack webhook in
+  # Secret Manager (shipzen-alerts / slack-webhook-url) is a placeholder, so the operator rejected
+  # the config and it showed as a permanent problem. Put a real https://hooks.slack.com/... URL
+  # there (and a PagerDuty key, or drop that receiver), then uncomment.
+  # - alertmanager-config.yaml
   - shipzen-tls-cert.yaml
   - shipzen-auth-secret.yaml
   - gateway.yaml
