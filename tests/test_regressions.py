@@ -249,3 +249,16 @@ def test_alert_rules_only_query_exported_metrics():
     used = {m.rstrip("_") for m in re.findall(r"\b(shipzen_[a-z_]+?)(?:_bucket|_count|_sum)?\b(?=[\[{(\s>])", rules)}
     missing = {m for m in used if m not in exported and not m.startswith("shipzen_io")}
     assert not missing, f"rules query metrics nothing exports: {missing}"
+
+
+@pytest.mark.parametrize("gh_status,remaining,expected", [(401, "4999", 401), (403, "0", 503), (502, None, 503)])
+def test_github_errors_are_not_all_reported_as_invalid_token(gh_status, remaining, expected):
+    """Any non-200 from GitHub used to become 401 'Invalid GitHub token'."""
+    auth = api.get_current_user.__globals__
+    resp = MagicMock(status_code=gh_status, text="x", headers={"X-RateLimit-Remaining": remaining} if remaining else {})
+    client = MagicMock(); client.get = MagicMock(side_effect=lambda *a, **k: _awaitable(resp))
+    from fastapi.security import HTTPAuthorizationCredentials
+    with patch.dict(auth, {"_http_client": client, "GITHUB_ENABLED": True, "ALLOWED_GITHUB_USERS": set()}):
+        with pytest.raises(Exception) as e:
+            asyncio.run(auth["get_current_user"](HTTPAuthorizationCredentials(scheme="Bearer", credentials=f"t-{gh_status}")))
+    assert getattr(e.value, "status_code", None) == expected
