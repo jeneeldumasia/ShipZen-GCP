@@ -27,10 +27,17 @@ adopt() {
   if grep -qxF "$addr" <<<"$STATE"; then return 0; fi
   if ! "$@" >/dev/null 2>&1; then return 0; fi   # not in GCP: Terraform will create it
   echo "::group::Importing $addr"
-  if terraform import -input=false "$addr" "$id"; then
+  local out
+  if out="$(terraform import -no-color -input=false "$addr" "$id" 2>&1)"; then
+    echo "$out"
     adopted=$((adopted + 1))
   else
-    echo "::warning::Could not import $addr ($id)"
+    echo "$out"
+    # Put the error itself in the annotation so it is readable from the run page/API.
+    local err
+    err="$(grep -A12 -m1 'Error' <<<"$out" | head -n 14)"
+    err="${err//'%'/'%25'}"; err="${err//$'\n'/'%0A'}"
+    echo "::warning title=Could not import $addr::$err"
     failed=$((failed + 1))
   fi
   echo "::endgroup::"
