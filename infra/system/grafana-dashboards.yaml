@@ -1013,12 +1013,6 @@ data:
                         }
                       }
                     ]
-                  },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-text"
-                    }
                   }
                 ]
               },
@@ -1055,6 +1049,30 @@ data:
                     "value": {
                       "type": "color-text"
                     }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Problem"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 380
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "How serious"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 170
                   }
                 ]
               },

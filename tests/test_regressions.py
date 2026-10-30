@@ -280,3 +280,21 @@ def test_github_errors_are_not_all_reported_as_invalid_token(gh_status, remainin
         with pytest.raises(Exception) as e:
             asyncio.run(auth["get_current_user"](HTTPAuthorizationCredentials(scheme="Bearer", credentials=f"t-{gh_status}")))
     assert getattr(e.value, "status_code", None) == expected
+
+
+def test_tenant_manifests_are_refreshed_for_existing_projects(monkeypatch):
+    """tenant.yaml was only rendered while Provisioning, so template changes never reached old apps."""
+    monkeypatch.chdir(ROOT / "controller")  # the controller loads templates/ relative to its cwd
+    g = controller.refresh_tenant_manifests.__globals__
+    committed = []
+    projects = [{"id": "p1", "namespace": "old-app", "status": "Ready"},
+                {"id": "p2", "namespace": "new-app", "status": "Provisioning"}]
+    with patch.dict(g, {"_orphan_gc_counter": g["ORPHAN_GC_EVERY"],
+                        "commit_manifests_to_git": lambda ns, f, c, **k: committed.append((ns, f, c))}):
+        controller.refresh_tenant_manifests(projects)
+    assert [(ns, f) for ns, f, _ in committed] == [("old-app", "tenant.yaml")]
+    assert "PodMonitor" not in committed[0][2]
+    with patch.dict(g, {"_orphan_gc_counter": 1,
+                        "commit_manifests_to_git": lambda *a, **k: committed.append(a)}):
+        controller.refresh_tenant_manifests(projects)
+    assert len(committed) == 1  # off-cadence sweeps do nothing

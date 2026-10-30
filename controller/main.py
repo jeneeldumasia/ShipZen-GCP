@@ -292,6 +292,33 @@ def gc_orphan_tenant_folders(active_namespaces: set):
         except Exception as e:
             logger.warning(f"Orphan GC: failed to remove '{ns}': {e}")
 
+def refresh_tenant_manifests(projects):
+    """Re-render tenant.yaml for every Ready project, on the orphan-GC cadence.
+
+    tenant.yaml (namespace, quota, network policy, RBAC...) used to be written
+    only while a project was Provisioning, so template changes never reached
+    existing apps: e.g. a removed per-tenant PodMonitor kept scraping, and kept
+    alerting, in every old namespace. commit_manifests_to_git skips unchanged
+    files, so this only commits when the template output actually differs.
+    """
+    if _orphan_gc_counter % ORPHAN_GC_EVERY != 0:  # counter advanced by gc_orphan_tenant_folders
+        return
+    template = jinja_env.get_template("tenant.yaml.j2")
+    for row in projects:
+        if row.get("status") != ProjectStatus.READY.value:
+            continue
+        try:
+            manifests = template.render(
+                namespace=row["namespace"],
+                project_id=row["id"],
+                gar_registry=GAR_REGISTRY,
+                gcp_project=GCP_PROJECT,
+            )
+            commit_manifests_to_git(row["namespace"], "tenant.yaml", manifests)
+        except Exception as e:
+            logger.warning(f"Tenant manifest refresh failed for {row.get('namespace')}: {e}")
+
+
 REDIS_HOST = os.getenv("REDIS_HOST", "redis-master.shipzen-system.svc.cluster.local")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
@@ -644,6 +671,8 @@ def reconcile():
 
     # Clean up GitOps folders whose project no longer exists (e.g. after a DB reset).
     gc_orphan_tenant_folders({row['namespace'] for row in projects})
+    # Push template changes (quota, policies...) to projects created before them.
+    refresh_tenant_manifests(projects)
 
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
