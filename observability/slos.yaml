@@ -24,7 +24,7 @@ spec:
         # Uses shipzen_retry_total (Counter) and shipzen_queue_depth (Gauge)
         # Both ARE instrumented in worker/metrics.py
         - record: job:deployment_retry_rate:5m
-          expr: rate(shipzen_retry_total_total[5m])
+          expr: rate(shipzen_retry_total[5m])
 
         # SLO: DLQ depth = 0 (no deployments should permanently fail)
         # Uses shipzen_dlq_depth which IS instrumented in worker/metrics.py
