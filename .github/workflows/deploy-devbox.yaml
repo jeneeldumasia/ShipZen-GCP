@@ -41,5 +41,14 @@ jobs:
         run: |
           echo "### DevBox Deployed 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "You can now connect to your secure DevBox using Google IAP:" >> $GITHUB_STEP_SUMMARY
-          echo '`gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=${{ secrets.GCP_PROJECT_ID }}`' >> $GITHUB_STEP_SUMMARY
+          echo "Only SSH (port 22) from Google IAP is open. Everything else goes through that SSH tunnel." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Terminal**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo 'gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=${{ secrets.GCP_PROJECT_ID }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Remote desktop (XFCE) and browser IDE (code-server)**: forward both over SSH, then connect Remote Desktop to localhost:3390 (3389 is taken by Windows' own RDP), or run code-server --bind-addr 127.0.0.1:8080 on the box and browse to http://localhost:8080. Full guide: docs/operations/devbox.md" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo 'gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=${{ secrets.GCP_PROJECT_ID }} --ssh-flag="-L 3390:localhost:3389" --ssh-flag="-L 8080:localhost:8080"' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

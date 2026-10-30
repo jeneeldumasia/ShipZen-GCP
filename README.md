@@ -1,310 +1,67 @@
-# ShipZen - Cloud-Native Multi-Tenant PaaS on GCP
+# ShipZen
 
-> **A production-ready Platform-as-a-Service built on Google Kubernetes Engine**
+A self-hosted, Heroku-style platform on Google Kubernetes Engine. Point it at a
+GitHub repository and it builds a container, runs it in its own isolated
+namespace, and gives it an HTTPS address, with live build logs, rollbacks,
+per-app secrets and monitoring.
 
-ShipZen is a Heroku-like platform that automatically builds, deploys, and manages containerized applications on Kubernetes. It provides tenant isolation, automated scaling, observability, and GitOps-driven deployments.
+**Live:** https://shipzen.jeneeldumasia.codes (sign-in limited to an allowlist)
 
-## 🚀 Quick Start
-
-### Prerequisites
-- GCP account with billing enabled
-- gcloud CLI installed
-- kubectl installed
-- GitHub account
-- Terraform Cloud account
-
-### 1. Fix Cluster Access (If Cluster Exists)
-```powershell
-cd c:\Project\ShipZen-GCP
-.\scripts\fix-cluster-access.ps1 -ProjectId YOUR_PROJECT_ID
+```mermaid
+flowchart LR
+    dev([GitHub repo]) --> api[API]
+    api --> q[(Redis Stream)] --> worker[Worker] --> build[Kaniko / Nixpacks Job] --> reg[(Artifact Registry)]
+    api --> db[(Postgres)]
+    ctrl[Controller] --> db
+    ctrl --> git[(shipzen-tenants repo)] --> argo[ArgoCD] --> app[Your app<br/>own namespace]
+    user([Visitor]) --> cf[Cloudflare] --> gw[Envoy Gateway] --> app
 ```
 
-### 2. Verify Deployment Health
-```powershell
-.\scripts\verify-deployment.ps1 -ProjectId YOUR_PROJECT_ID
-```
+## What it does
 
-### 3. Deploy New Infrastructure
-Follow the detailed guide: [GCP Setup Guide](docs/GCP_SETUP_GUIDE.md)
+- **Build anything**: a `Dockerfile` is built with Kaniko; without one, Nixpacks detects Node, Python, Go and more.
+- **Isolated tenants**: one namespace per project with quotas, restricted Pod Security and its own RBAC.
+- **GitOps**: the controller turns desired state in Postgres into manifests in Git, and ArgoCD applies them. Every change to a running app is a commit.
+- **Reliable queue**: transactional outbox → Redis Streams consumer groups, with retries and a dead-letter queue.
+- **No long-lived credentials**: Workload Identity Federation for CI, GKE Workload Identity for pods, a GitHub App for Git.
+- **Readable monitoring**: Grafana dashboards anyone can understand, generated from code, plus logs per app.
+- **Disposable infrastructure**: all Terraform; the cluster tears itself down after 24 h and rebuilds in about 20 minutes.
 
-### 4. Troubleshoot Issues
-See: [Quick Start Guide](QUICK_START.md)
+## Stack
 
-## 📋 What's Inside
+| Layer | Technology |
+|---|---|
+| Services | FastAPI (API), Python (worker, controller), Next.js 16 + NextAuth (UI) |
+| Runtime | GKE, Envoy Gateway (Gateway API), Cloudflare |
+| Data | Cloud SQL Postgres, Redis Streams, GCS, Artifact Registry, Secret Manager |
+| Delivery | GitHub Actions, Terraform + HCP Terraform, ArgoCD |
+| Platform | External Secrets, Kyverno, ExternalDNS, KEDA, Velero |
+| Observability | Prometheus, Grafana, Loki, Alertmanager |
 
-### Core Components
-- **API** - FastAPI-based REST API with GitHub OAuth
-- **Controller** - Kubernetes reconciliation engine
-- **Worker** - Build orchestration and job processing
-- **UI** - Next.js dashboard (React)
-- **Builder** - Buildpack-based container builds
+## Documentation
 
-### Infrastructure
-- **GKE Cluster** - Google Kubernetes Engine
-- **Artifact Registry** - Container image storage
-- **Cloud Storage** - Build logs and artifacts
-- **Secret Manager** - Centralized secret management
-- **PostgreSQL** - Metadata and state storage
-- **Redis** - Message queue and caching
+| | |
+|---|---|
+| [Using ShipZen](docs/using-shipzen.md) | Deploying an app: repo layout, `PORT`, `shipzen.yaml`, env vars, rollback |
+| [Architecture](docs/architecture.md) | Components, the deploy flow, data, tenancy, identities, repo map |
+| [Security](docs/security.md) | Threat model, controls, how to verify them, known gaps |
+| [Design decisions](docs/decisions.md) | Why it's built this way |
+| [Setup](docs/operations/setup.md) | First-time setup of GCP, GitHub and HCP Terraform |
+| [Runbook](docs/operations/runbook.md) | Workflows, common tasks, troubleshooting |
+| [Monitoring](docs/operations/monitoring.md) | Dashboards, alerts, changing them |
+| [DevBox](docs/operations/devbox.md) | Optional remote development VM |
+| [Incidents](docs/operations/incidents.md) | Problems hit so far and their fixes |
+| [Roadmap](docs/roadmap.md) | What's open |
+| [History](docs/history.md) · [Pricing model](docs/business/pricing-model.md) | How it evolved; the business case |
 
-### Operators & Tools
-- **ArgoCD** - GitOps continuous deployment
-- **KEDA** - Event-driven autoscaling
-- **External Secrets Operator** - Secret synchronization
-- **Envoy Gateway** - Ingress and routing
-- **Kyverno** - Policy enforcement
-- **Prometheus + Grafana** - Monitoring and alerting
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      GitHub Actions                          │
-│  (CI/CD, Image Builds, Infrastructure Deployment)           │
-└───────────────────┬─────────────────────────────────────────┘
-                    │
-        ┌───────────▼──────────┐
-        │   Artifact Registry   │
-        │   (Container Images)  │
-        └───────────┬───────────┘
-                    │
-┌───────────────────▼─────────────────────────────────────────┐
-│                     GKE Cluster                              │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   ArgoCD     │  │     KEDA     │  │     ESO      │     │
-│  │  (GitOps)    │  │ (Autoscale)  │  │  (Secrets)   │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │          ShipZen Platform Services                   │  │
-│  │  ┌─────────┐  ┌────────────┐  ┌────────────┐      │  │
-│  │  │   API   │  │ Controller │  │   Worker   │      │  │
-│  │  └─────────┘  └────────────┘  └────────────┘      │  │
-│  │  ┌─────────┐  ┌────────────┐  ┌────────────┐      │  │
-│  │  │   UI    │  │ PostgreSQL │  │   Redis    │      │  │
-│  │  └─────────┘  └────────────┘  └────────────┘      │  │
-│  └─────────────────────────────────────────────────────┘  │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │           Tenant Namespaces (Isolated)               │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐          │  │
-│  │  │ Tenant 1 │  │ Tenant 2 │  │ Tenant N │          │  │
-│  │  └──────────┘  └──────────┘  └──────────┘          │  │
-│  └─────────────────────────────────────────────────────┘  │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │         Observability Stack                          │  │
-│  │  ┌────────────┐  ┌──────────┐  ┌──────────────┐   │  │
-│  │  │ Prometheus │  │ Grafana  │  │ Alertmanager │   │  │
-│  │  └────────────┘  └──────────┘  └──────────────┘   │  │
-│  └─────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
-```
-
-## 📚 Documentation
-
-- **[Quick Start](QUICK_START.md)** - Common issues and quick fixes
-- **[GCP Setup Guide](docs/GCP_SETUP_GUIDE.md)** - Complete setup instructions
-- **[Project Structure Guide](docs/PROJECT_STRUCTURE_GUIDE.md)** - How to structure your app for ShipZen deployments
-- **[Migration Summary](MIGRATION_SUMMARY.md)** - AWS→GCP migration details
-- **[Fix Summary](FIX_SUMMARY.md)** - Recent fixes and improvements
-- **[Architecture Docs](docs/architecture/)** - System design and diagrams
-- **[ADRs](docs/adr/)** - Architecture Decision Records
-- **[Issues & Resolutions](docs/ISSUES_AND_RESOLUTIONS.md)** - Troubleshooting guide
-
-## 🛠️ Development
-
-### Project Structure
-```
-ShipZen-GCP/
-├── api/                    # FastAPI REST API
-├── controller/             # Kubernetes controller
-├── worker/                 # Build worker
-├── ui/                     # Next.js frontend
-├── infra/                  # Kubernetes manifests
-├── terraform/              # Infrastructure as Code
-├── scripts/                # Utility scripts
-├── docs/                   # Documentation
-└── tests/                  # Test suite
-```
-
-### Local Development
-```bash
-# Start local environment
-docker-compose -f docker-compose.local.yml up
-
-# Run tests
-pytest
-
-# Lint code
-ruff check .
-flake8 .
-```
-
-## 🚀 Deployment Flow
-
-1. **Code Push** → GitHub repository
-2. **GitHub Actions** → Build Docker images
-3. **Push to GAR** → Artifact Registry
-4. **ArgoCD Sync** → Deploy to GKE
-5. **Controller** → Provision tenant namespaces
-6. **Worker** → Build user applications
-7. **KEDA** → Auto-scale based on load
-
-## 🔒 Security Features
-
-- **Workload Identity** - No static credentials
-- **Network Policies** - Pod-to-pod isolation
-- **Kyverno Policies** - Security enforcement
-- **Secret Encryption** - GCP Secret Manager
-- **RBAC** - Fine-grained access control
-- **Pod Security Standards** - Restricted by default
-- **Image Scanning** - Vulnerability detection (configurable)
-
-## 📊 Monitoring & Observability
-
-- **Metrics** - Prometheus + Grafana dashboards
-- **Logs** - Centralized in GCS
-- **Alerts** - Slack/PagerDuty integration
-- **Tracing** - (Future: OpenTelemetry)
-- **Health Checks** - Liveness/Readiness probes
-
-## 🧪 Testing
+## Development
 
 ```bash
-# Unit tests
-pytest tests/unit/
-
-# Integration tests
-pytest tests/integration/
-
-# E2E tests (requires cluster)
-pytest tests/e2e/
+pip install -r api/requirements.txt -r worker/requirements.txt -r controller/requirements.txt pytest pytest-asyncio
+pytest                                   # Docker/Postgres-backed tests skip themselves when unavailable
+docker compose -f docker-compose.local.yml up   # Postgres, Redis, API with local stub auth; no Kubernetes
 ```
 
-## 📦 Tech Stack
-
-### Backend
-- Python 3.11+
-- FastAPI
-- psycopg2 (PostgreSQL driver)
-- redis-py
-- kubernetes Python client
-
-### Frontend
-- Next.js 14
-- React 18
-- Tailwind CSS
-- TypeScript
-
-### Infrastructure
-- Terraform
-- Google Cloud Platform
-- Kubernetes (GKE)
-- Helm
-
-### CI/CD
-- GitHub Actions
-- ArgoCD
-- Docker
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
-## 📝 License
-
-[Add your license here]
-
-## 🆘 Support
-
-### Having Issues?
-
-1. **Check the scripts:**
-   ```powershell
-   .\scripts\fix-cluster-access.ps1 -ProjectId YOUR_PROJECT_ID
-   .\scripts\verify-deployment.ps1 -ProjectId YOUR_PROJECT_ID
-   ```
-
-2. **Read the guides:**
-   - [Quick Start](QUICK_START.md) - Common problems
-   - [Issues & Resolutions](docs/ISSUES_AND_RESOLUTIONS.md) - Historical fixes
-
-3. **Check logs:**
-   ```bash
-   kubectl logs -n shipzen-system deployment/shipzen-api
-   kubectl get events -A --sort-by='.lastTimestamp'
-   ```
-
-4. **Verify resources:**
-   ```bash
-   kubectl get pods -A
-   kubectl get applications -n argocd
-   gcloud container clusters list
-   ```
-
-### Useful Commands
-
-```bash
-# Get cluster credentials
-gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project YOUR_PROJECT_ID
-
-# Port forward to services
-kubectl port-forward -n shipzen-system svc/shipzen-api 8000:8000
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
-kubectl port-forward -n argocd svc/argocd-server 8080:443
-
-# View resources
-kubectl get all -n shipzen-system
-kubectl get externalsecrets -A
-kubectl describe pod POD_NAME -n NAMESPACE
-```
-
-## 🎯 Features
-
-- ✅ Multi-tenant isolation with resource quotas
-- ✅ Automated Buildpack-based builds
-- ✅ GitOps deployment with ArgoCD
-- ✅ Auto-scaling with KEDA
-- ✅ Integrated monitoring and alerting
-- ✅ Secret management via External Secrets Operator
-- ✅ Network isolation with policies
-- ✅ Pod security standards enforcement
-- ✅ Rolling deployments with zero downtime
-- ✅ Custom domains (future)
-- ✅ Build logs in GCS
-- ✅ Database migrations
-- ⏭️ Horizontal pod autoscaling per tenant
-- ⏭️ Custom buildpacks support
-- ⏭️ Metrics in UI
-- ⏭️ Cost tracking per tenant
-
-## 📈 Roadmap
-
-### Q1 2025
-- [ ] Enhanced UI with real-time logs
-- [ ] Custom domain support
-- [ ] Backup and restore automation
-- [ ] Cost allocation dashboard
-
-### Q2 2025
-- [ ] OpenTelemetry tracing
-- [ ] Multi-region support
-- [ ] Advanced RBAC policies
-- [ ] Terraform module library
-
-### Q3 2025
-- [ ] Self-service tenant provisioning
-- [ ] Marketplace integrations
-- [ ] Advanced analytics
-- [ ] Compliance reporting
-
----
-
-**Built with ❤️ using Google Cloud Platform and Kubernetes**
-
+Changes reach production through pull requests to `main`: images build and roll
+out automatically, Kubernetes manifests sync through ArgoCD, and Terraform changes
+are applied with the **Apply Infrastructure Changes** workflow.

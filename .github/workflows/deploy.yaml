@@ -140,8 +140,12 @@ jobs:
           echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | gcloud secrets versions add shipzen-auth-secret --data-file=-
 
           echo "Pushing Alerts Stub Secret..."
-          gcloud secrets create shipzen-alerts --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | gcloud secrets versions add shipzen-alerts --data-file=-
+          # Create an empty placeholder only the first time. Never overwrite: once a real
+          # Slack webhook / PagerDuty key is stored here, redeploys must keep it.
+          if ! gcloud secrets describe shipzen-alerts >/dev/null 2>&1; then
+            gcloud secrets create shipzen-alerts --replication-policy="automatic"
+            echo -n '{"slack-webhook-url": "", "pagerduty-routing-key": ""}' | gcloud secrets versions add shipzen-alerts --data-file=-
+          fi
 
           echo "Triggering ArgoCD sync..."
           kubectl patch application shipzen-platform -n argocd -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge 2>/dev/null || true

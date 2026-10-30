@@ -35,14 +35,14 @@ These are the baseline operational expenses required to run the core ShipZen con
 
 | Component | GCP Resource Details | Monthly Cost (USD) | Monthly Cost (INR @ ₹95.37) | Cost Type |
 |---|---|---|---|---|
-| **Amazon GKE Control Plane** | 1 Managed Cluster ($0.10/hr) | $73.00 | **₹6,962** | Fixed |
-| **System Platform Nodes** | 2x `c7i-flex.large` or `t3.large` | $80.00 | **₹7,630** | Fixed |
-| **Network Ingress (ELB)** | 1 GCP Classic / Network LB | $20.00 | **₹1,907** | Fixed |
-| **Relational Storage (Postgres)**| 50 GB gp3 EBS Volume + Snapshots | $6.00 | **₹572** | Semi-Variable |
-| **Redis Cache / State** | In-Cluster Redis Allocation | $5.00 | **₹477** | Fixed |
-| **GCP Secret Manager** | ~12 synced secrets ($0.40/mo) | $4.80 | **₹458** | Fixed |
+| **Google GKE Control Plane** | 1 Managed Cluster ($73.00/mo) | $73.00 | **₹6,080** | Fixed |
+| **System Platform Nodes** | 2x `c2-standard-4` (~$122 each) | $244.00 | **₹20,325** | Fixed |
+| **Network Ingress (LB)** | 1 GCP Network LB | $20.00 | **₹1,666** | Fixed |
+| **Relational Storage (Postgres)**| 50 GB pd-balanced Volume + Snapshots | $5.00 | **₹416** | Semi-Variable |
+| **Redis Cache / State** | In-Cluster Redis Allocation | $5.00 | **₹416** | Fixed |
+| **GCP Secret Manager** | ~12 synced secrets ($0.40/mo) | $4.80 | **₹400** | Fixed |
 | **Cloudflare Enterprise DNS & CA**| Free / Pro Plan | $0.00 | **₹0** | Free Tier |
-| **BASE CLUSTER INFRASTRUCTURE** | **Minimum Monthly Operating Cost** | **~$188.80** | **₹18,006 / month** | Fixed Base |
+| **BASE CLUSTER INFRASTRUCTURE** | **Minimum Monthly Operating Cost** | **~$351.80** | **₹29,303 / month** | Fixed Base |
 
 ---
 
@@ -52,7 +52,7 @@ ShipZen uses **Cluster Autoscaler spot instances** and **KEDA scale-to-zero** so
 
 | Workload Activity | GCP Resource | Cost per Unit (INR @ ₹95.37) | Monthly Impact (100 Active Devs) |
 |---|---|---|---|
-| **Ephemeral Build Execution** | Cluster Autoscaler Spot EC2 (`c7i.xlarge` / build) | **₹0.38 per build minute** | ~₹5,700 (15,000 mins) |
+| **Ephemeral Build Execution** | GKE Autoscaler Spot Node (`c2-standard-4` / build) | **₹0.38 per build minute** | ~₹5,700 (15,000 mins) |
 | **Tenant Container Runtime** | Shared Kubernetes Node Capacity | **₹170 – ₹335 / app / mo** | ~₹25,000 (100 apps) |
 | **GCS Build Logs Storage** | GCS Standard ($0.023/GB) | **₹2.19 per GB** | ~₹110 (50 GB) |
 | **Artifact Registry Container Registry** | Artifact Registry Storage ($0.10/GB) | **₹9.54 per GB** | ~₹954 (100 GB images) |
@@ -160,7 +160,7 @@ Scenario: 250 Free Users | 100 Pro Users | 25 Team Users | 3 Enterprise Customer
 ### Deep Dive: How to Avoid Financial & Technical Failures
 
 1. **Strict Builder Resource Limits:**
-   - In [`worker/builder.py`](file:///c:/Project/ShipZen/worker/builder.py), every ephemeral pod is injected with:
+   - In [`worker/builder.py`](../../worker/builder.py), every ephemeral pod is injected with:
      ```yaml
      resources:
        limits:
@@ -173,14 +173,9 @@ Scenario: 250 Free Users | 100 Pro Users | 25 Team Users | 3 Enterprise Customer
      ```
    - If a build runs past 15 minutes (or tries to spawn a crypto miner), Kubernetes instantly terminates the pod.
 
-2. **Cluster Autoscaler Budget Boundaries:**
-   - In [`infra/scale/Cluster Autoscaler.yaml`](file:///c:/Project/ShipZen/infra/scale/Cluster Autoscaler.yaml), hard maximum limits are enforced:
-     ```yaml
-     limits:
-       cpu: 20
-       memory: 40Gi
-     ```
-   - This ensures your maximum possible GCP compute bill is strictly capped at ~₹18,000/mo regardless of incoming traffic.
+2. **GKE Node Pool Limits:**
+   - In Terraform, the node pool auto-scaling has strict `max_node_count` constraints.
+   - This ensures your maximum possible GCP compute bill is strictly capped regardless of incoming traffic loops.
 
 3. **Payment Gateways with Automated Subscriptions:**
    - Integrate **Razorpay Subscriptions** (for Indian Cards, UPI AutoPay, NetBanking) and **Stripe Billing** (for International USD payments).

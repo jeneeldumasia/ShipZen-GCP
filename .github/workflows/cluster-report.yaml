@@ -16,6 +16,9 @@ jobs:
   report:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -58,6 +61,8 @@ jobs:
           note "Persistent disks (name | users | labels | created-for)" "$(gcloud compute disks list --project ${{ secrets.GCP_PROJECT_ID }} \
             --filter="name~'^pvc-'" \
             --format='value(name,zone.basename(),sizeGb,users.len(),labels,description.slice(0:140),creationTimestamp.date())' 2>&1)"
+
+          note "Orphaned PVC disks (would be deleted by teardown)" "$(scripts/cleanup-orphaned-disks.sh ${{ secrets.GCP_PROJECT_ID }} shipzen-cluster 2>&1)"
 
           note "Warning events in shipzen-system" "$(kubectl get events -n shipzen-system --field-selector type=Warning \
             --sort-by=.lastTimestamp -o custom-columns='WHEN:.lastTimestamp,OBJECT:.involvedObject.name,REASON:.reason,MESSAGE:.message' 2>&1 | tail -n 25)"
