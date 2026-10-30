@@ -42,22 +42,24 @@ check() {  # check <namespace> <pod> <label> <expect: allow|deny> <url>
   printf '%s | %-11s | %-42s | expected %s, got %s (curl %s)\n' "$mark" "$1" "$3" "$4" "$got" "$code"
 }
 
-probe() {  # probe <namespace>
-  local ns="$1" pod="netprobe"
+probe() {  # probe <namespace> <metadata server: allow|deny>
+  local ns="$1" metadata="$2" pod="netprobe"
   if ! run_pod "$ns" "$pod"; then
     echo "FAIL | $ns | probe pod did not start"; FAIL=1; return
   fi
   check "$ns" "$pod" "platform API (shipzen-system)" deny "http://shipzen-api.shipzen-system.svc.cluster.local/healthz"
   check "$ns" "$pod" "Redis (shipzen-system)"         deny "http://redis-master.shipzen-system.svc.cluster.local:6379/"
   check "$ns" "$pod" "Grafana (observability)"       deny "http://kube-prometheus-stack-grafana.observability.svc.cluster.local/"
-  check "$ns" "$pod" "metadata server"                deny "http://169.254.169.254/"
+  check "$ns" "$pod" "metadata server"                "$metadata" "http://169.254.169.254/"
   [ -n "$SQL_IP" ] && check "$ns" "$pod" "Cloud SQL" deny "http://$SQL_IP:5432/"   # Postgres drops the HTTP request: allowed = error reply, blocked = timeout
   check "$ns" "$pod" "public internet"                allow "https://www.google.com/"
   check "$ns" "$pod" "ShipZen via Cloudflare"         allow "https://shipzen.jeneeldumasia.codes/"
   kubectl delete pod "$pod" -n "$ns" --ignore-not-found --wait=false >/dev/null 2>&1
 }
 
-if [ -n "$TENANT_NS" ]; then probe "$TENANT_NS"; else echo "SKIP | no tenant namespace to probe"; fi
-probe shipzen-build
+# Tenants never get credentials from the metadata server. Builds must: it is how
+# they get the push-only builder identity (whose limits the identity probe checks).
+if [ -n "$TENANT_NS" ]; then probe "$TENANT_NS" deny; else echo "SKIP | no tenant namespace to probe"; fi
+probe shipzen-build allow
 
 exit "$FAIL"
