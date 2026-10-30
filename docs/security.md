@@ -36,23 +36,26 @@ under [Known gaps](#known-gaps), not under controls.
 - The gateway's load balancer accepts traffic only from Cloudflare's IP ranges (`infra/system/gateway.yaml`), so the raw IP doesn't answer.
 - `/metrics` refuses any request that came through Cloudflare. The API rate-limits per user, or per real client IP from `CF-Connecting-IP`.
 - Tenant namespaces run Pod Security `restricted`, with quotas and no service-account token.
+- **Network isolation** (GKE Dataplane V2, which enforces NetworkPolicies):
+  - tenants and build Jobs can reach DNS, their own pods and the public internet only, never other tenants, `shipzen-system`, monitoring, nodes, Cloud SQL or the metadata server;
+  - `shipzen-system` accepts connections only from itself, the gateway and monitoring;
+  - the API may only open DNS, Postgres, Redis, the metadata server and HTTPS.
 - Container images are scanned nightly by Trivy (**Container Security Scan**, fails on HIGH/CRITICAL).
 
 ## How to check
 
 | Check | How |
 |---|---|
-| Builder identity is push-only | Run **Security Check** (Actions). All five probes must say PASS. |
+| Builder identity is push-only | Run **Security Check** (Actions). Every identity probe must say PASS. |
+| Network isolation holds | The same run starts a pod in a tenant namespace and one in `shipzen-build`; every connection must be blocked or allowed as expected (`scripts/netpolicy-probe.sh`). |
 | Raw gateway IP is closed | `curl -m 5 http://<gateway IP>/` should time out; the site should still load. |
 | Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". |
 | Images are clean | Look at the latest **Container Security Scan** run. |
 
 ## Known gaps
 
-1. **NetworkPolicies are not enforced.** The cluster has no network-policy provider (neither Dataplane V2 nor Calico), so `tenant-isolation` and `deny-tenant-ingress` do nothing. Tenant pods can currently reach each other and the platform. Fixing it needs two changes:
-   - Enable enforcement. Dataplane V2 means recreating the cluster, which can ride on a normal destroy/redeploy.
-   - Correct the tenant policy first. It admits pods labelled `app.kubernetes.io/name: envoy-gateway` in `shipzen-system`, but the gateway proxy runs in `envoy-gateway-system` as `app.kubernetes.io/name: envoy`. Enforcing it as written would cut every app off.
+1. **Network isolation needs a cluster built after this change.** Dataplane V2 can only be chosen when a cluster is created, so a cluster created earlier has the policies but doesn't enforce them. **Security Check** fails until the next rebuild.
 2. **Builds run as root inside the container** (`runAsUser: 0`; Kaniko needs it to unpack images). Nixpacks is installed with `curl | bash` at build time, not from a pinned image.
-3. **Alerts reach nobody.** The Slack webhook in Secret Manager (`shipzen-alerts`) is a placeholder, so Alertmanager routing is switched off. Problems are only visible on the Grafana overview.
+3. **Alerts depend on a free third-party relay.** WhatsApp messages go through CallMeBot. If it's down, Alertmanager retries, but there is no second channel.
 4. **One allowlisted user.** Fine for a personal platform; there is no self-service sign-up or invite flow.
 5. **Grafana and ArgoCD use admin passwords.** There is no SSO in front of them.

@@ -104,3 +104,23 @@ code are reviewable and tested against the metrics that actually exist.
 **Why.** Cost: three zones roughly tripled the node bill.
 **Cost.** A zone outage takes the platform down. Fine for a personal platform,
 not for paying customers.
+
+## 13. Network isolation with Dataplane V2
+**Decision.** GKE Dataplane V2 enforces NetworkPolicies. Tenants and build Jobs
+are confined to DNS, their own pods and the public internet; `shipzen-system`
+accepts only itself, the gateway and monitoring. (October 2026)
+**Why.** The policies existed but nothing enforced them. The Security Check probe
+showed a tenant pod could reach the API, Redis, Grafana, Cloud SQL and the
+metadata server.
+**Cost.** Dataplane V2 is chosen at cluster creation, so it arrives with the next
+rebuild. Any new platform-to-tenant or tenant-to-platform path needs a policy
+change first.
+
+## 14. Alerts go to WhatsApp through a webhook relay
+**Decision.** Alertmanager's webhook calls a ~100-line relay in the cluster,
+which sends one plain-language message per alert group through CallMeBot.
+**Why.** WhatsApp is where it will be seen. There is no official free WhatsApp
+API for personal alerts (Meta's needs a verified business; Twilio is paid).
+**Cost.** It depends on a free third-party service. No message if CallMeBot is
+down, apart from Alertmanager's retries.
+

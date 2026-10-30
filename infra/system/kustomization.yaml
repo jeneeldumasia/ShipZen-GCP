@@ -21,11 +21,21 @@ resources:
   - build-namespace-exception.yaml
   - grafana-dashboards.yaml
   - grafana-datasources.yaml
+  - alert-relay.yaml
   - gateway-metrics.yaml
   - shipzen-alerts.yaml
   - github-app-secret.yaml
   - github-secret.yaml
   - rate-limit.yaml
   - tenant-deny-ingress.yaml
+  - build-network-policy.yaml
   - applicationset.yaml
   - loki.yaml
+
+# Code for the WhatsApp alert relay (alert-relay.yaml). The name gets a content
+# hash, so changing relay.py rolls the Deployment.
+configMapGenerator:
+  - name: alert-relay-code
+    namespace: observability
+    files:
+      - alert-relay/relay.py

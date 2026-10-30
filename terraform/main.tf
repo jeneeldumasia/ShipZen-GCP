@@ -102,6 +102,17 @@ resource "google_container_cluster" "primary" {
     workload_pool = "${var.gcp_project}.svc.id.goog"
   }
 
+  # GKE Dataplane V2 (eBPF/Cilium): enforces the NetworkPolicies in infra/ and
+  # in every tenant namespace. Without it they are accepted but do nothing.
+  datapath_provider = "ADVANCED_DATAPATH"
+
+  lifecycle {
+    # Switching the datapath requires a new cluster. Ignore it on an existing
+    # cluster so "Apply Infrastructure Changes" never replaces a live cluster;
+    # the next Deploy Platform Infra (after a teardown) creates it with Dataplane V2.
+    ignore_changes = [datapath_provider]
+  }
+
   depends_on = [google_project_service.apis]
 }
 
