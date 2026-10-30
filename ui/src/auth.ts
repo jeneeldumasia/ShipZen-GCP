@@ -40,6 +40,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET || process.env.SHIPZEN_AUTH_SECRET,
   trustHost: true,
   callbacks: {
+    // Invite-only: refuse GitHub sign-in for logins not in ALLOWED_GITHUB_USERS
+    // (comma-separated). The API enforces the same list; this stops strangers
+    // getting a session at all. Unset = open (local development).
+    async signIn({ account, profile }) {
+      const allowed = (process.env.ALLOWED_GITHUB_USERS || "")
+        .split(",").map((u) => u.trim().toLowerCase()).filter(Boolean)
+      if (allowed.length === 0 || account?.provider !== "github") return true
+      const login = String((profile as { login?: string } | undefined)?.login || "").toLowerCase()
+      return allowed.includes(login)
+    },
     async jwt({ token, account }) {
       if (account) {
         token.accessToken = account.access_token || "stub-token"

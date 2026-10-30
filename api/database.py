@@ -83,10 +83,17 @@ get_db_connection = get_connection
 
 
 
-def get_or_create_user(user_id: str, email: str = None) -> dict:
-    """Gets a user by ID, or creates them. The first user created gets the 'admin' role."""
+def get_or_create_user(user_id: str, email: str = None, login: str = None) -> dict:
+    """Gets a user by ID, or creates them.
+
+    Admins are named explicitly via ADMIN_GITHUB_USERS (GitHub logins) or
+    ADMIN_EMAILS. Previously the first account ever created became admin, so on
+    a fresh database whoever signed in first owned the platform.
+    """
     admin_emails_env = os.getenv("ADMIN_EMAILS", "")
     ADMIN_EMAILS = {e.strip().lower() for e in admin_emails_env.split(",")} if admin_emails_env else set()
+    ADMIN_LOGINS = {u.strip().lower() for u in os.getenv("ADMIN_GITHUB_USERS", "").split(",") if u.strip()}
+    is_named_admin = bool((login and login.lower() in ADMIN_LOGINS) or (email and email.lower() in ADMIN_EMAILS))
 
     with get_connection() as conn:
         try:
@@ -100,16 +107,13 @@ def get_or_create_user(user_id: str, email: str = None) -> dict:
                     user_dict = dict(user)
                     db_email = user_dict.get('email').lower() if user_dict.get('email') else None
                     
-                    if user_dict['role'] != 'admin' and ((check_email and check_email in ADMIN_EMAILS) or (db_email and db_email in ADMIN_EMAILS)):
+                    if user_dict['role'] != 'admin' and (is_named_admin or (db_email and db_email in ADMIN_EMAILS)):
                         cur.execute("UPDATE users SET role = 'admin' WHERE id = %s", (user_id,))
                         user_dict['role'] = 'admin'
                         conn.commit()
                     return user_dict
 
-                cur.execute("SELECT COUNT(*) FROM users")
-                count = cur.fetchone()[0]
-                
-                role = 'admin' if count == 0 or (check_email and check_email in ADMIN_EMAILS) else 'user'
+                role = 'admin' if is_named_admin else 'user'
 
                 cur.execute(
                     "INSERT INTO users (id, email, role) VALUES (%s, %s, %s) RETURNING id, role",

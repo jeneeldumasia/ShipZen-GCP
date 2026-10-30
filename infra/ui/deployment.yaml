@@ -37,6 +37,9 @@ spec:
               containerPort: 3000
               protocol: TCP
           env:
+            # Invite-only sign-in (must match the API's ALLOWED_GITHUB_USERS).
+            - name: ALLOWED_GITHUB_USERS
+              value: "jeneeldumasia"
             - name: NEXT_PUBLIC_API_URL
               value: "https://shipzen.jeneeldumasia.codes/api/v1"
             - name: NEXT_PUBLIC_APP_DOMAIN

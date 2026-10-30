@@ -15,7 +15,7 @@ export default async function AdminDashboardPage() {
       nodes: { total: 3, active: 3, cpu_usage_pct: 42 },
       db: { storage_pct: 45, text: "45% (45GB/100GB)" },
       redis: { hit_rate_pct: 98 },
-      argocd: { status: "Synced" }
+      argocd: { status: "Unknown" }
     })),
   ]);
 

@@ -37,6 +37,9 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -83,22 +86,22 @@ spec:
               memory: "256Mi"
           livenessProbe:
             httpGet:
-              path: /metrics
-              port: 9090
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 15
             periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /metrics
-              port: 9090
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
           # H-9 Fix: startupProbe allows _wait_for_schema() up to 5 minutes before
           # liveness kicks in, preventing crash-loops on fresh cluster installs.
           startupProbe:
             httpGet:
-              path: /metrics
-              port: 9090
+              path: /healthz
+              port: 8081
             failureThreshold: 30
             periodSeconds: 10

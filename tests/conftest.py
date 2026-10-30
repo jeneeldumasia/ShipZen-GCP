@@ -40,3 +40,29 @@ def pytest_configure(config):
         "markers",
         "asyncio: mark a test as an async test (handled by pytest-asyncio)",
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests re-import api/, worker/ and controller/ modules (sometimes more than
+# once). Each import registers its Prometheus metrics in the global registry,
+# and a second registration raised DuplicateTimeseries, failing unrelated tests.
+# In tests, let a re-registration replace the earlier collector instead.
+# ---------------------------------------------------------------------------
+import prometheus_client.registry as _prom_registry
+
+_orig_register = _prom_registry.CollectorRegistry.register
+
+
+def _register_replacing(self, collector):
+    try:
+        names = self._get_names(collector)
+    except Exception:
+        names = []
+    with self._lock:
+        stale = {self._names_to_collectors[n] for n in names if n in self._names_to_collectors}
+    for old in stale:
+        self.unregister(old)
+    return _orig_register(self, collector)
+
+
+_prom_registry.CollectorRegistry.register = _register_replacing

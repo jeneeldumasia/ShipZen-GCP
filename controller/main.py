@@ -309,7 +309,7 @@ def _k8s_slug(value: str, max_len: int = 40) -> str:
     extra Kubernetes objects that ArgoCD applies; even an innocent space
     produced an invalid label and a failed sync.
     """
-    slug = re.sub(r"[^a-z0-9-]+", "-", (value or "").lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
     return slug[:max_len].strip("-") or "app"
 
 # H-8 Fix: Module-level declaration — avoids lazy globals() check on every reconcile tick.
@@ -939,8 +939,48 @@ def reconcile_single_project_by_id(project_id: str, global_deps: dict = None, gl
     logger.info(f"Targeted event-driven reconciliation finished for project {project_id}")
 
 
+
+# ── Health check ──────────────────────────────────────────────────────────────
+# Liveness used to hit the Prometheus metrics server, which answers 200 even if
+# the reconcile loop is hung (e.g. on a stuck network call), so a wedged leader
+# kept its lease and passed every probe. /healthz checks the loop itself.
+LOOP_STALE_SECONDS = 300         # one loop pass (incl. a full sweep) normally takes seconds
+RECONCILE_STALE_SECONDS = 600    # leader normally finishes a full sweep every ~15 s
+_health = {"loop_tick": 0.0, "last_reconcile": 0.0, "leader": False}
+
+
+def _health_status():
+    now = time.time()
+    if not _health["loop_tick"]:
+        return 503, "starting"
+    if now - _health["loop_tick"] > LOOP_STALE_SECONDS:
+        return 503, f"main loop stalled for {int(now - _health['loop_tick'])}s"
+    if _health["leader"] and _health["last_reconcile"] and now - _health["last_reconcile"] > RECONCILE_STALE_SECONDS:
+        return 503, f"leader has not completed a reconcile for {int(now - _health['last_reconcile'])}s"
+    return 200, "ok"
+
+
+def start_health_server(port: int = 8081):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            code, msg = _health_status() if self.path == "/healthz" else (404, "not found")
+            self.send_response(code)
+            self.end_headers()
+            self.wfile.write(msg.encode())
+
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    logger.info(f"Health server on :{port}/healthz")
+
+
 def main():
     start_metrics_server(port=9090)
+    start_health_server(port=8081)
     _wait_for_schema()
 
     elector = LeaderElector()
@@ -987,6 +1027,7 @@ def main():
                 if now - last_full_reconcile >= RECONCILIATION_INTERVAL:
                     reconcile()
                     last_full_reconcile = time.time()
+                    _health["last_reconcile"] = last_full_reconcile
             else:
                 # Drain the queue to prevent memory leak in case we just lost leadership
                 while not _work_queue.empty():
@@ -1000,6 +1041,8 @@ def main():
                     logger.info("Pod is currently in Standby (follower mode). Active leader holds lease.")
                     standby_logged = True
 
+            _health["loop_tick"] = time.time()
+            _health["leader"] = elector.is_leader
             time.sleep(2)
         except Exception as loop_e:
             logger.error(f"Error in controller main loop: {loop_e}")

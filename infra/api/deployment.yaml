@@ -75,6 +75,12 @@ spec:
                   key: project_id
             - name: ENVIRONMENT
               value: "production"
+            # Invite-only: GitHub logins allowed to sign in (comma-separated).
+            - name: ALLOWED_GITHUB_USERS
+              value: "jeneeldumasia"
+            # Admins by GitHub login (replaces 'first user becomes admin').
+            - name: ADMIN_GITHUB_USERS
+              value: "jeneeldumasia"
             - name: WEB_CONCURRENCY
               value: "4"
           resources:

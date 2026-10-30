@@ -254,18 +254,25 @@ app = FastAPI(
 
 
 def _user_id_or_ip(request: Request) -> str:
-    # Use Authorization header sub if present, fallback to IP
+    """Rate-limit key.
+
+    External traffic only reaches the gateway through Cloudflare (the load
+    balancer is restricted to Cloudflare's ranges), and Cloudflare overwrites
+    CF-Connecting-IP with the real client address, so it can't be spoofed.
+    Keying on it means a client can't escape its limit by sending random bearer
+    tokens (each of which also cost a GitHub API call) or a fake
+    X-Forwarded-For, which the previous key trusted.
+
+    In-cluster calls (the UI's server-side requests) carry no Cloudflare header;
+    those keep a per-token key so users of the UI don't share one bucket.
+    """
+    cf_ip = request.headers.get("CF-Connecting-IP")
+    if cf_ip:
+        return f"ip:{cf_ip.strip()}"
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        try:
-            token = auth_header.split(" ")[1]
-            return hashlib.sha256(token.encode()).hexdigest()[:32]
-        except Exception:
-            pass
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return get_remote_address(request)
+        return "tok:" + hashlib.sha256(auth_header[7:].encode()).hexdigest()[:32]
+    return f"ip:{get_remote_address(request)}"
 
 
 limiter = Limiter(key_func=_user_id_or_ip)
@@ -289,6 +296,52 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Trace-ID", "X-Request-ID"],
 )
+
+
+# ── Prometheus metrics ────────────────────────────────────────────────────────
+# Request rate, errors and latency per route. The ServiceMonitor scraped /metrics
+# but the API never served it, so the user-facing service had no golden signals.
+from prometheus_client import (Counter as _PromCounter, Histogram as _PromHistogram,
+                               CollectorRegistry as _PromRegistry, generate_latest as _prom_latest,
+                               CONTENT_TYPE_LATEST as _PROM_CT)
+from prometheus_client import multiprocess as _prom_mp
+
+HTTP_REQUESTS = _PromCounter(
+    "shipzen_api_requests_total", "API requests", ["method", "route", "status"])
+HTTP_LATENCY = _PromHistogram(
+    "shipzen_api_request_duration_seconds", "API request latency", ["method", "route"],
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0))
+
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+        if route != "/metrics":
+            HTTP_REQUESTS.labels(request.method, route, str(status_code)).inc()
+            HTTP_LATENCY.labels(request.method, route).observe(time.perf_counter() - start)
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics(request: Request):
+    # In-cluster only. Every external request arrives through Cloudflare, which
+    # always sets CF-Connecting-IP; Prometheus scrapes the pod directly.
+    if request.headers.get("CF-Connecting-IP"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    if os.getenv("PROMETHEUS_MULTIPROC_DIR"):
+        registry = _PromRegistry()
+        _prom_mp.MultiProcessCollector(registry)
+    else:
+        # The registry the metrics above were created in (not prometheus_client.REGISTRY,
+        # which some tests rebind).
+        from prometheus_client.registry import REGISTRY as registry
+    return Response(_prom_latest(registry), media_type=_PROM_CT)
 
 
 @app.middleware("http")
@@ -2317,9 +2370,11 @@ def admin_metrics(request: Request, current_user: User = Depends(get_current_use
             status = app.get('status', {}).get('sync', {}).get('status', 'Unknown')
             metrics["argocd"]["status"] = status
         else:
-            metrics["argocd"]["status"] = "Synced" 
+            metrics["argocd"]["status"] = "Unknown"
     except Exception as e:
+        # Don't report "Synced" when we couldn't actually check: a healthy-looking
+        # status that's really an error hides problems from whoever reads it.
         logger.warning(f"Failed to fetch ArgoCD status: {e}")
-        metrics["argocd"]["status"] = "Synced"
+        metrics["argocd"]["status"] = "Unknown"
 
     return metrics
