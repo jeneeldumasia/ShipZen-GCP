@@ -1,0 +1,60 @@
+name: Cluster Report
+
+# Read-only snapshot of the platform: what's deployed, what's unhealthy, and
+# what ArgoCD thinks. Each section is published as a run annotation so it can
+# be read from the run page (or the API) without downloading the job log.
+# Changes nothing in the cluster.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Collect report
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+
+          note() {  # note <title> <text>: one annotation, newlines escaped, capped at ~60 lines
+            local body
+            body="$(printf '%s' "$2" | tail -n 60 | sed -e 's/%/%25/g')"
+            body="${body//$'\n'/%0A}"
+            echo "::notice title=$1::${body:-<empty>}"
+          }
+
+          note "Platform deployments (image | ready/desired)" "$(kubectl get deploy -n shipzen-system \
+            -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,READY:.status.readyReplicas,WANT:.spec.replicas,UPDATED:.status.updatedReplicas' 2>&1)"
+
+          note "Platform pods" "$(kubectl get pods -n shipzen-system \
+            -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,WAITING:.status.containerStatuses[0].state.waiting.reason,IMAGE:.spec.containers[0].image' 2>&1)"
+
+          note "ArgoCD applications" "$(kubectl get applications -n argocd \
+            -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REVISION:.status.sync.revision,OP:.status.operationState.phase' 2>&1)"
+
+          note "shipzen-platform: sync conditions and last operation" "$(kubectl get application shipzen-platform -n argocd \
+            -o jsonpath='{range .status.conditions[*]}{.type}: {.message}{"\n"}{end}{.status.operationState.message}{"\n"}{range .status.resources[?(@.status!="Synced")]}OutOfSync: {.kind}/{.name} ({.namespace}){"\n"}{end}' 2>&1)"
+
+          note "Warning events in shipzen-system" "$(kubectl get events -n shipzen-system --field-selector type=Warning \
+            --sort-by=.lastTimestamp -o custom-columns='WHEN:.lastTimestamp,OBJECT:.involvedObject.name,REASON:.reason,MESSAGE:.message' 2>&1 | tail -n 25)"
+
+          note "Worker log (last 40 lines)" "$(kubectl logs -n shipzen-system deploy/shipzen-worker --tail=40 2>&1)"
+
+          note "Controller log (last 40 lines)" "$(kubectl logs -n shipzen-system deploy/shipzen-controller --tail=40 2>&1)"
+
+          note "Tenant namespaces" "$(kubectl get ns -l shipzen.jeneeldumasia.codes/tenant=true 2>&1)"
