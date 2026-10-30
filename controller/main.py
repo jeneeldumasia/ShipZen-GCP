@@ -242,7 +242,7 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
         logger.error(f"Failed to commit to Git: {res.status_code} {res.text}")
 
 
-ORPHAN_GC_EVERY = int(os.getenv("ORPHAN_GC_EVERY", "20"))   # full sweeps between GC runs (~5 min at 15 s)
+ORPHAN_GC_EVERY = int(os.getenv("ORPHAN_GC_EVERY", "20"))   # full sweeps between GC/refresh runs (~20 min at the deployed RECONCILIATION_INTERVAL=60)
 ORPHAN_GC_MAX_PER_RUN = 5
 _orphan_gc_counter = 0
 
@@ -260,7 +260,7 @@ def gc_orphan_tenant_folders(active_namespaces: set):
     """
     global _orphan_gc_counter
     _orphan_gc_counter += 1
-    # First run ~5 min after start, so ArgoCD has added the cascade finalizer
+    # First run 20 sweeps after start (~20 min as deployed), so ArgoCD has added the cascade finalizer
     # to existing tenant Applications before any folder is removed.
     if _orphan_gc_counter % ORPHAN_GC_EVERY != 0:
         return
@@ -293,7 +293,7 @@ def gc_orphan_tenant_folders(active_namespaces: set):
             logger.warning(f"Orphan GC: failed to remove '{ns}': {e}")
 
 def refresh_tenant_manifests(projects):
-    """Re-render tenant.yaml for every Ready project, on the orphan-GC cadence.
+    """Re-render tenant.yaml for every Ready project, on the orphan-GC cadence (~20 min).
 
     tenant.yaml (namespace, quota, network policy, RBAC...) used to be written
     only while a project was Provisioning, so template changes never reached
