@@ -134,6 +134,35 @@ def record_build(deployment_id: str, gcs_key: str, status: str):
         logger.error(f"Failed to record build for {deployment_id}: {e}")
 
 
+def _build_containers(pod_name: str) -> list:
+    """Init containers then main containers of the build pod, in run order."""
+    try:
+        pod = core_v1.read_namespaced_pod(name=pod_name, namespace="shipzen-build")
+        names = [c.name for c in (pod.spec.init_containers or [])]
+        return names + [c.name for c in pod.spec.containers]
+    except Exception as e:
+        logger.warning(f"Could not read containers of {pod_name}: {e}")
+        return ["kaniko"]
+
+
+def _read_container_log(pod_name: str, container: str) -> str:
+    """Whole log of one container so far; empty if it hasn't started yet."""
+    try:
+        return core_v1.read_namespaced_pod_log(
+            name=pod_name, namespace="shipzen-build", container=container,
+            follow=False, _preload_content=True, timestamps=False,
+        ) or ""
+    except Exception:
+        return ""  # container not started yet, or pod gone
+
+
+def _publish_line(r, deployment_id: str, line: str):
+    try:
+        r.publish(f"shipzen:logs:{deployment_id}", line)
+    except Exception:
+        pass
+
+
 def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machine: StateMachine, builder_type: str = "unknown", project_id: str = "unknown", queue: QueueClient = None, message_id: str = None, trace_id: str = "unknown"):
     """Monitors the Kubernetes Job, streams logs to Redis, and finalizes the deployment.
 
@@ -172,33 +201,24 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
         state_machine.update_state(deployment_id, DeploymentState.BUILDING)
 
         # ── Step 2: Poll job status until terminal, streaming log tails ──
+        # Read every container in order (init containers first). Reading only the
+        # pod's default container returned nothing while the git-clone / Nixpacks
+        # init containers ran, so the UI showed no logs for the first minutes.
         job_succeeded = False
-        log_bytes_seen = 0
+        containers = _build_containers(pod_name)
+        sent = {c: 0 for c in containers}   # characters already published, per container
         timeout = time.time() + 3600  # 1 hour hard cap
 
         while time.time() < timeout:
             # --- publish incremental logs to Redis ---
-            try:
-                # Fetch all log bytes produced so far (non-follow, fast)
-                raw_log = core_v1.read_namespaced_pod_log(
-                    name=pod_name,
-                    namespace="shipzen-build",
-                    follow=False,
-                    _preload_content=True,
-                    timestamps=False,
-                )
-                if raw_log and len(raw_log) > log_bytes_seen:
-                    new_chunk = raw_log[log_bytes_seen:]
-                    log_bytes_seen = len(raw_log)
-                    for line in new_chunk.splitlines():
-                        try:
-                            r.publish(f"shipzen:logs:{deployment_id}", line)
-                        except Exception:
-                            pass
-            except ApiException:
-                pass  # pod may not be ready yet
-            except Exception:
-                pass
+            for c in containers:
+                raw_log = _read_container_log(pod_name, c)
+                if raw_log and len(raw_log) > sent[c]:
+                    if sent[c] == 0 and len(containers) > 1:
+                        _publish_line(r, deployment_id, f"── {c} ──")
+                    for line in raw_log[sent[c]:].splitlines():
+                        _publish_line(r, deployment_id, line)
+                    sent[c] = len(raw_log)
 
             # --- check job terminal state ---
             try:
@@ -217,45 +237,21 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
 
             time.sleep(5)
 
-        # ── Step 3: Collect final complete logs ──────────────────────────
-        stdout_bytes = b""
+        # ── Step 3: Collect final complete logs (all containers) ─────────
+        parts = []
         try:
-            try:
-                final_log_req = core_v1.read_namespaced_pod_log(
-                    name=pod_name,
-                    namespace="shipzen-build",
-                    follow=False,
-                    _preload_content=False,
-                )
-                stdout_bytes = final_log_req.data
-            except Exception as read_e:
-                # If reading main container logs fails (e.g. init container failed), read init container logs
-                logger.warning(f"Failed to read main container log: {read_e}. Trying init containers...")
-                for init_c in ["setup", "git-clone", "nixpacks-generate"]:
-                    try:
-                        init_log_req = core_v1.read_namespaced_pod_log(
-                            name=pod_name,
-                            namespace="shipzen-build",
-                            container=init_c,
-                            follow=False,
-                            _preload_content=False,
-                        )
-                        if init_log_req.data:
-                            stdout_bytes += b"\n--- Logs from init container " + init_c.encode('utf-8') + b" ---\n" + init_log_req.data
-                    except Exception:
-                        pass
-                
-            if stdout_bytes:
-                # Publish any remaining lines not yet sent
-                if len(stdout_bytes) > log_bytes_seen:
-                    remaining = stdout_bytes[log_bytes_seen:].decode("utf-8", errors="replace")
-                    for line in remaining.splitlines():
-                        try:
-                            r.publish(f"shipzen:logs:{deployment_id}", line)
-                        except Exception:
-                            pass
+            for c in containers:
+                raw_log = _read_container_log(pod_name, c)
+                if not raw_log:
+                    continue
+                if len(raw_log) > sent[c]:
+                    for line in raw_log[sent[c]:].splitlines():
+                        _publish_line(r, deployment_id, line)
+                    sent[c] = len(raw_log)
+                parts.append(f"--- {c} ---\n{raw_log}")
         except Exception as e:
             logger.warning(f"Failed to collect final logs: {e}")
+        stdout_bytes = "\n".join(parts).encode("utf-8")
 
         # ── Step 4: Upload logs to GCS ───────────────────────────────────
         try:
