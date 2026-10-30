@@ -64,6 +64,7 @@ adopt google_container_node_pool.platform_nodes "projects/$P/locations/$CLUSTER_
 # Service accounts
 adopt google_service_account.node_sa        "$(sa shipzen-node-sa)"    gcloud iam service-accounts describe "shipzen-node-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.builder_sa     "$(sa shipzen-builder-sa)" gcloud iam service-accounts describe "shipzen-builder-sa@$P.iam.gserviceaccount.com" --project "$P"
+adopt google_service_account.platform_sa    "$(sa shipzen-platform-sa)" gcloud iam service-accounts describe "shipzen-platform-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.eso_sa         "$(sa shipzen-eso-sa)"     gcloud iam service-accounts describe "shipzen-eso-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.velero_sa      "$(sa velero-backup-sa)"   gcloud iam service-accounts describe "velero-backup-sa@$P.iam.gserviceaccount.com" --project "$P"
 

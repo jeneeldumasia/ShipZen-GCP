@@ -140,6 +140,17 @@ jobs:
             --region us-central1 \
             --project ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Restart platform services to pick up their Google identity
+        # Workload Identity is resolved when a pod requests a token, but client
+        # libraries cache tokens for up to an hour. After IAM or service-account
+        # changes in this apply, restart so API/worker/controller use the new
+        # identity right away instead of failing with the old one's permissions.
+        run: |
+          kubectl rollout restart deployment shipzen-api shipzen-worker shipzen-controller -n shipzen-system
+          for d in shipzen-api shipzen-worker shipzen-controller; do
+            kubectl rollout status deployment/$d -n shipzen-system --timeout=300s
+          done
+
       - name: Cleanup Stuck Webhooks
         run: |
           # Only delete specific webhooks known to cause stuck ArgoCD syncs.
