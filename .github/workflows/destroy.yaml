@@ -236,6 +236,12 @@ jobs:
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: terraform destroy -auto-approve
 
+      - name: Delete disks the cluster left behind
+        # The cluster is gone, so its PVC-backed disks (Prometheus, Grafana, Loki,
+        # Redis) are orphans; the script only touches unattached disks GKE labelled
+        # as this cluster's volumes, and refuses while the cluster still exists.
+        run: scripts/cleanup-orphaned-disks.sh --delete "${{ secrets.GCP_PROJECT_ID }}" shipzen-cluster
+
       - name: Summary
         if: always()
         run: |

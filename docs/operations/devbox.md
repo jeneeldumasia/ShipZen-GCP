@@ -1,4 +1,7 @@
-# ShipZen DevBox Guide
+# DevBox
+
+An optional remote development VM, created by the **Deploy DevBox** workflow from `terraform-devbox/`.
+Only SSH from Google's IAP range is open; remote desktop and the browser IDE are reached through SSH tunnels.
 
 The **ShipZen DevBox** is a persistent, highly secure VM running Debian 12 in your GCP project's `default` VPC. It is designed to let you safely run the Antigravity IDE / VS Code, manage your GKE cluster, build containers, and debug issues without triggering local security policies.
 
@@ -11,7 +14,7 @@ The DevBox is secured behind Google Cloud's Identity-Aware Proxy (IAP). Ingress 
 Connect from your local terminal:
 
 ```powershell
-gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76
+gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=<project>
 ```
 
 ---
@@ -26,7 +29,7 @@ The DevBox comes with `code-server` installed, giving you a full VS Code interfa
    ```
 2. Open a separate terminal on your local machine and create an SSH tunnel:
    ```powershell
-   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 8080:localhost:8080"
+   gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=<project> --ssh-flag="-L 8080:localhost:8080"
    ```
 3. Open your browser and navigate to:
    ```text
@@ -52,7 +55,7 @@ sudo passwd $USER
 From your local Windows terminal, forward local port `3390` to remote port `3389` (port 3390 avoids conflicts with local Windows RDP):
 
 ```powershell
-gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=project-ce3f7c39-eceb-4221-a76 --ssh-flag="-L 3390:localhost:3389"
+gcloud compute ssh shipzen-devbox --zone=us-central1-a --tunnel-through-iap --project=<project> --ssh-flag="-L 3390:localhost:3389"
 ```
 
 ### 3.3 Connect with Remote Desktop
@@ -121,7 +124,7 @@ gcloud compute instances set-machine-type shipzen-devbox --zone=us-central1-a --
 gcloud compute instances start shipzen-devbox --zone=us-central1-a
 ```
 
-*Remember to update `machine_type = "e2-standard-4"` in [terraform-devbox/main.tf](file:///c:/Project/ShipZen-GCP/terraform-devbox/main.tf) to avoid configuration drift.*
+*Update `machine_type` in `terraform-devbox/main.tf` to match, or the next Terraform run will change it back.*
 
 ---
 
@@ -149,7 +152,7 @@ Since the DevBox is authenticated via its Service Account (`shipzen-devbox-sa`),
 
 ```bash
 # Get cluster credentials
-gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project=project-ce3f7c39-eceb-4221-a76
+gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project=<project>
 
 # Inspect builder pods and logs
 kubectl get pods -n shipzen-build
