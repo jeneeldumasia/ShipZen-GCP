@@ -183,11 +183,34 @@ jobs:
             -p "{\"spec\":{\"source\":{\"kustomize\":{\"images\":[${IMAGES%,}]}}}}"
           kubectl annotate application shipzen-platform -n argocd argocd.argoproj.io/refresh=hard --overwrite
           echo "Pinned platform images to $TAG"
+
+          # A merge that changes manifests AND code is synced by ArgoCD as soon as
+          # it lands, minutes before the new images exist. If those manifests need
+          # the new code (e.g. a new health-check port), that sync fails and keeps
+          # retrying with the old images, blocking the sync that would bring in the
+          # new ones. Cancel such a stuck operation and start a fresh sync.
+          op_phase() { kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.operationState.phase}'; }
+          op_msg()   { kubectl get application shipzen-platform -n argocd -o jsonpath='{.status.operationState.message}'; }
+          unstick() {
+            if [ "$(op_phase)" = "Running" ] && op_msg | grep -qi "retrying"; then
+              echo "Cancelling stuck sync: $(op_msg)"
+              kubectl patch application shipzen-platform -n argocd --type merge \
+                -p '{"status":{"operationState":{"phase":"Terminating"}}}'
+              for i in $(seq 1 30); do
+                case "$(op_phase)" in Running|Terminating) sleep 5 ;; *) break ;; esac
+              done
+              kubectl patch application shipzen-platform -n argocd --type merge \
+                -p '{"operation":{"initiatedBy":{"username":"build-push"},"sync":{"revision":"HEAD","prune":true}}}'
+              echo "Started a fresh sync with $TAG"
+            fi
+          }
+          unstick
           for d in shipzen-api shipzen-worker shipzen-controller shipzen-ui; do
             for i in $(seq 1 30); do
               img=$(kubectl get deploy $d -n shipzen-system -o jsonpath='{.spec.template.spec.containers[0].image}')
               case "$img" in *":$TAG") break ;; esac
+              unstick
               sleep 10
             done
-            kubectl rollout status deploy/$d -n shipzen-system --timeout=300s
+            kubectl rollout status deploy/$d -n shipzen-system --timeout=600s
           done
