@@ -281,12 +281,23 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
                 password = credentials.token
                 # Use Artifact Registry host from image name (e.g. us-central1-docker.pkg.dev)
                 registry_url = image_name.split('/')[0]
-                subprocess.run(["crane", "auth", "login", registry_url, "-u",
-                               "oauth2accesstoken", "-p", password], check=True, capture_output=True)
+                # The root filesystem is read-only, so crane can't write ~/.docker;
+                # give it a per-build config dir under the writable /tmp mount.
+                # The token goes in on stdin: as an argv entry it ended up in the
+                # CalledProcessError message and was printed to the worker log.
+                crane_env = {**os.environ, "DOCKER_CONFIG": f"/tmp/crane_{deployment_id}"}
+                login = subprocess.run(
+                    ["crane", "auth", "login", registry_url, "-u", "oauth2accesstoken", "--password-stdin"],
+                    input=password, text=True, capture_output=True, env=crane_env)
+                if login.returncode != 0:
+                    raise RuntimeError(f"crane auth login failed (exit {login.returncode}): {login.stderr.strip()[:300]}")
 
-                crane_out = subprocess.check_output(
-                    ["crane", "config", image_name], text=True)
-                config_json = json.loads(crane_out)
+                cfg = subprocess.run(["crane", "config", image_name], text=True,
+                                     capture_output=True, env=crane_env)
+                shutil.rmtree(crane_env["DOCKER_CONFIG"], ignore_errors=True)
+                if cfg.returncode != 0:
+                    raise RuntimeError(f"crane config failed (exit {cfg.returncode}): {cfg.stderr.strip()[:300]}")
+                config_json = json.loads(cfg.stdout)
                 exposed_ports = config_json.get(
                     "config", {}).get("ExposedPorts", {})
 
