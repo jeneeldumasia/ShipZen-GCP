@@ -1,9 +1,10 @@
 name: Security Check
 
-# Verifies what the build pods' identity can and cannot do, by running a
-# throwaway pod (deleted afterwards) with the same Kubernetes service account
-# that Kaniko builds use. Builds run untrusted user Dockerfiles, so this
-# identity must be able to push images and nothing else.
+# Two checks, both from inside the cluster with throwaway pods (deleted afterwards):
+# 1. The build pods' identity can push images and do nothing else. Builds run
+#    untrusted user Dockerfiles.
+# 2. Network isolation: a tenant pod and a build pod cannot reach the platform,
+#    Cloud SQL or the metadata server, but can reach the internet.
 
 on:
   workflow_dispatch:
@@ -16,6 +17,9 @@ jobs:
   builder-identity:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -65,3 +69,21 @@ jobs:
             echo "::error title=Builder identity has access it should not::$body"; exit 1
           fi
           echo "::notice title=Builder identity: push-only confirmed::$body"
+
+      - name: Probe network isolation
+        if: always()
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project "$PROJECT"
+          SQL_IP="$(gcloud sql instances describe shipzen-postgres --project "$PROJECT" --format='value(ipAddresses[0].ipAddress)' 2>/dev/null)"
+          set +e
+          RESULT="$(scripts/netpolicy-probe.sh "$SQL_IP" 2>&1)"; rc=$?
+          set -e
+          RESULT="${RESULT//$SQL_IP/<cloud-sql>}"
+          echo "$RESULT"
+          body="${RESULT//'%'/'%25'}"; body="${body//$'\n'/%0A}"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Network isolation is not holding::$body"; exit 1
+          fi
+          echo "::notice title=Network isolation confirmed::$body"

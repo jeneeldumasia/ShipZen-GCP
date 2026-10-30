@@ -1,0 +1,115 @@
+# WhatsApp alerts. Alertmanager's webhook receiver (terraform/monitoring.tf) posts
+# firing/resolved alert groups to this relay, which sends one plain-language
+# message through CallMeBot. Credentials: Secret Manager "shipzen-whatsapp"
+# ({"phone": "+91...", "apikey": "..."}), filled by the Deploy Secrets workflow
+# from the WHATSAPP_PHONE / WHATSAPP_APIKEY repository secrets.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: shipzen-whatsapp
+  namespace: observability
+spec:
+  refreshInterval: 10m
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: shipzen-whatsapp
+  data:
+    - secretKey: phone
+      remoteRef:
+        key: shipzen-whatsapp
+        property: phone
+    - secretKey: apikey
+      remoteRef:
+        key: shipzen-whatsapp
+        property: apikey
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-relay
+  namespace: observability
+  labels:
+    app: alert-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-relay
+  template:
+    metadata:
+      labels:
+        app: alert-relay
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          image: python:3.12.7-alpine
+          command: ["python", "/app/relay.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: code
+              mountPath: /app
+            - name: whatsapp
+              mountPath: /etc/whatsapp
+              readOnly: true
+            - name: alert-text
+              mountPath: /etc/alert-text
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: alert-relay-code
+        - name: whatsapp
+          secret:
+            secretName: shipzen-whatsapp
+            optional: true
+        - name: alert-text
+          configMap:
+            name: alert-text
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-relay
+  namespace: observability
+spec:
+  selector:
+    app: alert-relay
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

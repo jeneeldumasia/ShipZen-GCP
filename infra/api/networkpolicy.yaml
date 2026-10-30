@@ -1,3 +1,4 @@
+# Where the API may connect to (enforced by GKE Dataplane V2).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -10,36 +11,36 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # Allow DNS
-    - ports:
+    - ports:   # DNS
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Allow PostgreSQL
-    - ports:
+    - to:      # Cloud SQL (private IP in the VPC's private services range)
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
         - port: 5432
           protocol: TCP
-      to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: postgresql
-    # Allow Redis
-    - ports:
-        - port: 6379
-          protocol: TCP
-      to:
+    - to:      # Redis
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis
-    # Allow HTTPS to external APIs (GCP Secret Manager, Artifact Registry, Auth0)
-    - ports:
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:      # GKE metadata server: Workload Identity tokens for Secret Manager / GCS
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - port: 988
+          protocol: TCP
+    - ports:   # HTTPS anywhere: GitHub, Google APIs, the Kubernetes API (private endpoint)
         - port: 443
           protocol: TCP
-      to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16

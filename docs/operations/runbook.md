@@ -14,9 +14,9 @@ rarely need `kubectl`. First-time setup is in [setup.md](setup.md).
 | **Destroy and Redeploy Cluster** (`destroy-and-deploy.yaml`) | A clean rebuild; type `DESTROY` to confirm | Destroy, orphaned-disk cleanup, apply, build images. |
 | **Auto-Destroy (Deadman Switch)** (`auto-destroy.yaml`) | Automatic every 3 h | If the cluster has been up 24 h, it triggers **Infra Teardown** to protect credits. |
 | **Cluster Report** (`cluster-report.yaml`) | Something looks wrong | Read-only. Posts deployments, pods, ArgoCD status, gateway IP and source ranges, PVC disks and orphaned disks, and warning events as annotations on the run. |
-| **Security Check** (`security-check.yaml`) | After changing IAM | Proves the builder identity can push images and nothing else. |
+| **Security Check** (`security-check.yaml`) | After changing IAM or network policies, and after each rebuild | Proves the builder identity can push images and nothing else, and that tenant and build pods are network-isolated. |
 | **Container Security Scan** (`security-scan.yaml`) | Nightly, automatic | Trivy scan; fails on HIGH/CRITICAL. |
-| **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets | Pushes those GitHub secrets into Secret Manager; ESO picks them up. |
+| **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets, or set up WhatsApp | Pushes those GitHub secrets into Secret Manager (ESO picks them up) and sends a WhatsApp test message if configured. |
 | **Deploy DevBox** (`deploy-devbox.yaml`) | You want the remote dev VM | See [devbox.md](devbox.md). |
 | **Disable Deletion Protection** | Before destroying the cluster manually | Turns off GKE deletion protection through Terraform. |
 | **Debug Cluster** (`debug.yaml`) | Ad-hoc | Dumps cluster state to the log. Prefer **Cluster Report**. |
@@ -52,14 +52,12 @@ them within about 3 minutes.
 Projects, users and deployments survive because Cloud SQL is outside the cluster.
 The controller re-creates every tenant folder, and ArgoCD re-creates the apps.
 
-**Add an alert route (Slack).** Put a real webhook in Secret Manager:
-```bash
-echo -n '{"slack-webhook-url": "https://hooks.slack.com/services/...", "pagerduty-routing-key": ""}' \
-  | gcloud secrets versions add shipzen-alerts --data-file=-
-```
-Then uncomment `alertmanager-config.yaml` in `infra/system/kustomization.yaml`,
-and remove the PagerDuty receiver from that file if you have no key. Deploy
-workflows only create this secret when it is missing; they never overwrite it.
+**Get alerts on WhatsApp** (one-time):
+1. Follow the WhatsApp steps at https://www.callmebot.com/blog/free-api-whatsapp-messages/: add CallMeBot's number (listed there) as a contact and send it `I allow callmebot to send me messages`. It replies with your API key.
+2. In GitHub: repository → Settings → Secrets and variables → Actions, add `WHATSAPP_PHONE` (with country code, for example `+91…`) and `WHATSAPP_APIKEY`.
+3. Run **Deploy Secrets to GKE**. It stores both in Secret Manager (`shipzen-whatsapp`) and sends you a test message. The relay picks the change up within about 10 minutes, with no restart.
+
+To stop messages, store an empty value: `echo -n '{"phone": "", "apikey": ""}' | gcloud secrets versions add shipzen-whatsapp --data-file=-`.
 
 **Check for leaked disks.**
 `scripts/cleanup-orphaned-disks.sh <project>` lists them; add `--delete` to remove
