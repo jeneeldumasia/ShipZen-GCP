@@ -29,9 +29,13 @@ REGION="${REGION:-us-central1}"
 
 summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >> "$GITHUB_STEP_SUMMARY"; echo "$*"; }
 
-FILTER="labels.goog-k8s-cluster-name=$CLUSTER AND labels.goog-gke-volume:* \
-AND description~'kubernetes.io/created-for/pvc' AND -users:* \
-AND -labels.reclaim-policy-gke-io=retain"
+VOLUMES="labels.goog-k8s-cluster-name=$CLUSTER AND labels.goog-gke-volume:* \
+AND description~'kubernetes.io/created-for/pvc'"
+FILTER="$VOLUMES AND -users:* AND -labels.reclaim-policy-gke-io=retain"
+
+# Context for the report: how many of this cluster's PVC disks are in use.
+IN_USE=$(gcloud compute disks list --project "$PROJECT" --filter="$VOLUMES AND users:*" --format='value(name)' | grep -c . || true)
+echo "PVC disks of $CLUSTER in use: $IN_USE"
 
 DISKS="$(gcloud compute disks list --project "$PROJECT" --filter="$FILTER" \
   --format='value(name,zone.basename(),sizeGb)')"
