@@ -11,6 +11,11 @@ shipzen_dlq_depth = Gauge(
     'Current number of messages in the Dead Letter Queue'
 )
 
+shipzen_queue_depth = Gauge(
+    'shipzen_queue_depth',
+    'Deploy requests in the stream not yet delivered to any worker (consumer-group lag)'
+)
+
 shipzen_retry_total = Counter(
     'shipzen_retry_total',
     'Total number of deployment retries'

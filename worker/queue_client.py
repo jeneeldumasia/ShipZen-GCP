@@ -1,7 +1,7 @@
 import logging
 import redis
 from config import config
-from metrics import shipzen_messages_in_flight, shipzen_dlq_depth
+from metrics import shipzen_messages_in_flight, shipzen_dlq_depth, shipzen_queue_depth
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,9 @@ class QueueClient:
             for g in info:
                 if g['name'] == self.group:
                     shipzen_messages_in_flight.set(g['pending'])
+                    # 'lag' = entries not yet delivered to any consumer (Redis >= 7).
+                    # The DeploymentQueueBacklog alert queries this gauge.
+                    shipzen_queue_depth.set(g.get('lag') or 0)
             dlq_len = self.r.xlen(self.dlq_stream)
             shipzen_dlq_depth.set(dlq_len)
         except Exception:
