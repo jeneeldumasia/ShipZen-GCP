@@ -205,9 +205,14 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
     
     sha = None
+    existing = None
     resp = requests.get(api_url, headers=headers, timeout=15)
     if resp.status_code == 200:
         sha = resp.json()["sha"]
+        try:
+            existing = base64.b64decode(resp.json().get("content", "")).decode("utf-8")
+        except Exception:
+            existing = None
     elif resp.status_code != 404:
         logger.error(f"GitHub API error: {resp.status_code} {resp.text}")
         return
@@ -216,6 +221,11 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
         if sha:
             data = {"message": f"Delete {path}", "sha": sha, "branch": "main"}
             requests.delete(api_url, headers=headers, json=data, timeout=15)
+        return
+
+    # The reconcile loop calls this every pass; without this check each pass
+    # pushed an empty commit to the tenants repo (and woke ArgoCD) for nothing.
+    if existing is not None and existing == content:
         return
 
     data = {
