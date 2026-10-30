@@ -240,6 +240,57 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     if res.status_code not in (200, 201):
         logger.error(f"Failed to commit to Git: {res.status_code} {res.text}")
 
+
+ORPHAN_GC_EVERY = int(os.getenv("ORPHAN_GC_EVERY", "20"))   # full sweeps between GC runs (~5 min at 15 s)
+ORPHAN_GC_MAX_PER_RUN = 5
+_orphan_gc_counter = 0
+
+
+def gc_orphan_tenant_folders(active_namespaces: set):
+    """Remove tenant folders in the GitOps repo that no project owns any more.
+
+    Folders outlive their projects when the database is reset (e.g. a cluster
+    rebuild) or a deletion is interrupted. ArgoCD keeps recreating those
+    namespaces from Git, so they showed up as stale, Degraded apps. Postgres is
+    the source of truth: a folder whose namespace has no live project is removed,
+    and ArgoCD's cascade finalizer then deletes the namespace.
+
+    Only called after the projects query succeeded; capped per run.
+    """
+    global _orphan_gc_counter
+    _orphan_gc_counter += 1
+    # First run ~5 min after start, so ArgoCD has added the cascade finalizer
+    # to existing tenant Applications before any folder is removed.
+    if _orphan_gc_counter % ORPHAN_GC_EVERY != 0:
+        return
+    token = get_github_app_token(TENANT_REPO_URL)
+    if not token:
+        return
+    parts = TENANT_REPO_URL.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1].removesuffix(".git")
+    base = f"https://api.github.com/repos/{owner}/{repo}/contents/namespaces"
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        resp = requests.get(base, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return
+        folders = [e["name"] for e in resp.json() if e.get("type") == "dir"]
+    except Exception as e:
+        logger.warning(f"Orphan GC: could not list tenant folders: {e}")
+        return
+
+    orphans = sorted(f for f in folders if f not in active_namespaces)[:ORPHAN_GC_MAX_PER_RUN]
+    for ns in orphans:
+        try:
+            files = requests.get(f"{base}/{ns}", headers=headers, timeout=15).json()
+            for f in files:
+                if f.get("type") == "file":
+                    commit_manifests_to_git(ns, f["name"], "", delete=True)
+            shipzen_drift_total.inc()
+            logger.warning(f"Orphan GC: removed tenant folder '{ns}' (no project owns this namespace)")
+        except Exception as e:
+            logger.warning(f"Orphan GC: failed to remove '{ns}': {e}")
+
 REDIS_HOST = os.getenv("REDIS_HOST", "redis-master.shipzen-system.svc.cluster.local")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
@@ -560,6 +611,9 @@ def reconcile():
     stale_keys = [k for k in _project_failures if k not in active_ids]
     for k in stale_keys:
         del _project_failures[k]
+
+    # Clean up GitOps folders whose project no longer exists (e.g. after a DB reset).
+    gc_orphan_tenant_folders({row['namespace'] for row in projects})
 
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
