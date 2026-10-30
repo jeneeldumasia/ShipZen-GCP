@@ -34,7 +34,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from database import get_connection, init_db, verify_project_access
+from database import get_connection, init_db, verify_project_access, verify_project_write_access
 from contextlib import asynccontextmanager
 from audit import log_audit_event
 from auth import get_current_user, User, evict_user_token_cache
@@ -150,6 +150,8 @@ def delete_project_secret(project_id: str):
 
 # Kubernetes namespace name rules: lowercase alphanumeric and hyphens, 3–63 chars
 _NAMESPACE_RE = re.compile(r'^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$')
+# Display names: no quotes, colons, newlines or other YAML-significant characters
+_PROJECT_NAME_RE = re.compile(r'\A[A-Za-z0-9][A-Za-z0-9 ._\-]{0,62}\Z')
 
 
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
@@ -163,35 +165,45 @@ def get_redis() -> redis_lib.Redis:
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 
 
-async def outbox_relay():
-    """Continuously poll the outbox_events table and forward to Redis."""
-    while True:
-        events = []  # Initialize before try so the sleep check below is always safe
-        try:
-            with get_connection() as conn:
-                with conn.cursor(cursor_factory=DictCursor) as cur:
-                    cur.execute("""
-                        SELECT * FROM outbox_events
-                        ORDER BY id ASC
-                        FOR UPDATE SKIP LOCKED
-                        LIMIT 10;
-                    """)
-                    events = cur.fetchall()
-                    if events:
-                        r = get_redis()
-                        pipe = r.pipeline()
-                        for event in events:
-                            pipe.xadd(event['stream_name'], event['payload'], maxlen=10000)
-                        pipe.execute()
+def _relay_outbox_once() -> int:
+    """Move up to 10 outbox rows to Redis. Blocking I/O, so run it in a thread."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM outbox_events
+                ORDER BY id ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 10;
+            """)
+            events = cur.fetchall()
+            if events:
+                r = get_redis()
+                pipe = r.pipeline()
+                for event in events:
+                    pipe.xadd(event['stream_name'], event['payload'], maxlen=10000)
+                pipe.execute()
 
-                        ids = tuple(event['id'] for event in events)
-                        cur.execute("DELETE FROM outbox_events WHERE id IN %s;", (ids,))
-                    conn.commit()
+                ids = tuple(event['id'] for event in events)
+                cur.execute("DELETE FROM outbox_events WHERE id IN %s;", (ids,))
+            conn.commit()
+            return len(events)
+
+
+async def outbox_relay():
+    """Continuously poll the outbox_events table and forward to Redis.
+
+    The DB and Redis calls are synchronous; running them directly in this
+    coroutine froze the event loop (every websocket, SSE stream and async
+    request on the replica) for the duration of each poll.
+    """
+    while True:
+        try:
+            moved = await asyncio.to_thread(_relay_outbox_once)
         except Exception as e:
             logger.error(f"Outbox relay error: {e}")
             await asyncio.sleep(5)
             continue
-        if not events:
+        if not moved:
             await asyncio.sleep(1)
 
 async def cache_eviction_listener():
@@ -296,6 +308,19 @@ class CreateProjectRequest(BaseModel):
     namespace: str
     repo_url: Optional[str] = None
     branch: Optional[str] = "main"
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        # The name is rendered into GitOps YAML (labels, hostnames) by the
+        # controller. Quotes, newlines or '---' would let a tenant inject extra
+        # Kubernetes objects that ArgoCD then applies cluster-wide.
+        if not _PROJECT_NAME_RE.match(v):
+            raise ValueError(
+                "name may contain letters, digits, spaces, '.', '_' and '-' "
+                "(max 63 chars) and must start with a letter or digit"
+            )
+        return v
 
     @field_validator("namespace")
     @classmethod
@@ -711,7 +736,7 @@ async def analyze_repo(request: Request, body: AnalyzeRequest, current_user: Use
 
 @app.post("/projects/{project_id}/deployments", status_code=202, tags=["Deployments"])
 @limiter.limit("5/minute")
-def create_deployment(request: Request, project_id: str, body: CreateDeploymentRequest, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+def create_deployment(request: Request, project_id: str, body: CreateDeploymentRequest, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """
     Submit a deployment request. Only a repo URL is required.
     - The platform generates the image URI automatically from GAR_REGISTRY_URL.
@@ -818,7 +843,7 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
 
 @app.post("/projects/{project_id}/deployments/{deployment_id}/cancel", status_code=202, tags=["Deployments"])
 @limiter.limit("5/minute")
-def cancel_deployment(request: Request, project_id: str, deployment_id: str, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+def cancel_deployment(request: Request, project_id: str, deployment_id: str, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """Cancel an active deployment and kill its worker job."""
     
     with get_connection() as conn:
@@ -871,17 +896,25 @@ def cancel_deployment(request: Request, project_id: str, deployment_id: str, pro
 
 @app.post("/projects/{project_id}/rollback", status_code=202, tags=["Deployments"])
 @limiter.limit("5/minute")
-def rollback_deployment(request: Request, project_id: str, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+def rollback_deployment(request: Request, project_id: str, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """Re-deploy the last known-good image without rebuilding."""
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=DictCursor) as cur:
-            # Find the last successful deployment
+            # Find the previous good release. When a release goes live the controller
+            # leaves older releases in state 'Running' but scales them to replicas=0,
+            # so "previous good" = newest scaled-down Running release whose image is
+            # not the one currently serving traffic. (Picking the newest 'Running' row,
+            # as before, just re-deployed the live image.)
             cur.execute("""
-                SELECT * FROM deployments 
-                WHERE project_id = %s AND state = 'Running'
-                ORDER BY updated_at DESC LIMIT 1;
-            """, (project_id,))
+                SELECT * FROM deployments
+                WHERE project_id = %s AND state = 'Running' AND replicas = 0
+                  AND image_uri IS DISTINCT FROM (
+                      SELECT image_uri FROM deployments
+                      WHERE project_id = %s AND state = 'Running' AND replicas > 0
+                      ORDER BY created_at DESC LIMIT 1)
+                ORDER BY created_at DESC LIMIT 1;
+            """, (project_id, project_id))
             last_good = cur.fetchone()
 
             if not last_good:
@@ -896,7 +929,9 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
                 RETURNING *;
             """, (
                 deployment_id, project_id, last_good['repo_url'],
-                last_good['image_uri'], last_good['replicas'], last_good['port']
+                # Old releases were scaled to 0 by the controller; copying that
+                # value made the rollback wait for a ready pod that never came.
+                last_good['image_uri'], 1, last_good['port']
             ))
             cur.fetchone()
 
@@ -1076,10 +1111,11 @@ async def stream_logs(project_id: str, deployment_id: str, project: dict = Depen
         await pubsub.subscribe(f"shipzen:logs:{deployment_id}")
         try:
             deadline = time.time() + 300  # 5 minute max SSE session
-            async for message in pubsub.listen():
-                if time.time() > deadline:
-                    break
-                if message["type"] == "message":
+            # listen() blocks until a message arrives, so the deadline was never
+            # checked on a quiet stream. Poll with a timeout instead.
+            while time.time() < deadline:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message and message["type"] == "message":
                     yield f"data: {message['data']}\n\n"
         finally:
             await pubsub.unsubscribe()
@@ -1373,7 +1409,7 @@ class PutEnvVarRequest(BaseModel):
 
 @app.put("/projects/{project_id}/env", tags=["Environment"])
 @limiter.limit("20/minute")
-def put_env_var(request: Request, project_id: str, body: PutEnvVarRequest, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+def put_env_var(request: Request, project_id: str, body: PutEnvVarRequest, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """Add or update an environment variable for a project."""
     # Fix 6: Use project['id'] instead of name to avoid collision
     secret_id = f"shipzen-project-{project['id']}"
@@ -1426,7 +1462,7 @@ def put_env_var(request: Request, project_id: str, body: PutEnvVarRequest, proje
 
 @app.delete("/projects/{project_id}/env/{key}", tags=["Environment"])
 @limiter.limit("20/minute")
-def delete_env_var(request: Request, project_id: str, key: str, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+def delete_env_var(request: Request, project_id: str, key: str, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     # Fix 6: Use project['id'] instead of name to avoid collision
     secret_id = f"shipzen-project-{project['id']}"
 
@@ -1550,7 +1586,7 @@ def list_secrets(request: Request, project_id: str, project: dict = Depends(veri
 
 @app.post("/projects/{project_id}/secrets", status_code=200, tags=["Secrets"])
 @limiter.limit("20/minute")
-def put_secret(request: Request, project_id: str, body: PutSecretRequest, project: dict = Depends(verify_project_access)):
+def put_secret(request: Request, project_id: str, body: PutSecretRequest, project: dict = Depends(verify_project_write_access)):
     """Add or update a secret for a project."""
     # CRIT-07 Fix: Use project ID instead of name to match /env endpoints
     secret_id = f"shipzen-project-{project['id']}"
@@ -1595,7 +1631,7 @@ def put_secret(request: Request, project_id: str, body: PutSecretRequest, projec
 
 @app.delete("/projects/{project_id}/secrets/{key}", status_code=200, tags=["Secrets"])
 @limiter.limit("20/minute")
-def delete_secret(request: Request, project_id: str, key: str, project: dict = Depends(verify_project_access)):
+def delete_secret(request: Request, project_id: str, key: str, project: dict = Depends(verify_project_write_access)):
     """Delete a secret key from a project."""
     # CRIT-07 Fix: Use project ID instead of name
     secret_id = f"shipzen-project-{project['id']}"
@@ -2115,13 +2151,13 @@ def _serialize(obj: dict) -> dict:
 @limiter.limit("5/minute")
 def restart_deployment(request: Request, project_id: str, deployment_id: str, current_user: User = Depends(get_current_user)):
     """Restart a deployment by patching its pod template with a new restartedAt annotation."""
-    project = verify_project_access(project_id, current_user)
+    project = verify_project_write_access(project_id, current_user)
     deployment = _get_deployment_or_404(project_id, deployment_id)
 
-    # H-10 Fix: Sanitize the project name to a valid Kubernetes resource name
-    # (lowercase, alphanumeric + hyphens, max 54 chars to leave room for the 9-char prefix).
-    safe_name = re.sub(r'[^a-z0-9-]', '-', project['name'].lower())[:54].strip('-')
-    deployment_name = f"{deployment_id[:8]}-{safe_name}"
+    # The controller names the Kubernetes Deployment after the full deployment_id
+    # (controller/main.py renders app-deployment.yaml.j2 with deployment_name=d_id).
+    # The old "<id[:8]>-<project-name>" name never existed, so every restart 500'd.
+    deployment_name = deployment_id
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     patch = {
         "spec": {
