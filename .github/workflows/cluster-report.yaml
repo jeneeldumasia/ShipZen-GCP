@@ -62,6 +62,8 @@ jobs:
             --filter="name~'^pvc-'" \
             --format='value(name,zone.basename(),sizeGb,users.len(),labels,description.slice(0:140),creationTimestamp.date())' 2>&1)"
 
+          note "DEBUG filter" "$(bash scripts/_dbg.sh ${{ secrets.GCP_PROJECT_ID }} 2>&1)"
+
           note "Orphaned PVC disks (would be deleted by teardown)" "$(scripts/cleanup-orphaned-disks.sh ${{ secrets.GCP_PROJECT_ID }} shipzen-cluster 2>&1)"
 
           note "Warning events in shipzen-system" "$(kubectl get events -n shipzen-system --field-selector type=Warning \
