@@ -44,6 +44,12 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      - name: Back up the database to GCS
+        # If the export still fails after retries, carry on; the restore below then
+        # uses the previous successful backup.
+        continue-on-error: true
+        run: bash scripts/db-snapshot.sh backup "${{ secrets.GCP_PROJECT_ID }}"
+
       - name: Terraform Destroy
         working-directory: ./terraform
         env:
@@ -65,6 +71,24 @@ jobs:
 
       - name: Wait for cleanup
         run: sleep 30
+
+      - name: Create the database and restore the last backup
+        # Before the full apply, so the API/worker/controller start against the
+        # restored data, never an empty database.
+        working-directory: ./terraform
+        env:
+          TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_gcp_region: us-central1
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
+          TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
+          TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
+        run: |
+          terraform apply -no-color -input=false -auto-approve \
+            -target='google_sql_database.database[0]' -target='google_sql_user.users[0]'
+          bash ../scripts/db-snapshot.sh restore "${{ secrets.GCP_PROJECT_ID }}"
 
       - name: Terraform Apply (Recreate)
         working-directory: ./terraform
@@ -113,20 +137,16 @@ jobs:
       - name: Push Secrets to GCP Secret Manager
         run: |
           echo "Pushing GitHub OAuth Secret..."
-          gcloud secrets create shipzen-github --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | gcloud secrets versions add shipzen-github --data-file=-
+          echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | bash scripts/put-secret.sh shipzen-github
 
           echo "Pushing GitHub Backend App Secret..."
-          gcloud secrets create shipzen-github-app --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | gcloud secrets versions add shipzen-github-app --data-file=-
+          echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | bash scripts/put-secret.sh shipzen-github-app
 
           echo "Pushing AUTH_SECRET..."
-          gcloud secrets create shipzen-auth-secret --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | gcloud secrets versions add shipzen-auth-secret --data-file=-
+          echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | bash scripts/put-secret.sh shipzen-auth-secret
 
           echo "Pushing Alerts Stub Secret..."
-          gcloud secrets create shipzen-alerts --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | gcloud secrets versions add shipzen-alerts --data-file=-
+          echo -n "{\"slack-webhook-url\": \"\", \"pagerduty-routing-key\": \"\"}" | bash scripts/put-secret.sh shipzen-alerts --create-only
 
       - name: Trigger ArgoCD Sync
         run: |

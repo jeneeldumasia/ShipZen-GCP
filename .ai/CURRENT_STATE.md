@@ -5,8 +5,11 @@ _Last updated: 2026-10-31. Treat the code as authoritative if this disagrees._
 ## Status
 The platform is live and working end to end: GitHub sign-in, deploy, build logs,
 rollback, restart, env vars, monitoring. The cluster is disposable: it is torn
-down after 24 h of uptime and rebuilt with **Deploy Platform Infra**. Postgres is
-Cloud SQL, so projects and deployments survive rebuilds.
+down after 24 h of uptime and rebuilt with **Deploy Platform Infra**. Teardown
+deletes Cloud SQL too (idle cost must be $0), after exporting it to
+`gs://<project>-shipzen-db-backups`; deploy restores it before the services start
+(`scripts/db-snapshot.sh`). Before this change, teardown silently wiped the database.
+Secret Manager values are written with `scripts/put-secret.sh` (one live version each).
 
 ## Infrastructure
 | Resource | State |
