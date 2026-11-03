@@ -14,7 +14,16 @@ from unittest.mock import MagicMock
 
 ROOT = Path(__file__).resolve().parent.parent
 _SHARED = ["main", "database", "metrics", "models", "config", "auth", "audit",
-           "analyzer", "queue_client", "state_machine", "builder"]
+           "analyzer", "queue_client", "state_machine", "builder",
+           # api/ modules split out of main.py
+           "background", "helpers", "platform_clients", "ratelimit", "secret_store",
+           "validation", "routers"]
+
+
+def _forget_shared_modules():
+    for name in list(sys.modules):
+        if name in _SHARED or name.split(".")[0] == "routers":
+            sys.modules.pop(name, None)
 
 os.environ.setdefault("DATABASE_URL", "postgresql://shipzen:shipzen-local@localhost:5432/shipzen")
 os.environ.setdefault("REDIS_HOST", "localhost")
@@ -26,8 +35,7 @@ def load(component: str):
     kubernetes.config.load_incluster_config = MagicMock()
     kubernetes.config.load_kube_config = MagicMock()
 
-    for name in _SHARED:
-        sys.modules.pop(name, None)
+    _forget_shared_modules()
     comp_dir = str(ROOT / component)
     sys.path[:0] = [comp_dir, str(ROOT)]
     cwd = os.getcwd()
@@ -39,8 +47,7 @@ def load(component: str):
         os.chdir(cwd)
         sys.path.remove(comp_dir)
         sys.path.remove(str(ROOT))
-        for name in _SHARED:
-            sys.modules.pop(name, None)
+        _forget_shared_modules()
 
 
 def postgres_available() -> bool:
