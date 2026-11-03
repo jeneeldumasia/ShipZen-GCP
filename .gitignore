@@ -54,3 +54,8 @@ p o l i c y _ u p d a t e . j s o n
 aws-nuke*
 LICENSE
 nuke-config.yaml
+# Private keys and certificates (e.g. a downloaded GitHub App key). Never commit these.
+*.pem
+*.key
+*.p12
+*.pfx
