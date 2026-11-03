@@ -25,7 +25,7 @@ under [Known gaps](#known-gaps), not under controls.
 
 **Builds (untrusted code)**
 - Each build is a single-use Job in its own namespace, `shipzen-build`, deleted afterwards.
-- Builds run as `shipzen-builder-sa`, which can only push to the `shipzen-builds` registry. It cannot read Secret Manager, the build-log bucket or the platform images. The **Security Check** workflow verifies this from inside the cluster.
+- Build pods have **no Google identity** and can't reach the metadata server. The worker mints a 1-hour token for `shipzen-builder-sa`, which can push only to the `shipzen-staging` registry, and gives Kaniko just that. Kaniko reports the digest it pushed; the worker copies exactly that digest into `shipzen-builds` (which only the platform can write), and apps run **by digest**, so no build can swap another project's image. The shared remote layer cache is off, because any build could poison it. Each project's repository is checked against the user's own GitHub access and bound to the project, so nobody can build a private repository they can't read. **Security Check** verifies build pods have no identity.
 - Kaniko builds without a Docker daemon and without privileged mode (`allowPrivilegeEscalation: false`, `RuntimeDefault` seccomp).
 - Registry credentials go to `crane` over stdin, and CI log output is passed through a redaction filter, so tokens don't reach logs or annotations.
 
@@ -46,7 +46,7 @@ under [Known gaps](#known-gaps), not under controls.
 
 | Check | How |
 |---|---|
-| Builder identity is push-only | Run **Security Check** (Actions). Every identity probe must say PASS. |
+| Build pods have no Google identity | Run **Security Check** (Actions). Every identity probe must say PASS. |
 | Network isolation holds | The same run starts a pod in a tenant namespace and one in `shipzen-build`; every connection must be blocked or allowed as expected (`scripts/netpolicy-probe.sh`). |
 | Raw gateway IP is closed | `curl -m 5 http://<gateway IP>/` should time out; the site should still load. |
 | Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". |

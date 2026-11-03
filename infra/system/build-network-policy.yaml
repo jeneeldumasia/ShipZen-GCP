@@ -1,6 +1,8 @@
-# Build Jobs run untrusted Dockerfiles. They may fetch from the internet and push
-# to Artifact Registry (via their Workload Identity), and nothing else: no other
-# pods, no platform services, no nodes, no Cloud SQL. Nothing may connect in.
+# Build Jobs run untrusted Dockerfiles. They may reach the public internet
+# (including Artifact Registry, with the per-build staging push token the worker
+# gives them) and nothing else: no other pods, no platform services, no nodes,
+# no Cloud SQL, and no metadata server, so they can't obtain any Google identity.
+# Nothing may connect in.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,18 +18,6 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
-          protocol: TCP
-    - to:      # GKE metadata server, for the push-only builder identity
-        - ipBlock:
-            cidr: 169.254.169.254/32
-      ports:
-        - port: 80
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 169.254.169.252/32
-      ports:
-        - port: 988
           protocol: TCP
     - to:      # the public internet only
         - ipBlock:

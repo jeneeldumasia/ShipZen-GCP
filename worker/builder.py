@@ -11,6 +11,30 @@ from kubernetes import client
 logger = logging.getLogger('builder')
 
 
+def harden_build_job(job: dict, overrides: dict) -> dict:
+    """Lock down a build Job (security finding C4). Builds run untrusted code.
+
+    - No Kubernetes API token in the pod.
+    - Kaniko's only registry credential is the per-build Docker config the
+      worker creates (overrides["registry_secret_name"]): a 1-hour token that can
+      push to shipzen-staging and nothing else. The pod has no Google identity of
+      its own, and the build NetworkPolicy blocks the metadata server.
+    """
+    pod = job["spec"]["template"]["spec"]
+    pod["automountServiceAccountToken"] = False
+    secret = overrides.get("registry_secret_name")
+    if secret:
+        pod.setdefault("volumes", []).append({
+            "name": "registry-auth",
+            "secret": {"secretName": secret, "items": [{"key": "config.json", "path": "config.json"}]},
+        })
+        for c in pod["containers"]:
+            if c["name"] == "kaniko":
+                c.setdefault("volumeMounts", []).append(
+                    {"name": "registry-auth", "mountPath": "/kaniko/.docker", "readOnly": True})
+    return job
+
+
 def git_auth_env_refs(secret_name):
     """Env for the clone container: git sends the token as a header, read from the
     per-build Secret. Unlike a token in the clone URL, this is never written to
@@ -50,16 +74,11 @@ class DockerfileBuilder(Builder):
         git_clone_env += git_auth_env_refs(overrides.get("github_secret_name"))
         clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
-        # Safely extract base URI for cache
-        base_uri = image_uri.split('@')[0]
-        if ':' in base_uri.split('/')[-1]:
-            base_uri = base_uri.rsplit(':', 1)[0]
-        cache_uri = f"{base_uri}:cache"
 
         context_dir = overrides.get("buildContext", "").strip("/")
         kaniko_context = f"dir:///workspace/{context_dir}" if context_dir else "dir:///workspace"
 
-        return {
+        return harden_build_job({
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
@@ -109,11 +128,10 @@ class DockerfileBuilder(Builder):
                                     f"--context={kaniko_context}",
                                     "--dockerfile=Dockerfile",
                                     f"--destination={image_uri}",
-                                    "--cache=true",
-                                    f"--cache-repo={cache_uri}",
-                                    "--cache-copy-layers=true",
-                                    "--cache-ttl=168h",
-                                    "--compressed-caching=false"
+                                    # No shared remote layer cache: every build could write it, so one
+                                    # tenant could poison another's layers. The digest of what was
+                                    # pushed goes to the termination message for the worker (C4).
+                                    "--digest-file=/dev/termination-log"
                                 ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
@@ -135,7 +153,7 @@ class DockerfileBuilder(Builder):
                     }
                 }
             }
-        }
+        }, overrides)
 
 
 
@@ -214,11 +232,6 @@ if [ -f package.json ]; then
 fi
 """
 
-        # Safely extract base URI handling digests and ports
-        base_uri = image_uri.split('@')[0]
-        if ':' in base_uri.split('/')[-1]:
-            base_uri = base_uri.rsplit(':', 1)[0]
-        cache_uri = f"{base_uri}:cache"
 
         context_dir = overrides.get("buildContext", "").strip("/")
         build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
@@ -237,7 +250,7 @@ fi
             "fi; done; fi"
         )
 
-        return {
+        return harden_build_job({
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
@@ -305,11 +318,10 @@ fi
                                     "--context=dir:///workspace",
                                     "--dockerfile=.nixpacks/Dockerfile",
                                     f"--destination={image_uri}",
-                                    "--cache=true",
-                                    f"--cache-repo={cache_uri}",
-                                    "--cache-copy-layers=true",
-                                    "--cache-ttl=168h",
-                                    "--compressed-caching=false"
+                                    # No shared remote layer cache: every build could write it, so one
+                                    # tenant could poison another's layers. The digest of what was
+                                    # pushed goes to the termination message for the worker (C4).
+                                    "--digest-file=/dev/termination-log"
                                 ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
@@ -331,4 +343,4 @@ fi
                     }
                 }
             }
-        }
+        }, overrides)

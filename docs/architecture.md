@@ -96,8 +96,10 @@ deployment.
 Postgres tables: `users`, `projects`, `project_members` (owner / editor / viewer),
 `deployments`, `builds`, `audit_logs` (append-only), and `outbox_events`, which
 the API relays to Redis so a deploy is never queued without being recorded (or
-the reverse). The schema is applied by `infra/system/schema-job.yaml` from
-`schema-configmap.yaml`.
+the reverse). The schema lives in numbered migrations, `api/migrations/NNNN_*.sql`,
+which the API applies at startup (`api/migrate.py`, recorded in `schema_migrations`,
+serialised with an advisory lock). To change it, add the next numbered file; never
+edit one that has been applied.
 
 Not in Postgres:
 
@@ -135,7 +137,7 @@ Identity Federation; pods use GKE Workload Identity.
 | Google service account | Used by | Can do |
 |---|---|---|
 | `shipzen-platform-sa` | API, worker, controller | Manage Secret Manager secrets, write build logs, administer `shipzen-builds` |
-| `shipzen-builder-sa` | build Jobs only | Push to `shipzen-builds`. Nothing else: builds run untrusted Dockerfiles. The **Security Check** workflow proves this. |
+| `shipzen-builder-sa` | build Jobs, via a 1-hour token the worker mints per build (build pods have no identity of their own) | Push to `shipzen-staging`. Nothing else: builds run untrusted Dockerfiles. The worker copies each verified digest into `shipzen-builds`. |
 | `shipzen-eso-sa` | External Secrets Operator | Read secrets |
 | `shipzen-node-sa` | GKE nodes | Logging, monitoring, image pulls |
 | `velero-backup-sa` | Velero | Its backup bucket |

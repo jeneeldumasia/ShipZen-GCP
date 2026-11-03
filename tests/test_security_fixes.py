@@ -158,3 +158,49 @@ def test_failed_state_stores_redacted_error():
     assert FAKE_TOKEN not in stored
     published = sm._redis.publish.call_args[0][1]
     assert FAKE_TOKEN not in published
+
+
+# ── C4: builds push only to staging; apps run by digest ──────────────────────
+
+DIGEST = "sha256:" + "a" * 64
+
+
+@pytest.mark.parametrize("builder_cls", ["DockerfileBuilder", "NixpacksBuilder"])
+def test_build_job_has_no_identity_and_reports_its_digest(builder_cls):
+    builder = getattr(worker, builder_cls)()
+    staging = "us-central1-docker.pkg.dev/p/shipzen-staging/proj:dep"
+    job = builder.generate_job_manifest("abcdef12-0000", "https://github.com/o/r", "main", staging,
+                                        {"registry_secret_name": "registry-abcdef12"})
+    pod = job["spec"]["template"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    kaniko = next(c for c in pod["containers"] if c["name"] == "kaniko")
+    assert f"--destination={staging}" in kaniko["args"]
+    assert "--digest-file=/dev/termination-log" in kaniko["args"]
+    assert not any(a.startswith("--cache") for a in kaniko["args"])  # no shared, poisonable cache
+    assert {"name": "registry-auth", "mountPath": "/kaniko/.docker", "readOnly": True} in kaniko["volumeMounts"]
+    vol = next(v for v in pod["volumes"] if v["name"] == "registry-auth")
+    assert vol["secret"]["secretName"] == "registry-abcdef12"
+
+
+def test_builds_push_to_staging_not_the_verified_registry():
+    img = "us-central1-docker.pkg.dev/p/shipzen-builds/proj:dep"
+    assert worker.staging_uri_for(img) == "us-central1-docker.pkg.dev/p/shipzen-staging/proj:dep"
+
+
+def test_controller_pins_images_to_their_digest():
+    assert controller.pinned_image({"image_uri": "r/shipzen-builds/p:d", "image_digest": DIGEST}) == f"r/shipzen-builds/p:d@{DIGEST}"
+    assert controller.pinned_image({"image_uri": "r/shipzen-builds/p:d", "image_digest": None}) == "r/shipzen-builds/p:d"
+    assert controller.pinned_image({"image_uri": "r/x:d", "image_digest": "sha256:short"}) == "r/x:d"
+
+
+@pytest.mark.parametrize("message,ok", [(DIGEST, True), (DIGEST + "\n", True), ("", False), ("latest", False)])
+def test_build_digest_comes_only_from_kaniko_termination_message(message, ok):
+    status = MagicMock(state=MagicMock(terminated=MagicMock(message=message)))
+    status.name = "kaniko"
+    pod = MagicMock(status=MagicMock(container_statuses=[status]))
+    with patch.dict(worker._build_digest.__globals__, {"core_v1": MagicMock(read_namespaced_pod=MagicMock(return_value=pod))}):
+        if ok:
+            assert worker._build_digest("pod") == DIGEST
+        else:
+            with pytest.raises(RuntimeError):
+                worker._build_digest("pod")

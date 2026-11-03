@@ -15,6 +15,7 @@ from kubernetes import client as k8s_client, config as k8s_config
 from audit import log_audit_event
 from auth import User, get_current_user
 from database import get_connection, verify_project_access, verify_project_write_access
+from github_access import check_repo_access, enforce_project_binding
 from helpers import _get_deployment_or_404, _serialize, image_uri_for, queue_deployment
 from platform_clients import _aioredis_client, _gcs_client, _redis_client, apps_v1, get_redis
 from ratelimit import limiter
@@ -83,6 +84,10 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
         logger.error(f"Failed to check in-flight deployments: {e}")
         raise HTTPException(status_code=500, detail="Failed to check deployment status")
 
+    # C3: only a repository the user can read, and the one this project is bound to.
+    repo = check_repo_access(current_user, body.repo_url)
+    enforce_project_binding(project, repo)
+
     deployment_id = str(uuid.uuid4())
     queued_at = str(time.time())
 
@@ -121,6 +126,12 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
                     "trace_id":      trace_id,
                 }
                 queue_deployment(cur, payload)
+                if repo and not project.get("github_repo_id"):
+                    # First GitHub deployment: bind the project to this repository.
+                    cur.execute(
+                        "UPDATE projects SET github_repo_id = %s, github_repo_full_name = %s "
+                        "WHERE id = %s AND github_repo_id IS NULL;",
+                        (repo["id"], repo["full_name"], project_id))
             conn.commit()
     except Exception as e:
         logger.error(f"Failed to create deployment: {e}")
@@ -227,14 +238,16 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
             deployment_id = str(uuid.uuid4())
             cur.execute("""
                 INSERT INTO deployments
-                    (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
-                VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
+                    (deployment_id, project_id, repo_url, image_uri, image_digest, replicas, port, state)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'Queued')
                 RETURNING *;
             """, (
                 deployment_id, project_id, last_good['repo_url'],
+                # Same image, pinned to the same digest (C4).
+                last_good['image_uri'], last_good.get('image_digest'),
                 # Old releases were scaled to 0 by the controller; copying that
                 # value made the rollback wait for a ready pod that never came.
-                last_good['image_uri'], 1, last_good['port']
+                1, last_good['port']
             ))
             cur.fetchone()
 

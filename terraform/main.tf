@@ -190,9 +190,30 @@ resource "time_sleep" "wait_for_cluster_auth" {
 resource "google_artifact_registry_repository" "shipzen_builds" {
   location      = var.gcp_region
   repository_id = "shipzen-builds"
-  description   = "Docker repository for ShipZen tenant builds"
+  description   = "Verified tenant images. Only the platform writes here; apps run them by digest."
   format        = "DOCKER"
   depends_on    = [google_project_service.apis]
+}
+
+# Build output lands here first. Builds run untrusted Dockerfiles and can push
+# here and nowhere else; the worker then copies the exact digest each build
+# reported into shipzen-builds (security finding C4). Images only need to live
+# until that copy, so they're deleted after a day.
+resource "google_artifact_registry_repository" "shipzen_staging" {
+  location      = var.gcp_region
+  repository_id = "shipzen-staging"
+  description   = "Untrusted build output, copied by digest to shipzen-builds"
+  format        = "DOCKER"
+
+  cleanup_policy_dry_run = false
+  cleanup_policies {
+    id     = "delete-after-a-day"
+    action = "DELETE"
+    condition {
+      older_than = "86400s"
+    }
+  }
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_artifact_registry_repository" "platform" {
@@ -225,31 +246,22 @@ resource "google_storage_bucket" "build_logs" {
 }
 
 # ── Workload Identity: Builder SA ─────────────────────────────────────────────
-# Used ONLY by build pods in shipzen-build, which run untrusted user Dockerfiles
-# (Kaniko executes RUN steps with this identity, and any RUN step can fetch a
-# token from the metadata server). It may push images to the tenant build
-# repository and nothing else. It previously held project-wide Secret Manager
-# admin, Storage object admin and Artifact Registry writer, and was shared with
-# the API, worker and controller.
+# Push-only identity for builds, which run untrusted user Dockerfiles. Build
+# pods no longer get it through Workload Identity (any RUN step could read it
+# from the metadata server, and build pods can't reach that server any more):
+# the worker mints a 1-hour token for it per build and hands Kaniko only that.
+# It can push to shipzen-staging and do nothing else.
 resource "google_service_account" "builder_sa" {
   account_id   = "shipzen-builder-sa"
-  display_name = "ShipZen Builder Service Account (push to shipzen-builds only)"
+  display_name = "ShipZen Builder (push to shipzen-staging only)"
 }
 
 resource "google_artifact_registry_repository_iam_member" "builder_push" {
   project    = var.gcp_project
-  location   = google_artifact_registry_repository.shipzen_builds.location
-  repository = google_artifact_registry_repository.shipzen_builds.name
+  location   = google_artifact_registry_repository.shipzen_staging.location
+  repository = google_artifact_registry_repository.shipzen_staging.name
   role       = "roles/artifactregistry.writer"
   member     = "serviceAccount:${google_service_account.builder_sa.email}"
-}
-
-resource "google_service_account_iam_binding" "builder_workload_identity" {
-  service_account_id = google_service_account.builder_sa.name
-  role               = "roles/iam.workloadIdentityUser"
-  members = [
-    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-build/shipzen-builder-sa]",
-  ]
 }
 
 # ── Workload Identity: Platform SA ────────────────────────────────────────────
@@ -272,6 +284,22 @@ resource "google_storage_bucket_iam_member" "platform_build_logs" {
   bucket = google_storage_bucket.build_logs.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+# The worker reads staging to copy verified digests into shipzen-builds, and
+# mints the short-lived builder tokens it gives to each build.
+resource "google_artifact_registry_repository_iam_member" "platform_staging_reader" {
+  project    = var.gcp_project
+  location   = google_artifact_registry_repository.shipzen_staging.location
+  repository = google_artifact_registry_repository.shipzen_staging.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+resource "google_service_account_iam_member" "platform_mints_builder_tokens" {
+  service_account_id = google_service_account.builder_sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.platform_sa.email}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "platform_builds_admin" {
@@ -306,15 +334,14 @@ resource "kubernetes_namespace" "shipzen_build" {
   }
 }
 
+# The Kubernetes identity build pods run as. Deliberately no Google identity
+# (no Workload Identity annotation) and no Kubernetes API token.
 resource "kubernetes_service_account" "builder_k8s_sa" {
   metadata {
     name      = "shipzen-builder-sa"
     namespace = kubernetes_namespace.shipzen_build.metadata[0].name
-    annotations = {
-      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
-    }
   }
-  automount_service_account_token = true
+  automount_service_account_token = false
 }
 
 resource "kubernetes_service_account" "worker_k8s_sa" {

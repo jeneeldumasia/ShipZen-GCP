@@ -2,6 +2,7 @@ import redis
 import time
 import logging
 import json
+import re
 import os
 import subprocess
 import shutil
@@ -116,6 +117,112 @@ def _start_health_server(port: int = 8000):
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     logger.info(f"Health+metrics server started on port {port} (/healthz, /metrics)")
+
+
+# ── Build output: staging → verified registry (security finding C4) ───────────
+# Builds run untrusted Dockerfiles, so they never get credentials for the
+# registry apps run from. Kaniko pushes to shipzen-staging with a 1-hour token
+# that can do nothing else, and reports the digest of what it pushed in its
+# termination message. The worker copies exactly that digest into
+# shipzen-builds, and the controller deploys it by digest, so no other build can
+# swap the content under a tag.
+
+_DIGEST_RE = re.compile(r"\Asha256:[0-9a-f]{64}\Z")
+
+
+def staging_uri_for(image_name: str) -> str:
+    """Where a build pushes before verification: shipzen-builds -> shipzen-staging."""
+    return image_name.replace("/shipzen-builds/", "/shipzen-staging/", 1)
+
+
+def _builder_push_token(image_name: str) -> str:
+    """1-hour token for the push-only builder identity, minted by the worker's own identity."""
+    from google.auth import impersonated_credentials
+    project = image_name.split("/")[1]
+    target = os.environ.get("BUILDER_SA_EMAIL") or f"shipzen-builder-sa@{project}.iam.gserviceaccount.com"
+    source, _ = google.auth.default()
+    creds = impersonated_credentials.Credentials(
+        source_credentials=source, target_principal=target,
+        target_scopes=["https://www.googleapis.com/auth/cloud-platform"], lifetime=3600)
+    creds.refresh(google.auth.transport.requests.Request())
+    return creds.token
+
+
+def create_registry_secret(deployment_id: str, image_name: str):
+    """Per-build Docker config that lets Kaniko push to shipzen-staging. None in local dev."""
+    if image_name.startswith("local/"):
+        return None
+    registry = image_name.split("/")[0]
+    token = _builder_push_token(image_name)
+    auth = base64.b64encode(f"oauth2accesstoken:{token}".encode()).decode()
+    name = f"registry-{deployment_id[:8]}"
+    secret = client.V1Secret(
+        metadata=client.V1ObjectMeta(name=name, namespace="shipzen-build"),
+        string_data={"config.json": json.dumps({"auths": {registry: {"auth": auth}}})},
+    )
+    try:
+        core_v1.create_namespaced_secret(namespace="shipzen-build", body=secret)
+    except ApiException as e:
+        if e.status != 409:
+            raise
+        core_v1.replace_namespaced_secret(name=name, namespace="shipzen-build", body=secret)
+    return name
+
+
+def _build_digest(pod_name: str) -> str:
+    """The digest Kaniko reported (--digest-file=/dev/termination-log)."""
+    pod = core_v1.read_namespaced_pod(name=pod_name, namespace="shipzen-build")
+    for status in pod.status.container_statuses or []:
+        if status.name == "kaniko" and status.state and status.state.terminated:
+            digest = (status.state.terminated.message or "").strip()
+            if _DIGEST_RE.match(digest):
+                return digest
+    raise RuntimeError("The build finished but didn't report the digest of the image it pushed")
+
+
+def _crane_login(image_name: str, deployment_id: str) -> dict:
+    """crane env logged in to Artifact Registry with the worker's own identity."""
+    credentials, _ = google.auth.default()
+    credentials.refresh(google.auth.transport.requests.Request())
+    # The root filesystem is read-only, so crane can't write ~/.docker; give it
+    # a per-build config dir under the writable /tmp mount. The token goes in on
+    # stdin: as an argv entry it ended up in the error text and the worker log.
+    env = {**os.environ, "DOCKER_CONFIG": f"/tmp/crane_{deployment_id}"}
+    login = subprocess.run(
+        ["crane", "auth", "login", image_name.split("/")[0], "-u", "oauth2accesstoken", "--password-stdin"],
+        input=credentials.token, text=True, capture_output=True, env=env)
+    if login.returncode != 0:
+        shutil.rmtree(env["DOCKER_CONFIG"], ignore_errors=True)
+        raise RuntimeError(f"crane auth login failed (exit {login.returncode}): {login.stderr.strip()[:300]}")
+    return env
+
+
+def promote_image(staging_uri: str, digest: str, image_name: str, crane_env: dict) -> None:
+    """Copy staging@digest to image_name (in shipzen-builds), byte for byte."""
+    source = f"{staging_uri.split('@')[0].rsplit(':', 1)[0]}@{digest}"
+    cp = subprocess.run(["crane", "copy", source, image_name], text=True, capture_output=True, env=crane_env)
+    if cp.returncode != 0:
+        raise RuntimeError(f"Copying the built image failed (exit {cp.returncode}): {cp.stderr.strip()[:300]}")
+
+
+def bound_repo_mismatch(project_id: str, repo_url: str):
+    """The project's linked GitHub repository if repo_url is a different one, else None.
+
+    The API already refuses repositories the user can't read and checks the
+    project's binding (security finding C3); this is the worker's own check,
+    so it never fetches a GitHub App token for another repository.
+    """
+    if not project_id or not repo_url.startswith("https://github.com/"):
+        return None
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT github_repo_full_name FROM projects WHERE id = %s;", (project_id,))
+            row = cur.fetchone()
+    bound = row[0] if row else None
+    if not bound:
+        return None
+    named = repo_url.rstrip("/").removesuffix(".git").split("github.com/", 1)[1]
+    return bound if named.lower() != bound.lower() else None
 
 
 def record_build(deployment_id: str, gcs_key: str, status: str):
@@ -275,42 +382,36 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
             logger.info(
                 f"Build {deployment_id} successful. Reading the image config...")
 
-            # Dynamic Port Detection via Crane
+            # C4: copy exactly what this build reported pushing from staging
+            # into shipzen-builds (only the platform can write there), and pin
+            # the deployment to that digest. Raises, failing the deployment, if
+            # anything doesn't check out.
+            digest = _build_digest(pod_name)
+            crane_env = _crane_login(image_name, deployment_id)
             try:
-                credentials, project = google.auth.default()
-                auth_req = google.auth.transport.requests.Request()
-                credentials.refresh(auth_req)
-                password = credentials.token
-                # Use Artifact Registry host from image name (e.g. us-central1-docker.pkg.dev)
-                registry_url = image_name.split('/')[0]
-                # The root filesystem is read-only, so crane can't write ~/.docker;
-                # give it a per-build config dir under the writable /tmp mount.
-                # The token goes in on stdin: as an argv entry it ended up in the
-                # CalledProcessError message and was printed to the worker log.
-                crane_env = {**os.environ, "DOCKER_CONFIG": f"/tmp/crane_{deployment_id}"}
-                login = subprocess.run(
-                    ["crane", "auth", "login", registry_url, "-u", "oauth2accesstoken", "--password-stdin"],
-                    input=password, text=True, capture_output=True, env=crane_env)
-                if login.returncode != 0:
-                    raise RuntimeError(f"crane auth login failed (exit {login.returncode}): {login.stderr.strip()[:300]}")
+                promote_image(staging_uri_for(image_name), digest, image_name, crane_env)
+                with get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE deployments SET image_digest = %s WHERE deployment_id = %s;",
+                                    (digest, deployment_id))
 
-                cfg = subprocess.run(["crane", "config", image_name], text=True,
-                                     capture_output=True, env=crane_env)
+                # Dynamic port detection from the image's EXPOSE (best effort).
+                try:
+                    cfg = subprocess.run(["crane", "config", f"{image_name}@{digest}"], text=True,
+                                         capture_output=True, env=crane_env)
+                    if cfg.returncode != 0:
+                        raise RuntimeError(f"crane config failed (exit {cfg.returncode}): {cfg.stderr.strip()[:300]}")
+                    exposed_ports = json.loads(cfg.stdout).get("config", {}).get("ExposedPorts", {})
+                    if exposed_ports:
+                        first_port = list(exposed_ports.keys())[0].split('/')[0]
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute("UPDATE deployments SET port = %s WHERE deployment_id = %s;",
+                                            (int(first_port), deployment_id))
+                except Exception as e:
+                    logger.warning(f"Failed to extract exposed port: {e}")
+            finally:
                 shutil.rmtree(crane_env["DOCKER_CONFIG"], ignore_errors=True)
-                if cfg.returncode != 0:
-                    raise RuntimeError(f"crane config failed (exit {cfg.returncode}): {cfg.stderr.strip()[:300]}")
-                config_json = json.loads(cfg.stdout)
-                exposed_ports = config_json.get(
-                    "config", {}).get("ExposedPorts", {})
-
-                if exposed_ports:
-                    first_port = list(exposed_ports.keys())[0].split('/')[0]
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("UPDATE deployments SET port = %s WHERE deployment_id = %s;", (int(
-                                first_port), deployment_id))
-            except Exception as e:
-                logger.warning(f"Failed to extract exposed port: {e}")
 
             record_build(deployment_id, gcs_log_key, "Success")
             state_machine.update_state(deployment_id, "Deploying")
@@ -397,12 +498,16 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
     workspace = f"/tmp/workspace_{deployment_id}"
     # HIGH-11 Fix: Initialize before try block to prevent UnboundLocalError in finally
     github_secret_name = None
+    registry_secret_name = None
     try:
         # The token never goes into a URL or a command line: git reads it from
         # GIT_CONFIG_* env vars, so it can't leak through exception messages
         # (which become last_error, visible to every project member) or end up
         # in the cloned repo's .git/config and from there in the built image.
         git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        bound = bound_repo_mismatch(deployment.get("project_id") if deployment else data.get("project_id"), repo_url)
+        if bound:
+            raise RepoConfigError(f"This project deploys {bound}; it can't build {repo_url}.")
         if repo_url.startswith("https://github.com/"):
             token = get_github_app_token(repo_url)
             if token:
@@ -490,9 +595,13 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         if github_secret_name:
             overrides["github_secret_name"] = github_secret_name
 
-        # The Job gets the token only through the git-token-* Secret (as a git header).
+        # The Job gets the GitHub token only through the git-token-* Secret (as a
+        # git header), and a push token for staging only through registry-*.
+        registry_secret_name = create_registry_secret(deployment_id, image_name)
+        if registry_secret_name:
+            overrides["registry_secret_name"] = registry_secret_name
         manifest = selected_builder.generate_job_manifest(
-            deployment_id, repo_url, branch, image_name, overrides)
+            deployment_id, repo_url, branch, staging_uri_for(image_name), overrides)
         job_name = manifest["metadata"]["name"]
 
         # Create Job
@@ -533,11 +642,13 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         shipzen_dlq_depth.inc()
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
-        if github_secret_name:
+        for secret_name in (github_secret_name, registry_secret_name):
+            if not secret_name:
+                continue
             try:
-                core_v1.delete_namespaced_secret(name=github_secret_name, namespace="shipzen-build")
+                core_v1.delete_namespaced_secret(name=secret_name, namespace="shipzen-build")
             except Exception as e:
-                logger.warning(f"Failed to delete GitHub token secret {github_secret_name}: {e}")
+                logger.warning(f"Failed to delete build secret {secret_name}: {e}")
 
 
 def _process_and_release(queue: QueueClient, state_machine: StateMachine, message_id: str, data: dict):
