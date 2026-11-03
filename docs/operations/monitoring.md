@@ -62,7 +62,7 @@ first message, sends updates at most every 5 minutes, repeats an unresolved
 problem every 12 hours, and sends a ✅ message when it clears. Only `warning`,
 `high` and `critical` are sent. The relay (`infra/system/alert-relay/relay.py`)
 uses the same plain words as Grafana. It is only ever called by that webhook;
-nothing polls. Setup steps are in the [runbook](runbook.md#common-tasks).
+nothing polls. Setup steps: [telegram-alerts.md](telegram-alerts.md).
 
 Scheduler, controller-manager, etcd and kube-proxy scraping is disabled, because
 GKE manages those and they would raise permanent false alarms.
