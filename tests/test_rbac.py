@@ -23,6 +23,8 @@ def test_verify_project_access(postgres_container):
         cur.execute("INSERT INTO users (id, email, role) VALUES ('random1', 'random@test.com', 'user') ON CONFLICT DO NOTHING")
         
         cur.execute("INSERT INTO projects (id, owner_id, name, namespace) VALUES ('proj_rbac', 'owner1', 'p_rbac', 'ns_rbac') ON CONFLICT DO NOTHING")
+        # Access comes from membership rows; creating a project always adds the owner's.
+        cur.execute("INSERT INTO project_members (project_id, user_id, role) VALUES ('proj_rbac', 'owner1', 'owner') ON CONFLICT DO NOTHING")
         cur.execute("INSERT INTO project_members (project_id, user_id, role) VALUES ('proj_rbac', 'member1', 'viewer') ON CONFLICT DO NOTHING")
     conn.close()
 
