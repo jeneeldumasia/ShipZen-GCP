@@ -236,3 +236,20 @@ def _check_project_access(project_id: str, current_user: User, required_roles: t
                         status_code=403,
                         detail=f"Your role on this project ('{member_role}') is read-only")
                 return project
+
+
+def assert_project_owner(project_id: str, current_user: User, detail: str) -> None:
+    """Raise 403 with `detail` unless the user owns the project (admins always pass).
+
+    For actions only an owner may take (deleting the project, managing its
+    members), on top of verify_project_access.
+    """
+    if current_user.is_admin:
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT role FROM project_members WHERE project_id = %s AND user_id = %s;",
+                        (project_id, current_user.user_id))
+            member = cur.fetchone()
+    if not member or member[0] != 'owner':
+        raise HTTPException(status_code=403, detail=detail)
