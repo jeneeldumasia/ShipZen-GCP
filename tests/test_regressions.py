@@ -181,8 +181,11 @@ def test_worker_reads_init_container_logs():
 
 
 def test_crane_token_is_not_passed_on_the_command_line():
-    src = inspect.getsource(worker.monitor_job)
-    assert "--password-stdin" in src and '"-p", password' not in src
+    # crane logs in through _crane_login (used by monitor_job) since builds were
+    # moved to staging + digest promotion.
+    src = inspect.getsource(worker._crane_login)
+    assert "--password-stdin" in src and '"-p"' not in src
+    assert "_crane_login(" in inspect.getsource(worker.monitor_job)
 
 
 # ── Controller ───────────────────────────────────────────────────────────────
