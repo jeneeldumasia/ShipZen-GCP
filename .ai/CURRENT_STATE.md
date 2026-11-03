@@ -41,7 +41,8 @@ Cloud SQL, so projects and deployments survive rebuilds.
 - The rest: `docs/roadmap.md`.
 
 ## Facts that trip people up
-- No workflow runs on commits or on a schedule (since 2026-11-03). Auto-Destroy is manual-only; tear down with **Infra Teardown** when done. Build and Push must be run by hand after a merge.
+- Only two workflows start on their own: **Build and Push** (pushes to main touching service code; skips while torn down) and **Auto-Destroy** (every 3 h). Every infrastructure-deploying workflow (deploy, apply, destroy-and-deploy, deploy-secrets, devbox) is manual-only, as are the security scan and reports (since 2026-11-03).
+- Auto-Destroy runs every 3 h and fires once the cluster is 24 h old (GitHub may delay or skip scheduled runs).
 - The devbox VM and its disk were deleted on 2026-11-03 (zero idle cost); **Deploy DevBox** recreates a fresh one.
 - `apply-only.yaml` never replaces the cluster (`ignore_changes = [datapath_provider]`); datapath changes need a rebuild.
 - Reconcile interval as deployed is 60 s (`RECONCILIATION_INTERVAL`), so "every 20 sweeps" is about 20 min.

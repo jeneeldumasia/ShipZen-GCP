@@ -157,8 +157,9 @@ GitHub Actions:
 - Artifact Registry, GCS buckets, Secret Manager, service accounts and IAM
 - Helm releases for every operator above, then ArgoCD, which takes over `infra/`
 
-The cluster is disposable: run **Infra Teardown** when you stop working (no
-workflow runs automatically), and **Deploy Platform Infra** rebuilds it. Teardown also
+The cluster is disposable: **Auto-Destroy** tears it down after 24 hours of
+uptime to protect credits (or run **Infra Teardown** when you're done), and
+**Deploy Platform Infra**, which only ever runs by hand, rebuilds it. Teardown also
 deletes the disks the cluster leaves behind (`scripts/cleanup-orphaned-disks.sh`).
 See [operations/runbook.md](operations/runbook.md).
 
