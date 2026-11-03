@@ -9,10 +9,10 @@ rarely need `kubectl`. First-time setup is in [setup.md](setup.md).
 |---|---|---|
 | **Deploy Platform Infra** (`deploy.yaml`) | The cluster doesn't exist (after a teardown) | Terraform plan + apply for everything, pushes secrets, waits for the load balancer, points Cloudflare at it. 15–25 min. If platform pods then can't pull their images (the registry was destroyed with the rest), run **Build and Push**. |
 | **Apply Infrastructure Changes** (`apply-only.yaml`) | You changed `terraform/` and the cluster exists | Adopts orphaned resources, applies, restarts api/worker/controller. |
-| **Build and Push Docker Images** (`build-push.yaml`) | You changed `api/ ui/ worker/ controller/` (manual: nothing runs on commits) | Builds the four images as `sha-<commit>`, pins them in `infra/kustomization.yaml`, waits for the rollout and un-sticks ArgoCD if needed. |
+| **Build and Push Docker Images** (`build-push.yaml`) | Automatic on pushes to `main` touching `api/ ui/ worker/ controller/ shipzen_common/`; skips (no cost) while the platform is torn down, so run it by hand after **Deploy Platform Infra** | Builds the four images as `sha-<commit>`, pins them in `infra/kustomization.yaml`, waits for the rollout and un-sticks ArgoCD if needed. |
 | **Infra Teardown** (`destroy.yaml`) | You want the cluster gone | Puts ArgoCD in teardown mode, drains load balancers, removes webhooks and finalizers, deletes GKE network leftovers and Cloudflare records, `terraform destroy`, then deletes the cluster's orphaned disks. |
 | **Destroy and Redeploy Cluster** (`destroy-and-deploy.yaml`) | A clean rebuild; type `DESTROY` to confirm | Destroy, orphaned-disk cleanup, apply, build images. |
-| **Auto-Destroy (Deadman Switch)** (`auto-destroy.yaml`) | Manual only (its schedule was removed) | If the cluster has been up 24 h, it triggers **Infra Teardown**. Nothing tears the cluster down automatically any more: run **Infra Teardown** when you're done. |
+| **Auto-Destroy (Deadman Switch)** (`auto-destroy.yaml`) | Automatic every 3 h | If the cluster has been up 24 h, it triggers **Infra Teardown** to protect credits. |
 | **Cluster Report** (`cluster-report.yaml`) | Something looks wrong | Read-only. Posts deployments, pods, ArgoCD status, gateway IP and source ranges, PVC disks and orphaned disks, and warning events as annotations on the run. |
 | **Security Check** (`security-check.yaml`) | After changing IAM or network policies, and after each rebuild | Proves the builder identity can push images and nothing else, and that tenant and build pods are network-isolated. |
 | **Container Security Scan** (`security-scan.yaml`) | Before a release, or after changing a Dockerfile | Trivy scan; fails on HIGH/CRITICAL. |
@@ -41,9 +41,10 @@ in docs.
 
 ## Common tasks
 
-**Ship a code change.** Merge to `main`, then run **Build and Push**: it builds,
-pins the new tag and waits for the rollout. No workflow runs on a commit or on a
-schedule; every run is started by hand.
+**Ship a code change.** Merge to `main`. **Build and Push** builds, pins the new
+tag and waits for the rollout. Infrastructure workflows (deploy, apply, secrets,
+devbox) never run on their own; only Build and Push (on commits) and
+Auto-Destroy (on a schedule) start automatically.
 
 **Change infrastructure.** Edit `terraform/`, merge, run **Apply Infrastructure
 Changes**. Kubernetes-only changes under `infra/` need no workflow: ArgoCD syncs
