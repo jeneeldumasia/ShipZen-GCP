@@ -25,7 +25,7 @@ flowchart LR
 - **Reliable queue**: transactional outbox → Redis Streams consumer groups, with retries and a dead-letter queue.
 - **No long-lived credentials**: Workload Identity Federation for CI, GKE Workload Identity for pods, a GitHub App for Git.
 - **Readable monitoring**: Grafana dashboards anyone can understand, generated from code, plus logs per app.
-- **Disposable infrastructure**: all Terraform; the cluster tears itself down after 10 h (costs $0 while down) and rebuilds in about 20 minutes. Infrastructure workflows only run when started by hand.
+- **Disposable infrastructure**: all Terraform; the cluster tears itself down after 9 h once you stop using it (12 h at most) (costs $0 while down) and rebuilds in about 20 minutes. Infrastructure workflows only run when started by hand.
 
 ## Stack
 

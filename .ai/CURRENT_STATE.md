@@ -5,7 +5,7 @@ _Last updated: 2026-10-31. Treat the code as authoritative if this disagrees._
 ## Status
 The platform is live and working end to end: GitHub sign-in, deploy, build logs,
 rollback, restart, env vars, monitoring. The cluster is disposable: it is torn
-down after 10 h of uptime and rebuilt with **Deploy Platform Infra**. Postgres is
+down at 9 h of uptime once idle for 60 min (12 h hard cap) and rebuilt with **Deploy Platform Infra**. Postgres is
 Cloud SQL, so projects and deployments survive rebuilds.
 
 ## Infrastructure
@@ -42,7 +42,7 @@ Cloud SQL, so projects and deployments survive rebuilds.
 
 ## Facts that trip people up
 - Only two workflows start on their own: **Build and Push** (pushes to main touching service code; skips while torn down) and **Auto-Destroy** (hourly). Every infrastructure-deploying workflow (deploy, apply, destroy-and-deploy, deploy-secrets, devbox) is manual-only, as are the security scan and reports (since 2026-11-03).
-- Auto-Destroy runs hourly and fires once the cluster is 10 h old (sessions last up to 9 h; repo variable `MAX_UPTIME_HOURS` overrides). GitHub may delay or skip scheduled runs.
+- Auto-Destroy runs hourly. At >= 9 h uptime it tears down unless `scripts/recent-activity.sh` sees activity in the last 60 min (2xx API requests, human kubectl writes, human pushes/workflow runs); at 12 h it tears down regardless. Repo variables `MAX_UPTIME_HOURS`, `IDLE_MINUTES`, `HARD_CAP_HOURS` override. Dev sessions last up to 9 h. GitHub may delay or skip scheduled runs.
 - The devbox VM and its disk were deleted on 2026-11-03 (zero idle cost); **Deploy DevBox** recreates a fresh one.
 - `apply-only.yaml` never replaces the cluster (`ignore_changes = [datapath_provider]`); datapath changes need a rebuild.
 - Reconcile interval as deployed is 60 s (`RECONCILIATION_INTERVAL`), so "every 20 sweeps" is about 20 min.

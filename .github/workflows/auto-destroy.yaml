@@ -1,12 +1,18 @@
 name: Auto-Destroy (Deadman Switch)
 
-# Runs every hour. If the GKE cluster has been alive for more than MAX_UPTIME_HOURS,
-# it triggers the destroy workflow automatically to protect credits.
+# Runs every hour and tears the cluster down to protect credits:
 #
-# Dev sessions last up to 9 h, so the limit is 10 h: a full session plus the
-# ~20 min rebuild fits, and an idle cluster is gone 10-11 h after it was created
-# (the old 24 h limit with a 3-hourly check left it billing for up to 27 h).
-# For a longer session, set the repository variable MAX_UPTIME_HOURS
+#   uptime >= MAX_UPTIME_HOURS (9)  and nobody active in the last IDLE_MINUTES (60)
+#     -> tear down
+#   uptime >= HARD_CAP_HOURS (12)   -> tear down even if active
+#     (stops a forgotten open browser tab from keeping the cluster alive forever)
+#
+# "Active" (scripts/recent-activity.sh): successful requests to the ShipZen API
+# from the UI or API, kubectl changes by a person, or pushes and workflow runs by
+# a person on GitHub. So a session that runs past 9 h isn't cut off while you're
+# using it.
+#
+# All three numbers can be overridden with repository variables of the same name
 # (Settings > Secrets and variables > Actions > Variables); no commit needed.
 
 on:
@@ -20,13 +26,18 @@ permissions:
   actions: write # Required to trigger the destroy workflow
 
 env:
-  MAX_UPTIME_HOURS: ${{ vars.MAX_UPTIME_HOURS || 10 }}
+  MAX_UPTIME_HOURS: ${{ vars.MAX_UPTIME_HOURS || 9 }}
+  HARD_CAP_HOURS: ${{ vars.HARD_CAP_HOURS || 12 }}
+  IDLE_MINUTES: ${{ vars.IDLE_MINUTES || 60 }}
   CLUSTER_NAME: shipzen-cluster
 
 jobs:
   check-and-destroy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
@@ -37,34 +48,36 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Check Cluster Uptime
+      - name: Check uptime and activity
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Check if the cluster exists at all
           CREATED_AT=$(gcloud container clusters describe "$CLUSTER_NAME" --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} --format="value(createTime)" 2>/dev/null || echo "")
-
           if [ -z "$CREATED_AT" ] || [ "$CREATED_AT" = "None" ]; then
             echo "Cluster not found. Nothing to destroy."
             echo "should_destroy=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Calculate uptime in hours
-          CREATED_EPOCH=$(date -d "$CREATED_AT" +%s)
-          NOW_EPOCH=$(date +%s)
-          UPTIME_SECONDS=$((NOW_EPOCH - CREATED_EPOCH))
+          UPTIME_SECONDS=$(( $(date +%s) - $(date -d "$CREATED_AT" +%s) ))
           UPTIME_HOURS=$(echo "scale=2; $UPTIME_SECONDS / 3600" | bc)
+          echo "uptime_hours=$UPTIME_HOURS" >> $GITHUB_OUTPUT
+          echo "Cluster created at $CREATED_AT; uptime ${UPTIME_HOURS} h (limit ${MAX_UPTIME_HOURS} h, hard cap ${HARD_CAP_HOURS} h)"
 
-          echo "Cluster created at: $CREATED_AT"
-          echo "Uptime: ${UPTIME_HOURS} hours (limit: ${MAX_UPTIME_HOURS}h)"
-
-          if [ "$UPTIME_SECONDS" -gt $((MAX_UPTIME_HOURS * 3600)) ]; then
-            echo "⚠️  Cluster has exceeded ${MAX_UPTIME_HOURS}h uptime. Triggering auto-destroy."
-            echo "should_destroy=true" >> $GITHUB_OUTPUT
-            echo "uptime_hours=$UPTIME_HOURS" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Cluster within allowed uptime. No action needed."
+          if [ "$UPTIME_SECONDS" -lt $((MAX_UPTIME_HOURS * 3600)) ]; then
+            echo "✅ Within the ${MAX_UPTIME_HOURS} h limit. No action needed."
             echo "should_destroy=false" >> $GITHUB_OUTPUT
+          elif [ "$UPTIME_SECONDS" -ge $((HARD_CAP_HOURS * 3600)) ]; then
+            echo "⚠️  Past the ${HARD_CAP_HOURS} h hard cap. Tearing down even if you're active."
+            echo "should_destroy=true" >> $GITHUB_OUTPUT
+          elif bash scripts/recent-activity.sh "${{ secrets.GCP_PROJECT_ID }}" "${{ github.repository }}" "$IDLE_MINUTES"; then
+            echo "⏸️  Past ${MAX_UPTIME_HOURS} h but you're still working; checking again next hour."
+            echo "### ⏸️ Teardown postponed: activity in the last ${IDLE_MINUTES} min (uptime ${UPTIME_HOURS} h, hard cap ${HARD_CAP_HOURS} h)" >> $GITHUB_STEP_SUMMARY
+            echo "should_destroy=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Past ${MAX_UPTIME_HOURS} h and idle for ${IDLE_MINUTES} min. Triggering teardown."
+            echo "should_destroy=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Trigger Destroy Workflow
