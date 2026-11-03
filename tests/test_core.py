@@ -194,7 +194,10 @@ def test_env_var_secret_id_uses_project_id():
         captured["secret_id"] = kwargs.get("request", {}).get("secret_id")
         return MagicMock()
 
-    with patch("api.main._sm_client") as mock_sm:
+    # put_env_var stores values through secret_store; patch the client there.
+    secret_store = put_env_var.__globals__["save_env"].__globals__
+    mock_sm = MagicMock()
+    with patch.dict(secret_store, {"_sm_client": mock_sm}):
         mock_sm.access_secret_version.side_effect = fake_access_secret_version
         mock_sm.create_secret.side_effect = fake_create_secret
         mock_sm.add_secret_version.return_value = MagicMock()
