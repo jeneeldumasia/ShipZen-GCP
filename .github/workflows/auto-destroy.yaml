@@ -2,11 +2,16 @@ name: Auto-Destroy (Deadman Switch)
 
 # Runs every hour. If the GKE cluster has been alive for more than MAX_UPTIME_HOURS,
 # it triggers the destroy workflow automatically to protect credits.
-# Adjust MAX_UPTIME_HOURS to your preference.
+#
+# Dev sessions last up to 9 h, so the limit is 10 h: a full session plus the
+# ~20 min rebuild fits, and an idle cluster is gone 10-11 h after it was created
+# (the old 24 h limit with a 3-hourly check left it billing for up to 27 h).
+# For a longer session, set the repository variable MAX_UPTIME_HOURS
+# (Settings > Secrets and variables > Actions > Variables); no commit needed.
 
 on:
   schedule:
-    - cron: '0 */3 * * *' # Every 3 hours
+    - cron: '17 * * * *' # Hourly (off the top of the hour, when GitHub queues are busiest)
   workflow_dispatch:     # Also allow manual trigger for testing
 
 permissions:
@@ -15,7 +20,7 @@ permissions:
   actions: write # Required to trigger the destroy workflow
 
 env:
-  MAX_UPTIME_HOURS: 24
+  MAX_UPTIME_HOURS: ${{ vars.MAX_UPTIME_HOURS || 10 }}
   CLUSTER_NAME: shipzen-cluster
 
 jobs:
