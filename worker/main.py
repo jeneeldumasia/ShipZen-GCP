@@ -35,7 +35,9 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger('worker')
 
 
-from shipzen_common.github_app import get_github_app_token
+from shipzen_common.github_app import get_github_app_token, git_auth_env, git_auth_header
+from shipzen_common.repo_config import parse_repo_config, RepoConfigError
+from shipzen_common.redact import redact
 
 
 try:
@@ -396,15 +398,19 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
     # HIGH-11 Fix: Initialize before try block to prevent UnboundLocalError in finally
     github_secret_name = None
     try:
-        clone_url = repo_url
+        # The token never goes into a URL or a command line: git reads it from
+        # GIT_CONFIG_* env vars, so it can't leak through exception messages
+        # (which become last_error, visible to every project member) or end up
+        # in the cloned repo's .git/config and from there in the built image.
+        git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
         if repo_url.startswith("https://github.com/"):
             token = get_github_app_token(repo_url)
             if token:
-                clone_url = repo_url.replace("https://github.com/", f"https://x-access-token:{token}@github.com/")
+                git_env.update(git_auth_env(token))
                 github_secret_name = f"git-token-{deployment_id[:8]}"
                 secret = client.V1Secret(
                     metadata=client.V1ObjectMeta(name=github_secret_name, namespace="shipzen-build"),
-                    string_data={"GITHUB_TOKEN": token}
+                    string_data={"GIT_AUTH_HEADER": git_auth_header(token)}
                 )
                 try:
                     core_v1.create_namespaced_secret(namespace="shipzen-build", body=secret)
@@ -417,7 +423,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         # Shallow clone to detect builder (worker local)
         os.makedirs(workspace, exist_ok=True)
         subprocess.run(["git", "clone", "--depth=1", "--filter=blob:none", "--sparse", "--branch",
-                       branch, clone_url, workspace], check=True, timeout=120)
+                       branch, repo_url, workspace], check=True, timeout=120, env=git_env)
         subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "shipzen.yaml", "deployhub.yml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
 
         # Check overrides
@@ -427,7 +433,8 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
             config_path = os.path.join(workspace, "deployhub.yml")
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
-                cfg = yaml.safe_load(f)
+                # Untrusted: only validated keys come back (see repo_config.py).
+                cfg = parse_repo_config(yaml.safe_load(f))
                 if cfg:
                     overrides = cfg
                     new_port = cfg.get("port")
@@ -483,7 +490,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         if github_secret_name:
             overrides["github_secret_name"] = github_secret_name
 
-        # Pass repo_url to the builder, not clone_url, so the K8s manifest doesn't get the plaintext token
+        # The Job gets the token only through the git-token-* Secret (as a git header).
         manifest = selected_builder.generate_job_manifest(
             deployment_id, repo_url, branch, image_name, overrides)
         job_name = manifest["metadata"]["name"]
@@ -508,10 +515,18 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         queue.ack_message(message_id)
 
     except Exception as e:
-        logger.error(f"Error processing {deployment_id}: {e}")
         # Persist the actual error so the UI can display it rather than the
-        # generic "Build step failed." message
-        state_machine.update_state(deployment_id, "Failed", str(e))
+        # generic "Build step failed." message. Every project member can read it,
+        # so credentials are scrubbed first.
+        if isinstance(e, RepoConfigError):
+            message = str(e)
+        elif isinstance(e, subprocess.CalledProcessError) and e.cmd and e.cmd[:2] == ["git", "clone"]:
+            message = (f"Could not clone {repo_url} (branch '{branch}'). Check that the "
+                       "repository and branch exist and that the ShipZen GitHub App can access it.")
+        else:
+            message = redact(str(e))
+        logger.error(f"Error processing {deployment_id}: {redact(str(e))}")
+        state_machine.update_state(deployment_id, "Failed", message)
         shipzen_deployment_failure_total.inc()
         shipzen_deployments_total.labels(state="Failed", project_id=deployment.get("project_id", "unknown") if deployment else "unknown").inc()
         queue.add_to_dlq(message_id, data)
