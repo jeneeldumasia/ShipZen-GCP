@@ -159,7 +159,10 @@ GitHub Actions:
 
 The cluster is disposable: **Auto-Destroy** tears it down after 24 hours of
 uptime to protect credits, and the deploy workflow rebuilds it. Teardown also
-deletes the disks the cluster leaves behind (`scripts/cleanup-orphaned-disks.sh`).
+deletes the disks the cluster leaves behind (`scripts/cleanup-orphaned-disks.sh`)
+and Cloud SQL itself, after exporting it to GCS (`scripts/db-snapshot.sh`); the
+deploy workflow restores that export before the services start. A torn-down
+platform costs nothing.
 See [operations/runbook.md](operations/runbook.md).
 
 ## Repository map
