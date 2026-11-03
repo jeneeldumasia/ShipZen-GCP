@@ -50,11 +50,11 @@ Rules live in `infra/system/shipzen-alerts.yaml`:
 | AppErrorsHigh | over 5% of an app's requests fail with 5xx for 10 min |
 
 Firing alerts appear in **Problems right now** on the Overview, translated into
-plain words, and go to **WhatsApp**:
+plain words, and go to **Telegram**:
 
 ```mermaid
 flowchart LR
-    prom[Prometheus rule fires] --> am[Alertmanager] -->|webhook POST /alert| relay[alert-relay<br/>observability ns] -->|HTTPS| cmb[CallMeBot] --> wa([Your WhatsApp])
+    prom[Prometheus rule fires] --> am[Alertmanager] -->|webhook POST /alert| relay[alert-relay<br/>observability ns] -->|HTTPS Bot API| tg([Your Telegram chat])
 ```
 
 Alertmanager groups alerts by name and namespace, waits 1 minute before the
@@ -62,7 +62,7 @@ first message, sends updates at most every 5 minutes, repeats an unresolved
 problem every 12 hours, and sends a ✅ message when it clears. Only `warning`,
 `high` and `critical` are sent. The relay (`infra/system/alert-relay/relay.py`)
 uses the same plain words as Grafana. It is only ever called by that webhook;
-nothing polls. Setup steps are in the [runbook](runbook.md#common-tasks).
+nothing polls. Setup steps: [telegram-alerts.md](telegram-alerts.md).
 
 Scheduler, controller-manager, etcd and kube-proxy scraping is disabled, because
 GKE manages those and they would raise permanent false alarms.

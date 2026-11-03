@@ -116,11 +116,14 @@ metadata server.
 rebuild. Any new platform-to-tenant or tenant-to-platform path needs a policy
 change first.
 
-## 14. Alerts go to WhatsApp through a webhook relay
+## 14. Alerts go to Telegram through a webhook relay
 **Decision.** Alertmanager's webhook calls a ~100-line relay in the cluster,
-which sends one plain-language message per alert group through CallMeBot.
-**Why.** WhatsApp is where it will be seen. There is no official free WhatsApp
-API for personal alerts (Meta's needs a verified business; Twilio is paid).
-**Cost.** It depends on a free third-party service. No message if CallMeBot is
-down, apart from Alertmanager's retries.
+which sends one plain-language message per alert group with a Telegram bot.
+Teardown workflows send their alerts to the same chat (`scripts/notify.sh`).
+**Why.** Telegram's Bot API is official, free and private to your chat.
+Alertmanager could send to Telegram natively, but only raw alert names; the
+relay keeps Grafana's plain words. (Until 2026-11 this went to WhatsApp through
+CallMeBot, a free third-party service that stopped accepting new users.)
+**Cost.** One more bot token to keep secret. If Telegram is down, Alertmanager
+retries.
 

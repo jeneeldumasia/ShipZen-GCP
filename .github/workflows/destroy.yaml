@@ -58,19 +58,15 @@ jobs:
       - name: Alert - database backup failed
         if: steps.db_backup.outcome == 'failure'
         env:
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           msg="ShipZen: database backup FAILED before teardown. Teardown continued to keep costs at zero; the next deploy will restore the previous backup (recent changes lost). $RUN_URL"
           echo "::warning title=Database backup failed::$msg"
           echo "### ⚠️ Database backup failed" >> $GITHUB_STEP_SUMMARY
           echo "Teardown continued anyway. The next deploy restores the previous backup; changes since then are lost." >> $GITHUB_STEP_SUMMARY
-          if [ -n "$WHATSAPP_PHONE" ] && [ -n "$WHATSAPP_APIKEY" ]; then
-            curl -s -o /dev/null -G https://api.callmebot.com/whatsapp.php \
-              --data-urlencode "phone=$WHATSAPP_PHONE" --data-urlencode "apikey=$WHATSAPP_APIKEY" \
-              --data-urlencode "text=$msg" || true
-          fi
+          bash scripts/notify.sh "$msg"
 
       # ── Phase 1: Drain Kubernetes resources gracefully (skip if cluster gone) ─
 
@@ -284,20 +280,16 @@ jobs:
           echo "All ShipZen GCP infrastructure has been destroyed." >> $GITHUB_STEP_SUMMARY
 
       - name: Alert - teardown failed, resources may still be billing
-        # A failed teardown (including a refused database backup) leaves the
-        # cluster running and spending credits, so say so loudly.
+        # A failed teardown leaves resources running and spending credits, so
+        # say so loudly.
         if: failure()
         env:
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           msg="ShipZen teardown FAILED - the cluster may still be running and billing. Check: $RUN_URL"
           echo "### ⚠️ Teardown failed" >> $GITHUB_STEP_SUMMARY
-          echo "Resources may still be running and billing. If the database backup failed, nothing was deleted." >> $GITHUB_STEP_SUMMARY
+          echo "Resources may still be running and billing. Rerun Infra Teardown." >> $GITHUB_STEP_SUMMARY
           echo "::error title=Teardown failed::$msg"
-          if [ -n "$WHATSAPP_PHONE" ] && [ -n "$WHATSAPP_APIKEY" ]; then
-            curl -s -o /dev/null -G https://api.callmebot.com/whatsapp.php \
-              --data-urlencode "phone=$WHATSAPP_PHONE" --data-urlencode "apikey=$WHATSAPP_APIKEY" \
-              --data-urlencode "text=$msg" || true
-          fi
+          bash scripts/notify.sh "$msg"

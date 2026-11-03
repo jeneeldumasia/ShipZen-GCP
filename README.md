@@ -49,6 +49,7 @@ flowchart LR
 | [Setup](docs/operations/setup.md) | First-time setup of GCP, GitHub and HCP Terraform |
 | [Runbook](docs/operations/runbook.md) | Workflows, common tasks, troubleshooting |
 | [Monitoring](docs/operations/monitoring.md) | Dashboards, alerts, changing them |
+| [Telegram alerts](docs/operations/telegram-alerts.md) | One-time setup so alerts reach your phone |
 | [DevBox](docs/operations/devbox.md) | Optional remote development VM |
 | [Incidents](docs/operations/incidents.md) | Problems hit so far and their fixes |
 | [Roadmap](docs/roadmap.md) | What's open |
