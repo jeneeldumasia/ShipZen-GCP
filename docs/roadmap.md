@@ -8,7 +8,7 @@ What's open, most important first. Done items are deleted, not ticked:
 2. **SSO for Grafana and ArgoCD** (GitHub OAuth) instead of admin passwords.
 
 ## Reliability
-3. **Second alert channel** (Slack or email) in case the WhatsApp relay or CallMeBot is down.
+3. **Second alert channel** (email) in case Telegram or the relay is down.
 4. **High availability** when it matters: nodes in more than one zone, Cloud SQL HA, Memorystore instead of in-cluster Redis.
 5. **Keep metrics across rebuilds.** Remote-write Prometheus somewhere outside the cluster, or accept that history resets daily.
 

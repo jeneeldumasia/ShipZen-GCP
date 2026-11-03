@@ -185,7 +185,7 @@ resource "helm_release" "kube_prometheus_stack" {
     value = "10Gi"
   }
 
-  # Alertmanager: send every warning/critical alert group to the WhatsApp relay
+  # Alertmanager: send every warning/critical alert group to the Telegram relay
   # (infra/system/alert-relay.yaml) by webhook, when it fires and when it clears.
   # The inhibit rules are the chart's defaults, repeated because this replaces
   # the whole config.
@@ -201,13 +201,13 @@ resource "helm_release" "kube_prometheus_stack" {
           repeat_interval = "12h"
           routes = [
             { receiver = "null", matchers = ["alertname =~ \"Watchdog|InfoInhibitor\""] },
-            { receiver = "whatsapp", matchers = ["severity =~ \"critical|high|warning\""] },
+            { receiver = "telegram", matchers = ["severity =~ \"critical|high|warning\""] },
           ]
         }
         receivers = [
           { name = "null" },
           {
-            name = "whatsapp"
+            name = "telegram"
             webhook_configs = [{
               url           = "http://alert-relay.observability.svc.cluster.local:8080/alert"
               send_resolved = true

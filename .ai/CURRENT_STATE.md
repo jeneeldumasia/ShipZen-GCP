@@ -22,7 +22,7 @@ wiped the database. Secret Manager values are written with `scripts/put-secret.s
 | Artifact Registry | `shipzen-platform` (platform images, `sha-<commit>`), `shipzen-builds` (user apps) |
 | ArgoCD | `shipzen-platform` app syncs `infra/`; ApplicationSet syncs `shipzen-tenants` (private repo) |
 | Gateway | Envoy Gateway; load balancer accepts Cloudflare IP ranges only |
-| Monitoring | kube-prometheus-stack + Loki; 4 generated Grafana dashboards; alerts → WhatsApp relay |
+| Monitoring | kube-prometheus-stack + Loki; 4 generated Grafana dashboards; alerts → Telegram relay |
 | Terraform state | HCP Terraform, org `jeneel-shipzen`, workspace `ShipZen-GCP`, local execution |
 | Repo | https://github.com/jeneeldumasia/ShipZen-GCP (**public**: run annotations and logs are public, so redact) |
 
@@ -34,13 +34,13 @@ wiped the database. Secret Manager values are written with `scripts/put-secret.s
 - Orphaned resources are imported before plan (`scripts/adopt-orphaned-resources.sh`).
 - Controller: orphan tenant-folder GC, `tenant.yaml` refreshed for existing projects about every 20 min, `/healthz`, `shipzen_database_up`.
 - Grafana rebuilt: dashboards generated from `observability/dashboards.py`; Loki and Envoy metrics wired; false GKE alerts removed.
-- Alerts: `infra/system/shipzen-alerts.yaml` → Alertmanager webhook → `alert-relay` → CallMeBot → WhatsApp.
+- Alerts: `infra/system/shipzen-alerts.yaml` → Alertmanager webhook → `alert-relay` → Telegram Bot API. Teardown workflows alert the same chat via `scripts/notify.sh`. (WhatsApp/CallMeBot dropped 2026-11-03: CallMeBot stopped accepting new users.)
 - Network isolation: corrected NetworkPolicies (tenants, build namespace, shipzen-system, API egress) plus Dataplane V2; probed by Security Check.
 - Teardown deletes the cluster's orphaned PVC disks (`scripts/cleanup-orphaned-disks.sh`).
 - Docs restructured under `docs/` (see README).
 
 ## Open / next
-- WhatsApp needs the user's one-time CallMeBot activation plus the `WHATSAPP_PHONE` / `WHATSAPP_APIKEY` repo secrets, then **Deploy Secrets**.
+- Telegram needs a bot (@BotFather) plus the `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` repo secrets, then **Deploy Secrets** (`docs/operations/telegram-alerts.md`). Not set up yet as of 2026-11-03. The user's work network blocks api.telegram.org; use a phone for getUpdates.
 - Network isolation is only enforced on a cluster created after PR #27. Run **Security Check** after each rebuild; it must pass.
 - The rest: `docs/roadmap.md`.
 
@@ -51,4 +51,4 @@ wiped the database. Secret Manager values are written with `scripts/put-secret.s
 - `apply-only.yaml` never replaces the cluster (`ignore_changes = [datapath_provider]`); datapath changes need a rebuild.
 - Reconcile interval as deployed is 60 s (`RECONCILIATION_INTERVAL`), so "every 20 sweeps" is about 20 min.
 - Tenant namespaces are identified by their `tenant-quota` ResourceQuota.
-- Deploy workflows only *create* the `shipzen-alerts` and `shipzen-whatsapp` secrets when missing; they never overwrite them.
+- Deploy workflows only *create* the `shipzen-alerts` and `shipzen-telegram` secrets when missing; they never overwrite them.
