@@ -20,6 +20,7 @@ class DeploymentState:
 
 
 from database import get_db_connection
+from shipzen_common.redact import redact
 
 class StateMachine:
     def __init__(self):
@@ -36,6 +37,8 @@ class StateMachine:
         Idempotent state update.
         Kubernetes state is not authoritative; PostgreSQL is.
         """
+        # last_error is shown to every project member: never store credentials.
+        error_msg = redact(error_msg)
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cur:

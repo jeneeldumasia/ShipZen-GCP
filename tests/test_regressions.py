@@ -217,7 +217,7 @@ def test_orphan_gc_removes_only_unowned_folders():
     def fake_get(url, **k):
         return MagicMock(status_code=200, json=lambda: listing[url.rstrip("/").split("/")[-1]])
     deleted = []
-    with patch.object(controller, "get_github_app_token", lambda u: "t"), \
+    with patch.object(controller, "get_github_app_token", lambda u, write=False: "t"), \
          patch.object(controller.requests, "get", fake_get), \
          patch.object(controller, "commit_manifests_to_git", lambda ns, fn, c, delete=False: deleted.append(ns)):
         controller._orphan_gc_counter = controller.ORPHAN_GC_EVERY - 1
