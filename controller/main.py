@@ -190,9 +190,10 @@ GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 
 from shipzen_common.github_app import get_github_app_token
+from shipzen_common.repo_config import valid_health_check_path, valid_port
 
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
-    token = get_github_app_token(TENANT_REPO_URL)
+    token = get_github_app_token(TENANT_REPO_URL, write=True)
     if not token:
         logger.error("Failed to get GitHub token for GitOps")
         return
@@ -264,7 +265,7 @@ def gc_orphan_tenant_folders(active_namespaces: set):
     # to existing tenant Applications before any folder is removed.
     if _orphan_gc_counter % ORPHAN_GC_EVERY != 0:
         return
-    token = get_github_app_token(TENANT_REPO_URL)
+    token = get_github_app_token(TENANT_REPO_URL, write=True)
     if not token:
         return
     parts = TENANT_REPO_URL.rstrip("/").split("/")
@@ -327,6 +328,21 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
 
 jinja_env = Environment(loader=FileSystemLoader("templates"))
+
+
+def _safe_health_path(value) -> str:
+    """Health-check path for the manifest. The value came from the tenant's repo
+    (shipzen.yaml); the worker validates it now, but rows written before that
+    weren't, so check again here and fall back to '/' rather than render it."""
+    if valid_health_check_path(value):
+        return value
+    if value not in (None, "", "/"):
+        logger.warning("Ignoring invalid health_check_path from the database; using '/'")
+    return "/"
+
+
+def _safe_port(value) -> int:
+    return value if valid_port(value) else 8080
 
 
 def _k8s_slug(value: str, max_len: int = 40) -> str:
@@ -834,9 +850,9 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         project_id=project.id,
                         project_name=_k8s_slug(project.name),
                         image_uri=db_dep.get('image_uri', 'nginx:latest'),
-                        port=db_dep.get('port', 8080),
+                        port=_safe_port(db_dep.get('port')),
                         replicas=db_dep.get('replicas', 1),
-                        health_check_path=db_dep.get('health_check_path', '/')
+                        health_check_path=_safe_health_path(db_dep.get('health_check_path'))
                     )
                     commit_manifests_to_git(project.namespace, f"{d_id}.yaml", manifests)
                     
