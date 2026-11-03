@@ -171,6 +171,7 @@ See [operations/runbook.md](operations/runbook.md).
 | Path | What |
 |---|---|
 | `api/`, `worker/`, `controller/`, `ui/` | The four services, each with its own Dockerfile |
+| `api/routers/` | API endpoints, one module per area (projects, deployments, env, webhooks, admin, audit, github); `api/main.py` only assembles the app |
 | `controller/templates/` | Jinja templates for tenant namespaces and app deployments |
 | `infra/` | Kustomize tree ArgoCD syncs: platform Deployments, gateway, routes, dashboards, alerts |
 | `terraform/` | The cluster and everything around it |
@@ -179,3 +180,21 @@ See [operations/runbook.md](operations/runbook.md).
 | `scripts/` | CI helpers, disk cleanup, Windows setup helpers |
 | `tests/` | Unit and regression tests (`pytest`) |
 | `.github/workflows/` | Every operation: deploy, destroy, build, reports ([runbook](operations/runbook.md#workflows)) |
+
+### API code layout
+
+`api/main.py` builds the FastAPI app (middleware, lifespan, `/metrics`,
+`/healthz`) and includes one router per area from `api/routers/`. Shared pieces:
+
+| Module | Holds |
+|---|---|
+| `database.py` | Connection pool and the permission checks every router uses: `verify_project_access`, `verify_project_write_access`, `assert_project_owner` |
+| `auth.py` | GitHub-token sign-in, allowlist and admin rules |
+| `platform_clients.py` | Redis, Secret Manager, GCS and Kubernetes clients, created once per process |
+| `secret_store.py` | Per-project env vars and secrets (one Secret Manager secret behind both `/env` and `/secrets`) |
+| `helpers.py` | Image naming and queuing a deploy through the outbox |
+| `background.py` | Outbox relay and cache-eviction listener |
+| `ratelimit.py`, `validation.py` | Rate limiter; input rules shared by request models |
+
+`tests/test_api_contract.py` checks every endpoint over HTTP, so internal moves
+can be verified against it.
