@@ -46,7 +46,7 @@ def test_verify_project_access(postgres_container):
     with pytest.raises(HTTPException) as exc:
         verify_project_access("proj_rbac", random_user)
     assert exc.value.status_code == 403
-    assert "Forbidden" in str(exc.value.detail)
+    assert "do not have access" in str(exc.value.detail)
 
     # 5. Non-existent project should return 404
     with pytest.raises(HTTPException) as exc:
