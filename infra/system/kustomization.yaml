@@ -32,7 +32,7 @@ resources:
   - applicationset.yaml
   - loki.yaml
 
-# Code for the WhatsApp alert relay (alert-relay.yaml). The name gets a content
+# Code for the Telegram alert relay (alert-relay.yaml). The name gets a content
 # hash, so changing relay.py rolls the Deployment.
 configMapGenerator:
   - name: alert-relay-code

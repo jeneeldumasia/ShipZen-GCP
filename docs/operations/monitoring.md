@@ -50,11 +50,11 @@ Rules live in `infra/system/shipzen-alerts.yaml`:
 | AppErrorsHigh | over 5% of an app's requests fail with 5xx for 10 min |
 
 Firing alerts appear in **Problems right now** on the Overview, translated into
-plain words, and go to **WhatsApp**:
+plain words, and go to **Telegram**:
 
 ```mermaid
 flowchart LR
-    prom[Prometheus rule fires] --> am[Alertmanager] -->|webhook POST /alert| relay[alert-relay<br/>observability ns] -->|HTTPS| cmb[CallMeBot] --> wa([Your WhatsApp])
+    prom[Prometheus rule fires] --> am[Alertmanager] -->|webhook POST /alert| relay[alert-relay<br/>observability ns] -->|HTTPS Bot API| tg([Your Telegram chat])
 ```
 
 Alertmanager groups alerts by name and namespace, waits 1 minute before the
