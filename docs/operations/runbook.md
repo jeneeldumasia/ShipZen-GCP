@@ -9,13 +9,13 @@ rarely need `kubectl`. First-time setup is in [setup.md](setup.md).
 |---|---|---|
 | **Deploy Platform Infra** (`deploy.yaml`) | The cluster doesn't exist (after a teardown) | Terraform plan + apply for everything, pushes secrets, waits for the load balancer, points Cloudflare at it. 15–25 min. If platform pods then can't pull their images (the registry was destroyed with the rest), run **Build and Push**. |
 | **Apply Infrastructure Changes** (`apply-only.yaml`) | You changed `terraform/` and the cluster exists | Adopts orphaned resources, applies, restarts api/worker/controller. |
-| **Build and Push Docker Images** (`build-push.yaml`) | Automatic on pushes touching `api/ ui/ worker/ controller/` | Builds the four images as `sha-<commit>`, pins them in `infra/kustomization.yaml`, waits for the rollout and un-sticks ArgoCD if needed. |
+| **Build and Push Docker Images** (`build-push.yaml`) | You changed `api/ ui/ worker/ controller/` (manual: nothing runs on commits) | Builds the four images as `sha-<commit>`, pins them in `infra/kustomization.yaml`, waits for the rollout and un-sticks ArgoCD if needed. |
 | **Infra Teardown** (`destroy.yaml`) | You want the cluster gone | Puts ArgoCD in teardown mode, drains load balancers, removes webhooks and finalizers, deletes GKE network leftovers and Cloudflare records, `terraform destroy`, then deletes the cluster's orphaned disks. |
 | **Destroy and Redeploy Cluster** (`destroy-and-deploy.yaml`) | A clean rebuild; type `DESTROY` to confirm | Destroy, orphaned-disk cleanup, apply, build images. |
-| **Auto-Destroy (Deadman Switch)** (`auto-destroy.yaml`) | Automatic every 3 h | If the cluster has been up 24 h, it triggers **Infra Teardown** to protect credits. |
+| **Auto-Destroy (Deadman Switch)** (`auto-destroy.yaml`) | Manual only (its schedule was removed) | If the cluster has been up 24 h, it triggers **Infra Teardown**. Nothing tears the cluster down automatically any more: run **Infra Teardown** when you're done. |
 | **Cluster Report** (`cluster-report.yaml`) | Something looks wrong | Read-only. Posts deployments, pods, ArgoCD status, gateway IP and source ranges, PVC disks and orphaned disks, and warning events as annotations on the run. |
 | **Security Check** (`security-check.yaml`) | After changing IAM or network policies, and after each rebuild | Proves the builder identity can push images and nothing else, and that tenant and build pods are network-isolated. |
-| **Container Security Scan** (`security-scan.yaml`) | Nightly, automatic | Trivy scan; fails on HIGH/CRITICAL. |
+| **Container Security Scan** (`security-scan.yaml`) | Before a release, or after changing a Dockerfile | Trivy scan; fails on HIGH/CRITICAL. |
 | **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets, or set up WhatsApp | Pushes those GitHub secrets into Secret Manager (ESO picks them up) and sends a WhatsApp test message if configured. |
 | **Deploy DevBox** (`deploy-devbox.yaml`) | You want the remote dev VM | See [devbox.md](devbox.md). |
 | **Disable Deletion Protection** | Before destroying the cluster manually | Turns off GKE deletion protection through Terraform. |
@@ -41,14 +41,15 @@ in docs.
 
 ## Common tasks
 
-**Ship a code change.** Merge to `main`. **Build and Push** builds, pins the new
-tag and waits for the rollout. Nothing else to do.
+**Ship a code change.** Merge to `main`, then run **Build and Push**: it builds,
+pins the new tag and waits for the rollout. No workflow runs on a commit or on a
+schedule; every run is started by hand.
 
 **Change infrastructure.** Edit `terraform/`, merge, run **Apply Infrastructure
 Changes**. Kubernetes-only changes under `infra/` need no workflow: ArgoCD syncs
 them within about 3 minutes.
 
-**Bring the platform back after Auto-Destroy.** Run **Deploy Platform Infra**.
+**Bring the platform back after a teardown.** Run **Deploy Platform Infra**.
 Projects, users and deployments survive because Cloud SQL is outside the cluster.
 The controller re-creates every tenant folder, and ArgoCD re-creates the apps.
 
