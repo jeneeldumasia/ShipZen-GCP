@@ -4,10 +4,11 @@ name: Auto-Destroy (Deadman Switch)
 # it triggers the destroy workflow automatically to protect credits.
 # Adjust MAX_UPTIME_HOURS to your preference.
 
+# Manual only: the 3-hourly schedule was removed so that no workflow starts on
+# its own. Run Infra Teardown when you're done; nothing tears the cluster down
+# automatically any more.
 on:
-  schedule:
-    - cron: '0 */3 * * *' # Every 3 hours
-  workflow_dispatch:     # Also allow manual trigger for testing
+  workflow_dispatch:
 
 permissions:
   id-token: write

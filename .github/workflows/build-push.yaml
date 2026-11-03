@@ -1,14 +1,7 @@
 name: Build and Push Docker Images
+# Manual only: nothing runs on commits. Also called by the manually started
+# Apply Infrastructure Changes and Destroy and Redeploy workflows.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'api/**'
-      - 'ui/**'
-      - 'controller/**'
-      - 'worker/**'
-      - '.github/workflows/build-push.yaml'
   workflow_dispatch:
   workflow_call:
 

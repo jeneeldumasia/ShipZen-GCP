@@ -41,7 +41,8 @@ Cloud SQL, so projects and deployments survive rebuilds.
 - The rest: `docs/roadmap.md`.
 
 ## Facts that trip people up
-- Auto-Destroy runs every 3 h and fires once the cluster is 24 h old (GitHub may delay or skip scheduled runs).
+- No workflow runs on commits or on a schedule (since 2026-11-03). Auto-Destroy is manual-only; tear down with **Infra Teardown** when done. Build and Push must be run by hand after a merge.
+- The devbox VM and its disk were deleted on 2026-11-03 (zero idle cost); **Deploy DevBox** recreates a fresh one.
 - `apply-only.yaml` never replaces the cluster (`ignore_changes = [datapath_provider]`); datapath changes need a rebuild.
 - Reconcile interval as deployed is 60 s (`RECONCILIATION_INTERVAL`), so "every 20 sweeps" is about 20 min.
 - Tenant namespaces are identified by their `tenant-quota` ResourceQuota.
