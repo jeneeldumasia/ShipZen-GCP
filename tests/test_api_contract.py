@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 
 import psycopg2
 import pytest
+from fastapi import HTTPException
 from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
 
@@ -178,6 +179,7 @@ def _sql(query, params=()):
         conn.close()
 
 
+REPO_IDS = {"o/r": 1, "o/other": 2}
 USERS = {"owner": "user", "editor": "user", "viewer": "user", "stranger": "user", "admin": "admin"}
 
 
@@ -199,6 +201,18 @@ def env(postgres_container):
     stubs.set("_sm_client", sm)
     stubs.set("GCP_PROJECT", "test-project")
     stubs.set("_redis_client", MagicMock())
+    # GitHub repository access (C3): by default every repository is readable;
+    # "id" comes from REPO_IDS so tests can name different repositories.
+    access = {"deny": set()}
+
+    def fake_check_repo_access(user, repo_url):
+        if not repo_url.startswith("https://github.com/"):
+            return None
+        if repo_url in access["deny"]:
+            raise HTTPException(status_code=403, detail="You don't have access")
+        full = repo_url.split("github.com/", 1)[1].removesuffix(".git")
+        return {"id": REPO_IDS.get(full, 1), "full_name": full, "private": True}
+    stubs.set("check_repo_access", fake_check_repo_access)
     app.state.limiter.enabled = False
 
     user_cls = _find("User")
@@ -206,7 +220,7 @@ def env(postgres_container):
     get_current_user = _find("get_current_user")
     app.dependency_overrides[get_current_user] = lambda: user_cls(user_id=who["id"], role=USERS[who["id"]])
 
-    state = SimpleNamespace(client=TestClient(app), sm=sm, stubs=stubs,
+    state = SimpleNamespace(client=TestClient(app), sm=sm, stubs=stubs, access=access,
                             as_user=lambda uid: who.update(id=uid))
     try:
         yield state
@@ -487,14 +501,64 @@ def test_project_webhook_signature_and_branch(env):
     assert env.client.post(url, content=b"{}", headers=push).status_code == 400  # no signature
     assert env.client.post(url, content=b"{}", headers={**push, "x-hub-signature-256": "sha256=bad"}).status_code == 401
 
-    other = json.dumps({"ref": "refs/heads/dev", "repository": {"clone_url": "https://github.com/o/r.git"}}).encode()
+    other = json.dumps({"ref": "refs/heads/dev", "repository": {"id": 1, "clone_url": "https://github.com/o/r.git"}}).encode()
     r = env.client.post(url, content=other, headers={**push, "x-hub-signature-256": _signed(secret, other)})
     assert r.status_code == 200 and "Ignored" in r.json()["message"]
 
-    main = json.dumps({"ref": "refs/heads/main", "repository": {"clone_url": "https://github.com/o/r.git"}}).encode()
+    main = json.dumps({"ref": "refs/heads/main", "repository": {"id": 1, "clone_url": "https://github.com/o/r.git"}}).encode()
     r = env.client.post(url, content=main, headers={**push, "x-hub-signature-256": _signed(secret, main)})
     assert r.status_code == 200 and r.json()["deployment_id"]
     assert _sql("SELECT state FROM deployments WHERE project_id = %s", (pid,)) == [("Queued",)]
 
     ping = {"X-GitHub-Event": "ping", "x-hub-signature-256": "sha256=whatever"}
     assert env.client.post(url, content=b"{}", headers=ping).json() == {"message": "event ignored"}
+
+
+# ── C3: repository access and project binding ────────────────────────────────
+
+def test_project_creation_refuses_a_repo_the_user_cannot_read(env):
+    env.access["deny"].add("https://github.com/someone/private")
+    env.as_user("owner")
+    r = env.client.post("/projects", json={"name": "x", "namespace": "x-ns",
+                                           "repo_url": "https://github.com/someone/private"})
+    assert r.status_code == 403
+    assert _sql("SELECT count(*) FROM projects") == [(0,)]
+
+
+def test_project_records_the_repo_it_is_bound_to(env):
+    pid = _make_project(env)
+    assert _sql("SELECT github_repo_id, github_repo_full_name FROM projects WHERE id = %s", (pid,)) == [(1, "o/r")]
+
+
+def test_deploy_refuses_a_repo_the_user_cannot_read(env):
+    pid = _make_project(env)
+    env.access["deny"].add("https://github.com/someone/private")
+    env.as_user("editor")
+    r = env.client.post(f"/projects/{pid}/deployments", json={"repo_url": "https://github.com/someone/private"})
+    assert r.status_code == 403
+    assert _sql("SELECT count(*) FROM deployments") == [(0,)]
+
+
+def test_deploy_must_use_the_projects_repo(env):
+    pid = _make_project(env)  # bound to o/r
+    env.as_user("editor")
+    r = env.client.post(f"/projects/{pid}/deployments", json={"repo_url": "https://github.com/o/other"})
+    assert r.status_code == 403 and "o/r" in r.json()["detail"]
+
+
+def test_first_github_deploy_binds_an_unbound_project(env):
+    env.as_user("owner")
+    r = env.client.post("/projects", json={"name": "Loose", "namespace": "loose-ns"})
+    pid = r.json()["id"]
+    _sql("UPDATE projects SET status = 'Ready' WHERE id = %s", (pid,))
+    assert env.client.post(f"/projects/{pid}/deployments", json={"repo_url": "https://github.com/o/other"}).status_code == 202
+    assert _sql("SELECT github_repo_id FROM projects WHERE id = %s", (pid,)) == [(2,)]
+
+
+def test_project_webhook_ignores_pushes_from_another_repo(env):
+    pid = _make_project(env)  # bound to repo id 1
+    (secret,) = _sql("SELECT webhook_secret FROM projects WHERE id = %s", (pid,))[0]
+    body = json.dumps({"ref": "refs/heads/main", "repository": {"id": 99, "clone_url": "https://github.com/o/r.git"}}).encode()
+    r = env.client.post(f"/webhooks/github/{pid}", content=body,
+                        headers={"X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)})
+    assert r.status_code == 403

@@ -190,7 +190,7 @@ GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 
 from shipzen_common.github_app import get_github_app_token
-from shipzen_common.repo_config import valid_health_check_path, valid_port
+from shipzen_common.repo_config import valid_health_check_path, valid_image_digest, valid_port
 
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
     token = get_github_app_token(TENANT_REPO_URL, write=True)
@@ -339,6 +339,17 @@ def _safe_health_path(value) -> str:
     if value not in (None, "", "/"):
         logger.warning("Ignoring invalid health_check_path from the database; using '/'")
     return "/"
+
+
+def pinned_image(db_dep: dict) -> str:
+    """The image to run, pinned to its digest when the worker recorded one
+    (security finding C4): a tag can be moved to other content, a digest can't.
+    Older deployments without a digest keep their tag."""
+    image = db_dep.get('image_uri') or 'nginx:latest'
+    digest = db_dep.get('image_digest')
+    if digest and valid_image_digest(digest):
+        return f"{image}@{digest}"
+    return image
 
 
 def _safe_port(value) -> int:
@@ -821,7 +832,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                     k8s_replicas = k8s_dep.spec.replicas if k8s_dep.spec.replicas is not None else 1
                     db_replicas = db_dep.get('replicas', 1)
                     k8s_image = k8s_dep.spec.template.spec.containers[0].image if k8s_dep.spec.template.spec.containers else None
-                    if k8s_replicas != db_replicas or k8s_image != db_dep.get('image_uri'):
+                    if k8s_replicas != db_replicas or k8s_image != pinned_image(db_dep):
                         drifted = True
                 
                 # Handle deployments without a Kubernetes Deployment
@@ -849,7 +860,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         namespace=project.namespace,
                         project_id=project.id,
                         project_name=_k8s_slug(project.name),
-                        image_uri=db_dep.get('image_uri', 'nginx:latest'),
+                        image_uri=pinned_image(db_dep),
                         port=_safe_port(db_dep.get('port')),
                         replicas=db_dep.get('replicas', 1),
                         health_check_path=_safe_health_path(db_dep.get('health_check_path'))

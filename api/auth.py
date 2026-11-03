@@ -1,7 +1,7 @@
 import os
 import logging
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import asyncio
 
@@ -73,6 +73,9 @@ _github_cb_open = False
 class User:
     user_id: str
     role: str = 'user'
+    # The user's own GitHub token, used to check which repositories they can
+    # read (github_access.py). Never logged or returned (repr=False).
+    github_token: Optional[str] = field(default=None, repr=False, compare=False)
 
     @property
     def is_admin(self) -> bool:
@@ -224,7 +227,7 @@ async def get_current_user(
 
     from database import get_or_create_user
     db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"], user_info["login"])
-    user = User(user_id=user_info["id"], role=db_user["role"])
+    user = User(user_id=user_info["id"], role=db_user["role"], github_token=token)
     with _cache_lock:
         _token_cache[cache_key] = user
         _user_to_cache_keys[user.user_id].add(cache_key)

@@ -73,6 +73,8 @@ adopt google_artifact_registry_repository.shipzen_builds "projects/$P/locations/
   gcloud artifacts repositories describe shipzen-builds --location "$R" --project "$P"
 adopt google_artifact_registry_repository.platform       "projects/$P/locations/$R/repositories/shipzen-platform" \
   gcloud artifacts repositories describe shipzen-platform --location "$R" --project "$P"
+adopt google_artifact_registry_repository.shipzen_staging "projects/$P/locations/$R/repositories/shipzen-staging" \
+  gcloud artifacts repositories describe shipzen-staging --location "$R" --project "$P"
 
 # Storage
 adopt google_storage_bucket.build_logs     "$P-build-logs"   gcloud storage buckets describe "gs://$P-build-logs" --project "$P"

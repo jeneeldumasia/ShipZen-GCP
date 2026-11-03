@@ -17,7 +17,7 @@ _SHARED = ["main", "database", "metrics", "models", "config", "auth", "audit",
            "analyzer", "queue_client", "state_machine", "builder",
            # api/ modules split out of main.py
            "background", "helpers", "platform_clients", "ratelimit", "secret_store",
-           "validation", "routers"]
+           "validation", "routers", "migrate"]
 
 
 def _forget_shared_modules():
@@ -48,6 +48,15 @@ def load(component: str):
         sys.path.remove(comp_dir)
         sys.path.remove(str(ROOT))
         _forget_shared_modules()
+
+
+def apply_migrations(dsn: str):
+    """Create the schema the way the API does at startup (api/migrate.py)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("shipzen_api_migrate", ROOT / "api" / "migrate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.apply_migrations(dsn)
 
 
 def postgres_available() -> bool:

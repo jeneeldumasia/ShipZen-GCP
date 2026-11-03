@@ -110,7 +110,8 @@ def db():
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); conn.autocommit = True
     cur = conn.cursor(cursor_factory=DictCursor)
     cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-    cur.execute((ROOT / "api" / "schema.sql").read_text())
+    from _component import apply_migrations
+    apply_migrations(os.environ["DATABASE_URL"])
     cur.execute("INSERT INTO users (id,email,role) VALUES ('owner','o@x','user'),('viewer','v@x','user')")
     cur.execute("INSERT INTO projects (id,owner_id,name,namespace,status) VALUES ('p1','owner','demo','demo-ns','Ready')")
     cur.execute("INSERT INTO project_members VALUES ('p1','owner','owner'),('p1','viewer','viewer')")

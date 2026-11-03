@@ -19,9 +19,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    volumes:
-      # Apply schema automatically on first start
-      - ./api/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    # The schema is created by the API on startup (api/migrate.py).
 
   redis:
     image: redis:7-alpine

@@ -1,4 +1,7 @@
--- Phase 7: PostgreSQL Database Schema
+-- 0001 baseline: the schema as it was when numbered migrations were introduced
+-- (formerly api/schema.sql). Every statement is idempotent, so it is safe on a
+-- database that already has these tables. Don't edit applied migrations: add a
+-- new numbered file instead (see api/migrate.py).
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

@@ -38,13 +38,14 @@ async def github_webhook(request: Request, project_id: str):
         with get_connection() as conn:
             with conn.cursor(cursor_factory=DictCursor) as cur:
                 cur.execute(
-                    "SELECT webhook_secret, branch FROM projects WHERE id = %s AND deleted_at IS NULL;", (project_id,))
+                    "SELECT webhook_secret, branch, github_repo_id FROM projects WHERE id = %s AND deleted_at IS NULL;", (project_id,))
                 row = cur.fetchone()
                 if not row or not row["webhook_secret"]:
                     raise HTTPException(
                         status_code=404, detail="Webhook secret not found")
                 webhook_secret = row["webhook_secret"]
                 target_branch = row.get("branch") or "main"
+                bound_repo_id = row.get("github_repo_id")
     except HTTPException:
         raise
     except Exception as e:
@@ -76,6 +77,10 @@ async def github_webhook(request: Request, project_id: str):
     if not repo_url:
         raise HTTPException(
             status_code=400, detail="Missing repository clone_url")
+    # C3: a project bound to a repository only deploys pushes from that repository.
+    if bound_repo_id and str(payload.get("repository", {}).get("id")) != str(bound_repo_id):
+        raise HTTPException(
+            status_code=403, detail="Webhook repository does not match project's repository")
 
     deployment_id = str(uuid.uuid4())
     queued_at = str(time.time())
@@ -194,8 +199,8 @@ async def github_app_webhook(request: Request):
                 # Find all active projects that use this repo and track this branch
                 cur.execute(
                     """
-                    SELECT id as project_id, branch 
-                    FROM projects 
+                    SELECT id as project_id, branch, github_repo_id
+                    FROM projects
                     WHERE (repo_url = %s OR repo_url = %s) AND deleted_at IS NULL;
                     """,
                     (repo_url, html_url)
@@ -204,7 +209,12 @@ async def github_app_webhook(request: Request):
 
                 # Filter by branch
                 projects_to_deploy = []
+                pushed_repo_id = str(payload.get("repository", {}).get("id"))
                 for p in all_matching_projects:
+                    # C3: a bound project only follows its own repository, even
+                    # if another repository later takes over the same URL.
+                    if p.get("github_repo_id") and str(p["github_repo_id"]) != pushed_repo_id:
+                        continue
                     target_branch = p.get("branch") or "main"
                     if payload.get("ref", "") == f"refs/heads/{target_branch}":
                         projects_to_deploy.append(p)

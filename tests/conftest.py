@@ -83,13 +83,8 @@ def postgres_container():
     from testcontainers.postgres import PostgresContainer
     with PostgresContainer("mirror.gcr.io/library/postgres:15-alpine", dbname="shipzen") as postgres:
         os.environ["DATABASE_URL"] = postgres.get_connection_url().replace("+psycopg2", "")
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "api", "schema.sql")
-            with open(schema_path, "r") as f:
-                cur.execute(f.read())
-        conn.close()
+        from _component import apply_migrations
+        apply_migrations(os.environ["DATABASE_URL"])
         yield postgres
 
 
