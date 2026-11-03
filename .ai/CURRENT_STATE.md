@@ -40,7 +40,7 @@ wiped the database. Secret Manager values are written with `scripts/put-secret.s
 - Docs restructured under `docs/` (see README).
 
 ## Open / next
-- Telegram needs a bot (@BotFather) plus the `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` repo secrets, then **Deploy Secrets** (runbook). The user's work network blocks api.telegram.org; use a phone for getUpdates.
+- Telegram needs a bot (@BotFather) plus the `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` repo secrets, then **Deploy Secrets** (`docs/operations/telegram-alerts.md`). Not set up yet as of 2026-11-03. The user's work network blocks api.telegram.org; use a phone for getUpdates.
 - Network isolation is only enforced on a cluster created after PR #27. Run **Security Check** after each rebuild; it must pass.
 - The rest: `docs/roadmap.md`.
 
