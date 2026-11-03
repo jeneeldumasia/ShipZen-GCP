@@ -74,7 +74,8 @@ adopt google_artifact_registry_repository.shipzen_builds "projects/$P/locations/
 adopt google_artifact_registry_repository.platform       "projects/$P/locations/$R/repositories/shipzen-platform" \
   gcloud artifacts repositories describe shipzen-platform --location "$R" --project "$P"
 
-# Storage (the build-logs bucket has a random suffix, so a leftover one is just a new name: nothing to adopt)
+# Storage
+adopt google_storage_bucket.build_logs     "$P-build-logs"   gcloud storage buckets describe "gs://$P-build-logs" --project "$P"
 adopt google_storage_bucket.velero_backups  "$P-velero-backups" \
   gcloud storage buckets describe "gs://$P-velero-backups" --project "$P"
 
