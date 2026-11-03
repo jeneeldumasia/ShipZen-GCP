@@ -167,3 +167,14 @@ The DevBox is protected by `deletion_protection = true` in Terraform. This ensur
 
 If you intentionally want to decommission the DevBox, first set `deletion_protection = false` in `terraform-devbox/main.tf`, run `terraform apply`, and then proceed with destruction.
 
+A stopped DevBox still bills for its 50 GB disk (about $5/month), so delete it
+when you're not using it. There is no teardown workflow; this removes the VM and
+its disk (everything on it is lost; push your work first):
+
+```bash
+gcloud compute instances update shipzen-devbox --zone us-central1-a --no-deletion-protection
+gcloud compute instances delete shipzen-devbox --zone us-central1-a --delete-disks=all
+```
+
+**Deploy DevBox** creates a fresh one later.
+

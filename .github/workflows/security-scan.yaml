@@ -4,9 +4,8 @@ name: Container Security Scan (Trivy)
 # We install the Trivy binary directly from the official GitHub release rather
 # than using the trivy-action GitHub Action, eliminating the supply chain risk.
 
+# Manual only (was nightly): nothing starts on its own.
 on:
-  schedule:
-    - cron: '0 2 * * *' # Run nightly at 2 AM UTC
   workflow_dispatch:
 
 permissions:

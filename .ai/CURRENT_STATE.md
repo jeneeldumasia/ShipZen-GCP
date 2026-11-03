@@ -5,11 +5,12 @@ _Last updated: 2026-10-31. Treat the code as authoritative if this disagrees._
 ## Status
 The platform is live and working end to end: GitHub sign-in, deploy, build logs,
 rollback, restart, env vars, monitoring. The cluster is disposable: it is torn
-down after 24 h of uptime and rebuilt with **Deploy Platform Infra**. Teardown
-deletes Cloud SQL too (idle cost must be $0), after exporting it to
-`gs://<project>-shipzen-db-backups`; deploy restores it before the services start
-(`scripts/db-snapshot.sh`). Before this change, teardown silently wiped the database.
-Secret Manager values are written with `scripts/put-secret.sh` (one live version each).
+down at 9 h of uptime once idle for 60 min (12 h hard cap) and rebuilt with
+**Deploy Platform Infra**. Teardown deletes Cloud SQL too (idle cost must be $0),
+after exporting it to `gs://<project>-shipzen-db-backups`; deploy restores it before
+the services start (`scripts/db-snapshot.sh`). Before this change, teardown silently
+wiped the database. Secret Manager values are written with `scripts/put-secret.sh`
+(one live version each).
 
 ## Infrastructure
 | Resource | State |
@@ -44,7 +45,9 @@ Secret Manager values are written with `scripts/put-secret.sh` (one live version
 - The rest: `docs/roadmap.md`.
 
 ## Facts that trip people up
-- Auto-Destroy runs every 3 h and fires once the cluster is 24 h old (GitHub may delay or skip scheduled runs).
+- Only two workflows start on their own: **Build and Push** (pushes to main touching service code; skips while torn down) and **Auto-Destroy** (hourly). Every infrastructure-deploying workflow (deploy, apply, destroy-and-deploy, deploy-secrets, devbox) is manual-only, as are the security scan and reports (since 2026-11-03).
+- Auto-Destroy runs hourly. At >= 9 h uptime it tears down unless `scripts/recent-activity.sh` sees activity in the last 60 min (2xx API requests, human kubectl writes, human pushes/workflow runs); at 12 h it tears down regardless. Repo variables `MAX_UPTIME_HOURS`, `IDLE_MINUTES`, `HARD_CAP_HOURS` override. Dev sessions last up to 9 h. GitHub may delay or skip scheduled runs.
+- The devbox VM and its disk were deleted on 2026-11-03 (zero idle cost); **Deploy DevBox** recreates a fresh one.
 - `apply-only.yaml` never replaces the cluster (`ignore_changes = [datapath_provider]`); datapath changes need a rebuild.
 - Reconcile interval as deployed is 60 s (`RECONCILIATION_INTERVAL`), so "every 20 sweeps" is about 20 min.
 - Tenant namespaces are identified by their `tenant-quota` ResourceQuota.

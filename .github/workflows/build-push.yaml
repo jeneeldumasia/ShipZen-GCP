@@ -1,4 +1,9 @@
 name: Build and Push Docker Images
+# Runs automatically on service-code changes to main, and is called by Apply
+# Infrastructure Changes and Destroy and Redeploy. It only builds and pushes
+# images; it never creates infrastructure. While the platform is torn down the
+# shipzen-platform registry doesn't exist, so the run skips cleanly (and adds
+# no cost); run it by hand after Deploy Platform Infra.
 on:
   push:
     branches:
@@ -8,12 +13,42 @@ on:
       - 'ui/**'
       - 'controller/**'
       - 'worker/**'
+      - 'shipzen_common/**'
       - '.github/workflows/build-push.yaml'
   workflow_dispatch:
   workflow_call:
 
 jobs:
+  check-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Is the platform registry there?
+        id: check
+        run: |
+          if gcloud artifacts repositories describe shipzen-platform --location us-central1 \
+               --project "${{ secrets.GCP_PROJECT_ID }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Platform is torn down::Registry shipzen-platform doesn't exist, so nothing was built. Run Build and Push after Deploy Platform Infra."
+          fi
+
   build-and-push:
+    needs: check-registry
+    if: needs.check-registry.outputs.exists == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
