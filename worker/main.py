@@ -273,7 +273,7 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
 
         if job_succeeded:
             logger.info(
-                f"Build {deployment_id} successful. Checking port/ECR...")
+                f"Build {deployment_id} successful. Reading the image config...")
 
             # Dynamic Port Detection via Crane
             try:

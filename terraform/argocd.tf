@@ -37,7 +37,7 @@ resource "null_resource" "argocd_github_app" {
       GITHUB_APP_PRIVATE_KEY = var.github_app_private_key
     }
     command = <<EOT
-      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
+      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.gcp_zone} --project ${var.gcp_project}
       # Create GitHub App credentials secret for ArgoCD securely without temp files
       printf '%s' "$GITHUB_APP_PRIVATE_KEY" | kubectl create secret generic github-app-repo-creds -n argocd \
         --from-literal=type=git \
@@ -64,7 +64,7 @@ resource "null_resource" "argocd_apps" {
   }
   provisioner "local-exec" {
     command = <<EOT
-      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
+      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.gcp_zone} --project ${var.gcp_project}
       cat <<EOF | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
 kind: Application

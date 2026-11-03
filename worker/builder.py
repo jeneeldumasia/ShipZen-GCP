@@ -8,12 +8,6 @@ import logging
 from kubernetes import client
 
 
-def get_ecr_credentials():
-    # Deprecated: ECR authentication is now handled natively via IRSA
-    # attached to the shipzen-builder-sa ServiceAccount.
-    pass
-
-
 logger = logging.getLogger('builder')
 
 

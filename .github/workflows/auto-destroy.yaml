@@ -53,7 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CREATED_AT=$(gcloud container clusters describe "$CLUSTER_NAME" --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} --format="value(createTime)" 2>/dev/null || echo "")
+          CREATED_AT=$(gcloud container clusters describe "$CLUSTER_NAME" --zone us-central1-c --project ${{ secrets.GCP_PROJECT_ID }} --format="value(createTime)" 2>/dev/null || echo "")
           if [ -z "$CREATED_AT" ] || [ "$CREATED_AT" = "None" ]; then
             echo "Cluster not found. Nothing to destroy."
             echo "should_destroy=false" >> $GITHUB_OUTPUT

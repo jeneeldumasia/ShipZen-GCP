@@ -72,7 +72,7 @@ resource "null_resource" "gateway_api_crds" {
     cluster_name = google_container_cluster.primary.name
   }
   provisioner "local-exec" {
-    command = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project} && kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml"
+    command = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.gcp_zone} --project ${var.gcp_project} && kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml"
   }
   depends_on = [time_sleep.wait_for_cluster_auth]
 }
@@ -101,7 +101,7 @@ resource "null_resource" "cluster_secret_store" {
   }
   provisioner "local-exec" {
     command = <<EOT
-      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
+      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.gcp_zone} --project ${var.gcp_project}
       
       echo "Waiting for ClusterSecretStore CRD to be registered..."
       until kubectl get crd clustersecretstores.external-secrets.io >/dev/null 2>&1; do

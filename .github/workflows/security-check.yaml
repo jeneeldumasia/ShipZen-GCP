@@ -35,7 +35,7 @@ jobs:
         env:
           PROJECT: ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project "$PROJECT"
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project "$PROJECT"
 
           cat > /tmp/probe.sh <<'EOF'
           set -u
@@ -75,7 +75,7 @@ jobs:
         env:
           PROJECT: ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project "$PROJECT"
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project "$PROJECT"
           SQL_IP="$(gcloud sql instances describe shipzen-postgres --project "$PROJECT" --format='value(ipAddresses[0].ipAddress)' 2>/dev/null)"
           set +e
           RESULT="$(scripts/netpolicy-probe.sh "$SQL_IP" 2>&1)"; rc=$?
