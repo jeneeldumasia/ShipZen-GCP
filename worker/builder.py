@@ -17,6 +17,20 @@ def get_ecr_credentials():
 logger = logging.getLogger('builder')
 
 
+def git_auth_env_refs(secret_name):
+    """Env for the clone container: git sends the token as a header, read from the
+    per-build Secret. Unlike a token in the clone URL, this is never written to
+    /workspace/.git/config, so a Dockerfile's `COPY . .` can't bake it into the image."""
+    if not secret_name:
+        return [{"name": "GIT_TERMINAL_PROMPT", "value": "0"}]
+    return [
+        {"name": "GIT_TERMINAL_PROMPT", "value": "0"},
+        {"name": "GIT_CONFIG_COUNT", "value": "1"},
+        {"name": "GIT_CONFIG_KEY_0", "value": "http.https://github.com/.extraheader"},
+        {"name": "GIT_CONFIG_VALUE_0", "valueFrom": {"secretKeyRef": {"name": secret_name, "key": "GIT_AUTH_HEADER"}}},
+    ]
+
+
 class Builder(ABC):
     @abstractmethod
     def detect(self, workspace_path: str, overrides: dict = None) -> bool:
@@ -39,11 +53,8 @@ class DockerfileBuilder(Builder):
             {"name": "GIT_REPO_URL", "value": repo_url},
             {"name": "GIT_BRANCH", "value": branch},
         ]
-        if overrides.get("github_secret_name"):
-            git_clone_env.append({"name": "GITHUB_TOKEN", "valueFrom": {"secretKeyRef": {"name": overrides["github_secret_name"], "key": "GITHUB_TOKEN"}}})
-            clone_cmd = 'URL=$(echo "$GIT_REPO_URL" | sed "s|https://github.com/|https://x-access-token:${GITHUB_TOKEN}@github.com/|") && git clone --depth=1 --branch "$GIT_BRANCH" "$URL" /workspace'
-        else:
-            clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
+        git_clone_env += git_auth_env_refs(overrides.get("github_secret_name"))
+        clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
         # Safely extract base URI for cache
         base_uri = image_uri.split('@')[0]
@@ -146,11 +157,8 @@ class NixpacksBuilder(Builder):
             {"name": "GIT_REPO_URL", "value": repo_url},
             {"name": "GIT_BRANCH", "value": branch},
         ]
-        if overrides.get("github_secret_name"):
-            git_clone_env.append({"name": "GITHUB_TOKEN", "valueFrom": {"secretKeyRef": {"name": overrides["github_secret_name"], "key": "GITHUB_TOKEN"}}})
-            clone_cmd = 'URL=$(echo "$GIT_REPO_URL" | sed "s|https://github.com/|https://x-access-token:${GITHUB_TOKEN}@github.com/|") && git clone --depth=1 --branch "$GIT_BRANCH" "$URL" /workspace'
-        else:
-            clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
+        git_clone_env += git_auth_env_refs(overrides.get("github_secret_name"))
+        clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
         setup_script = f"""
 set -e
