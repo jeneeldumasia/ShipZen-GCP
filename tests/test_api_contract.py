@@ -23,7 +23,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
 
 from _component import ROOT, load
-from tests.test_core import is_docker_running, postgres_container  # noqa: F401 (fixture)
+from _docker import is_docker_running
 
 api = load("api")
 app = api.app
@@ -182,7 +182,7 @@ USERS = {"owner": "user", "editor": "user", "viewer": "user", "stranger": "user"
 
 
 @pytest.fixture
-def env(postgres_container):  # noqa: F811
+def env(postgres_container):
     if not is_docker_running():
         pytest.skip("Docker daemon is not running")
     _sql("ALTER TABLE audit_logs DISABLE TRIGGER trg_audit_logs_append_only;")
