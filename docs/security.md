@@ -40,7 +40,7 @@ under [Known gaps](#known-gaps), not under controls.
   - tenants and build Jobs can reach DNS, their own pods and the public internet only, never other tenants, `shipzen-system`, monitoring, nodes, Cloud SQL or the metadata server;
   - `shipzen-system` accepts connections only from itself, the gateway and monitoring;
   - the API may only open DNS, Postgres, Redis, the metadata server and HTTPS.
-- Container images are scanned nightly by Trivy (**Container Security Scan**, fails on HIGH/CRITICAL).
+- Container images are scanned by Trivy on demand (**Container Security Scan**, run manually; fails on HIGH/CRITICAL).
 
 ## How to check
 

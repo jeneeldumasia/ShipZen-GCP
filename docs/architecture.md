@@ -157,12 +157,13 @@ GitHub Actions:
 - Artifact Registry, GCS buckets, Secret Manager, service accounts and IAM
 - Helm releases for every operator above, then ArgoCD, which takes over `infra/`
 
-The cluster is disposable: **Auto-Destroy** tears it down after 24 hours of
-uptime to protect credits, and the deploy workflow rebuilds it. Teardown also
-deletes the disks the cluster leaves behind (`scripts/cleanup-orphaned-disks.sh`)
-and Cloud SQL itself, after exporting it to GCS (`scripts/db-snapshot.sh`); the
-deploy workflow restores that export before the services start. A torn-down
-platform costs nothing.
+The cluster is disposable: **Auto-Destroy** tears it down once it is 9 hours old and
+nobody has used it for an hour (12 hours at the latest), or run **Infra Teardown**
+when you're done; **Deploy Platform Infra**, which only ever runs by hand, rebuilds it.
+Teardown also deletes the disks the cluster leaves behind
+(`scripts/cleanup-orphaned-disks.sh`) and Cloud SQL itself, after exporting it to
+GCS (`scripts/db-snapshot.sh`); the deploy workflow restores that export before the
+services start. A torn-down platform costs nothing.
 See [operations/runbook.md](operations/runbook.md).
 
 ## Repository map
