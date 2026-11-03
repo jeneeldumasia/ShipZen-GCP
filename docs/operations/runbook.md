@@ -49,15 +49,33 @@ Changes**. Kubernetes-only changes under `infra/` need no workflow: ArgoCD syncs
 them within about 3 minutes.
 
 **Bring the platform back after Auto-Destroy.** Run **Deploy Platform Infra**.
-Projects, users and deployments survive because Cloud SQL is outside the cluster.
-The controller re-creates every tenant folder, and ArgoCD re-creates the apps.
+Teardown deletes everything that bills while idle, Cloud SQL included, so a torn-down
+platform costs $0. Projects, users and deployments survive anyway: **Infra Teardown**
+first exports the database to `gs://<project>-shipzen-db-backups/latest.sql.gz` (a
+bucket outside Terraform state, inside the GCS free tier), and **Deploy Platform
+Infra** recreates Cloud SQL and imports that dump *before* the platform services
+start. Zero idle cost comes first: if the export fails (after 3 tries), teardown
+still deletes everything and sends an alert, and the next deploy restores the
+previous successful backup, so changes since then are lost. Timestamped
+copies are kept under `history/` for 30 days. Run teardown with **skip_db_backup**
+only if you mean to lose the data. Then the controller re-creates every tenant
+folder, and ArgoCD re-creates the apps.
+
+**Restore an older backup.** Copy the dump you want over `latest.sql.gz`
+(`gcloud storage cp gs://<project>-shipzen-db-backups/history/<file> gs://<project>-shipzen-db-backups/latest.sql.gz`)
+before running Deploy Platform Infra.
 
 **Get alerts on WhatsApp** (one-time):
 1. Follow the WhatsApp steps at https://www.callmebot.com/blog/free-api-whatsapp-messages/: add CallMeBot's number (listed there) as a contact and send it `I allow callmebot to send me messages`. It replies with your API key.
 2. In GitHub: repository → Settings → Secrets and variables → Actions, add `WHATSAPP_PHONE` (with country code, for example `+91…`) and `WHATSAPP_APIKEY`.
 3. Run **Deploy Secrets to GKE**. It stores both in Secret Manager (`shipzen-whatsapp`) and sends you a test message. The relay picks the change up within about 10 minutes, with no restart.
 
-To stop messages, store an empty value: `echo -n '{"phone": "", "apikey": ""}' | gcloud secrets versions add shipzen-whatsapp --data-file=-`.
+To stop messages, store an empty value: `echo -n '{"phone": "", "apikey": ""}' | bash scripts/put-secret.sh shipzen-whatsapp`.
+
+**Secrets keep one version.** Workflows write Secret Manager values through
+`scripts/put-secret.sh`, which adds a version only when the value changed and destroys
+older ones. Every non-destroyed version is billed (6 are free), so use the script
+rather than `gcloud secrets versions add` by hand.
 
 **Check for leaked disks.**
 `scripts/cleanup-orphaned-disks.sh <project>` lists them; add `--delete` to remove

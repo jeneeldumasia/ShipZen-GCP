@@ -67,6 +67,32 @@ jobs:
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
         run: bash ../scripts/ci-run.sh "Adopt orphaned resources" bash ../scripts/adopt-orphaned-resources.sh
 
+      - name: Create the database and restore the last backup
+        # Teardown exports Cloud SQL to GCS and deletes it (zero idle cost). Bring
+        # it back before the full apply, so the platform services start against
+        # the restored data and never see an empty database (the controller's
+        # orphan GC would otherwise prune every tenant folder).
+        working-directory: ./terraform
+        env:
+          TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_gcp_region: us-central1
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
+          TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
+          TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
+          TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
+        run: |
+          P="${{ secrets.GCP_PROJECT_ID }}"
+          if gcloud sql instances describe shipzen-postgres --project "$P" >/dev/null 2>&1; then
+            echo "Database instance already exists; keeping its data as is."
+          else
+            terraform apply -no-color -input=false -auto-approve \
+              -target='google_sql_database.database[0]' -target='google_sql_user.users[0]'
+            bash ../scripts/db-snapshot.sh restore "$P"
+          fi
+
       - name: Terraform Plan
         working-directory: ./terraform
         env:
@@ -128,30 +154,21 @@ jobs:
       - name: Push Secrets to GCP Secret Manager
         run: |
           # WhatsApp alert destination: placeholder only if missing (Deploy Secrets fills it).
-          gcloud secrets describe shipzen-whatsapp >/dev/null 2>&1 || {
-            gcloud secrets create shipzen-whatsapp --replication-policy="automatic"
-            echo -n '{"phone": "", "apikey": ""}' | gcloud secrets versions add shipzen-whatsapp --data-file=-
-          }
+          echo -n '{"phone": "", "apikey": ""}' | bash scripts/put-secret.sh shipzen-whatsapp --create-only
 
           echo "Pushing GitHub OAuth Secret..."
-          gcloud secrets create shipzen-github --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | gcloud secrets versions add shipzen-github --data-file=-
+          echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | bash scripts/put-secret.sh shipzen-github
 
           echo "Pushing GitHub Backend App Secret..."
-          gcloud secrets create shipzen-github-app --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | gcloud secrets versions add shipzen-github-app --data-file=-
+          echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | bash scripts/put-secret.sh shipzen-github-app
 
           echo "Pushing AUTH_SECRET..."
-          gcloud secrets create shipzen-auth-secret --replication-policy="automatic" 2>/dev/null || true
-          echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | gcloud secrets versions add shipzen-auth-secret --data-file=-
+          echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | bash scripts/put-secret.sh shipzen-auth-secret
 
           echo "Pushing Alerts Stub Secret..."
           # Create an empty placeholder only the first time. Never overwrite: once a real
           # Slack webhook / PagerDuty key is stored here, redeploys must keep it.
-          if ! gcloud secrets describe shipzen-alerts >/dev/null 2>&1; then
-            gcloud secrets create shipzen-alerts --replication-policy="automatic"
-            echo -n '{"slack-webhook-url": "", "pagerduty-routing-key": ""}' | gcloud secrets versions add shipzen-alerts --data-file=-
-          fi
+          echo -n '{"slack-webhook-url": "", "pagerduty-routing-key": ""}' | bash scripts/put-secret.sh shipzen-alerts --create-only
 
           echo "Triggering ArgoCD sync..."
           kubectl patch application shipzen-platform -n argocd -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge 2>/dev/null || true

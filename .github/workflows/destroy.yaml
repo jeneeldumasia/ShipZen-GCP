@@ -2,6 +2,12 @@ name: Infra Teardown
 
 on:
   workflow_dispatch:
+    inputs:
+      skip_db_backup:
+        description: 'Skip the database backup (data in Cloud SQL will be LOST)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -36,6 +42,35 @@ jobs:
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
+
+      # ── Phase 0: Save the database before anything is deleted ────────────────
+      # Teardown deletes the Cloud SQL instance. Export it to a GCS bucket that is
+      # outside Terraform state; Deploy Platform Infra restores it.
+      # Zero idle cost comes first: if the export still fails after its retries,
+      # teardown carries on anyway (and alerts). The next deploy then restores the
+      # previous successful backup, so only changes since then are lost.
+      - name: Back up the database to GCS
+        id: db_backup
+        if: ${{ !inputs.skip_db_backup }}
+        continue-on-error: true
+        run: bash scripts/db-snapshot.sh backup "${{ secrets.GCP_PROJECT_ID }}"
+
+      - name: Alert - database backup failed
+        if: steps.db_backup.outcome == 'failure'
+        env:
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          msg="ShipZen: database backup FAILED before teardown. Teardown continued to keep costs at zero; the next deploy will restore the previous backup (recent changes lost). $RUN_URL"
+          echo "::warning title=Database backup failed::$msg"
+          echo "### ⚠️ Database backup failed" >> $GITHUB_STEP_SUMMARY
+          echo "Teardown continued anyway. The next deploy restores the previous backup; changes since then are lost." >> $GITHUB_STEP_SUMMARY
+          if [ -n "$WHATSAPP_PHONE" ] && [ -n "$WHATSAPP_APIKEY" ]; then
+            curl -s -o /dev/null -G https://api.callmebot.com/whatsapp.php \
+              --data-urlencode "phone=$WHATSAPP_PHONE" --data-urlencode "apikey=$WHATSAPP_APIKEY" \
+              --data-urlencode "text=$msg" || true
+          fi
 
       # ── Phase 1: Drain Kubernetes resources gracefully (skip if cluster gone) ─
 
@@ -243,7 +278,26 @@ jobs:
         run: scripts/cleanup-orphaned-disks.sh --delete "${{ secrets.GCP_PROJECT_ID }}" shipzen-cluster
 
       - name: Summary
-        if: always()
+        if: success()
         run: |
           echo "### Teardown Complete 🗑️" >> $GITHUB_STEP_SUMMARY
           echo "All ShipZen GCP infrastructure has been destroyed." >> $GITHUB_STEP_SUMMARY
+
+      - name: Alert - teardown failed, resources may still be billing
+        # A failed teardown (including a refused database backup) leaves the
+        # cluster running and spending credits, so say so loudly.
+        if: failure()
+        env:
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          msg="ShipZen teardown FAILED - the cluster may still be running and billing. Check: $RUN_URL"
+          echo "### ⚠️ Teardown failed" >> $GITHUB_STEP_SUMMARY
+          echo "Resources may still be running and billing. If the database backup failed, nothing was deleted." >> $GITHUB_STEP_SUMMARY
+          echo "::error title=Teardown failed::$msg"
+          if [ -n "$WHATSAPP_PHONE" ] && [ -n "$WHATSAPP_APIKEY" ]; then
+            curl -s -o /dev/null -G https://api.callmebot.com/whatsapp.php \
+              --data-urlencode "phone=$WHATSAPP_PHONE" --data-urlencode "apikey=$WHATSAPP_APIKEY" \
+              --data-urlencode "text=$msg" || true
+          fi
