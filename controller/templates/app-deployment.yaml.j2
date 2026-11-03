@@ -8,7 +8,9 @@ metadata:
 spec:
   refreshInterval: "1h"
   secretStoreRef:
-    name: gcp-secret-manager
+    # Tenant store: its Google identity can only read shipzen-project-* secrets,
+    # and Kyverno only lets this ExternalSecret read its own project's (C6).
+    name: gcp-secret-manager-tenants
     kind: ClusterSecretStore
   target:
     name: {{ deployment_name }}-secrets-sync
@@ -45,6 +47,11 @@ spec:
         prometheus.io/port: "{{ port | default(8080) }}"
         prometheus.io/path: "/metrics"
     spec:
+      # Tenant apps run on their own node pool, sandboxed with gVisor (security
+      # finding C5), never next to the platform or builds.
+      runtimeClassName: gvisor
+      nodeSelector:
+        shipzen.jeneeldumasia.codes/node-type: tenant
       # Fix #5.4: toleration to schedule on the dedicated tenant NodePool.
       # Tenant nodes are tainted shipzen.jeneeldumasia.codes/dedicated=tenant:NoSchedule
       # so builder workloads cannot mix with tenant app pods.

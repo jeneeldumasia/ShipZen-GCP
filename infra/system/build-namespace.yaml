@@ -12,3 +12,19 @@ metadata:
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/warn: privileged
     pod-security.kubernetes.io/warn-version: latest
+---
+# Caps what builds can use at once (security finding H7): each build asks for
+# about 1-1.5 CPU and 3 GiB, so this allows ~4 concurrent builds and keeps a
+# burst of (possibly abusive) builds from starving everything else.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: build-quota
+  namespace: shipzen-build
+spec:
+  hard:
+    requests.cpu: "6"
+    requests.memory: 12Gi
+    limits.cpu: "10"
+    limits.memory: 20Gi
+    pods: "8"

@@ -312,6 +312,7 @@ def refresh_tenant_manifests(projects):
             manifests = template.render(
                 namespace=row["namespace"],
                 project_id=row["id"],
+                project_slug=_k8s_slug(row.get("name")),
                 gar_registry=GAR_REGISTRY,
                 gcp_project=GCP_PROJECT,
             )
@@ -737,6 +738,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                 manifests = template.render(
                     namespace=project.namespace,
                     project_id=project.id,
+                    project_slug=_k8s_slug(project.name),
                     gar_registry=GAR_REGISTRY,
                     gcp_project=GCP_PROJECT,
                 )

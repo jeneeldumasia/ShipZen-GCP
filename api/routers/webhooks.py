@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from audit import log_audit_event
 from database import get_connection
-from helpers import image_uri_for, queue_deployment
+from helpers import check_deploy_limits, image_uri_for, queue_deployment
 from ratelimit import limiter
 
 logger = logging.getLogger('api')
@@ -81,6 +81,7 @@ async def github_webhook(request: Request, project_id: str):
     if bound_repo_id and str(payload.get("repository", {}).get("id")) != str(bound_repo_id):
         raise HTTPException(
             status_code=403, detail="Webhook repository does not match project's repository")
+    check_deploy_limits(project_id)
 
     deployment_id = str(uuid.uuid4())
     queued_at = str(time.time())
@@ -234,6 +235,11 @@ async def github_app_webhook(request: Request):
     for row in projects_to_deploy:
         project_id = row["project_id"]
         matched_repo_url = repo_url
+        try:
+            check_deploy_limits(project_id)
+        except HTTPException as limit:
+            logger.info(f"Skipping GitHub App webhook for {project_id}: {limit.detail}")
+            continue
         branch = row.get("branch") or "main"
 
         try:

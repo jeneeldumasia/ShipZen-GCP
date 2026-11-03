@@ -1,0 +1,36 @@
+# ArgoCD project for tenant apps (security finding C1, defence in depth).
+#
+# Every folder in shipzen-tenants becomes an Application in this project. The
+# controller renders those manifests from templates, but if a value from a
+# tenant ever slipped into them unescaped again, this caps what ArgoCD will
+# apply: only the kinds a tenant namespace needs, and no cluster-wide objects
+# except the tenant's own Namespace. In particular no ClusterRole(Binding),
+# CRDs, webhooks or objects in other kinds of namespaces.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tenants
+  namespace: argocd
+spec:
+  description: ShipZen tenant namespaces (rendered by the controller)
+  sourceRepos:
+    - https://github.com/jeneeldumasia/shipzen-tenants.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - { group: "", kind: ServiceAccount }
+    - { group: "", kind: Service }
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }
+    - { group: apps, kind: Deployment }
+    - { group: policy, kind: PodDisruptionBudget }
+    - { group: autoscaling, kind: HorizontalPodAutoscaler }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
+    - { group: rbac.authorization.k8s.io, kind: Role }
+    - { group: rbac.authorization.k8s.io, kind: RoleBinding }
+    - { group: external-secrets.io, kind: ExternalSecret }
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute }

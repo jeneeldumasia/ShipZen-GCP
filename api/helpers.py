@@ -1,6 +1,7 @@
 """Small helpers shared by several routers."""
 import json
 import logging
+import os
 
 from fastapi import HTTPException
 from psycopg2.extras import DictCursor
@@ -23,6 +24,39 @@ def image_uri_for(project_id: str, deployment_id: str) -> str:
         return f"{base_registry}/shipzen-builds/{project_id}:{deployment_id}"
     # Local dev / testing fallback: no registry configured
     return f"local/shipzen-builds/{project_id}:{deployment_id}"
+
+
+# Abuse limits (security finding H7). Builds run arbitrary code on the cluster
+# for up to 30 minutes each, so cap how many one user can have going and how
+# many a project may start per month.
+MAX_ACTIVE_DEPLOYS_PER_USER = int(os.getenv("MAX_ACTIVE_DEPLOYS_PER_USER", "3"))
+MAX_DEPLOYS_PER_PROJECT_PER_MONTH = int(os.getenv("MAX_DEPLOYS_PER_PROJECT_PER_MONTH", "300"))
+
+
+def check_deploy_limits(project_id: str, user_id: str = None) -> None:
+    """429 if the project used up this month's deploys, or the user has too many in progress."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM deployments "
+                "WHERE project_id = %s AND created_at >= date_trunc('month', NOW());",
+                (project_id,))
+            if cur.fetchone()[0] >= MAX_DEPLOYS_PER_PROJECT_PER_MONTH:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"This project has used its {MAX_DEPLOYS_PER_PROJECT_PER_MONTH} deploys for this month.")
+            if user_id:
+                cur.execute(
+                    """SELECT count(*) FROM deployments d
+                       JOIN project_members pm ON pm.project_id = d.project_id
+                       WHERE pm.user_id = %s AND pm.role IN ('owner', 'editor')
+                         AND d.state IN ('Queued', 'Building', 'Deploying', 'Verifying');""",
+                    (user_id,))
+                if cur.fetchone()[0] >= MAX_ACTIVE_DEPLOYS_PER_USER:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=(f"You already have {MAX_ACTIVE_DEPLOYS_PER_USER} deployments in progress "
+                                "across your projects. Wait for one to finish."))
 
 
 def queue_deployment(cur, payload: dict) -> None:

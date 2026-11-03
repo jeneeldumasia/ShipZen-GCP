@@ -16,7 +16,7 @@ from audit import log_audit_event
 from auth import User, get_current_user
 from database import get_connection, verify_project_access, verify_project_write_access
 from github_access import check_repo_access, enforce_project_binding
-from helpers import _get_deployment_or_404, _serialize, image_uri_for, queue_deployment
+from helpers import _get_deployment_or_404, _serialize, check_deploy_limits, image_uri_for, queue_deployment
 from platform_clients import _aioredis_client, _gcs_client, _redis_client, apps_v1, get_redis
 from ratelimit import limiter
 from validation import _REPO_URL_RE
@@ -87,6 +87,7 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
     # C3: only a repository the user can read, and the one this project is bound to.
     repo = check_repo_access(current_user, body.repo_url)
     enforce_project_binding(project, repo)
+    check_deploy_limits(project_id, current_user.user_id)
 
     deployment_id = str(uuid.uuid4())
     queued_at = str(time.time())

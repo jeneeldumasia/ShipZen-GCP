@@ -10,6 +10,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
+    # Only for GKE Sandbox (sandbox_config), which the GA provider doesn't expose.
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"
@@ -30,6 +35,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.gcp_project
+  region  = var.gcp_region
+}
+
+provider "google-beta" {
   project = var.gcp_project
   region  = var.gcp_region
 }
@@ -108,11 +118,21 @@ resource "google_container_cluster" "primary" {
   # in every tenant namespace. Without it they are accepted but do nothing.
   datapath_provider = "ADVANCED_DATAPATH"
 
+  # Nodes get no public IPs (security finding H6); they reach the internet
+  # through Cloud NAT. The control plane keeps its public, IAM-authenticated
+  # endpoint: GitHub-hosted runners have no fixed IPs to allowlist. Closing it
+  # needs the DNS-based endpoint (google provider >= 6).
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = false
+    master_ipv4_cidr_block  = "172.16.0.32/28"
+  }
+
   lifecycle {
     # Switching the datapath requires a new cluster. Ignore it on an existing
     # cluster so "Apply Infrastructure Changes" never replaces a live cluster;
     # the next Deploy Platform Infra (after a teardown) creates it with Dataplane V2.
-    ignore_changes = [datapath_provider]
+    ignore_changes = [datapath_provider, private_cluster_config]
   }
 
   depends_on = [google_project_service.apis]
@@ -153,6 +173,86 @@ resource "google_container_node_pool" "platform_nodes" {
     # spot = true
   }
   depends_on = [google_project_iam_member.node_sa_roles]
+}
+
+# ── Sandboxed node pools for untrusted code (security finding C5) ────────────
+# Builds run user Dockerfiles and tenant apps run user code. Each gets its own
+# tainted pool with GKE Sandbox (gVisor), so a container or kernel escape stays
+# in a sandbox on a node that holds no platform credentials. Both scale to zero.
+
+resource "google_container_node_pool" "build_nodes" {
+  provider = google-beta
+  name     = "build-nodes"
+  location = var.gcp_zone
+  cluster  = google_container_cluster.primary.name
+
+  autoscaling {
+    min_node_count = 0
+    max_node_count = 2
+  }
+
+  node_config {
+    machine_type    = var.platform_machine_type
+    disk_size_gb    = 50
+    disk_type       = "pd-standard"
+    image_type      = "COS_CONTAINERD" # required by GKE Sandbox
+    spot            = true             # builds are short and retryable; ~60-90% cheaper
+    service_account = google_service_account.node_sa.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    labels = {
+      "shipzen.jeneeldumasia.codes/node-type" = "builder"
+    }
+    taint {
+      key    = "shipzen.jeneeldumasia.codes/dedicated"
+      value  = "builder"
+      effect = "NO_SCHEDULE"
+    }
+    sandbox_config {
+      sandbox_type = "gvisor"
+    }
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+  depends_on = [google_container_node_pool.platform_nodes]
+}
+
+resource "google_container_node_pool" "tenant_nodes" {
+  provider = google-beta
+  name     = "tenant-nodes"
+  location = var.gcp_zone
+  cluster  = google_container_cluster.primary.name
+
+  autoscaling {
+    min_node_count = 0
+    max_node_count = 3
+  }
+
+  node_config {
+    machine_type    = "e2-standard-2"
+    disk_size_gb    = 30
+    disk_type       = "pd-standard"
+    image_type      = "COS_CONTAINERD"
+    service_account = google_service_account.node_sa.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    labels = {
+      "shipzen.jeneeldumasia.codes/node-type" = "tenant"
+    }
+    taint {
+      key    = "shipzen.jeneeldumasia.codes/dedicated"
+      value  = "tenant"
+      effect = "NO_SCHEDULE"
+    }
+    sandbox_config {
+      sandbox_type = "gvisor"
+    }
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+  depends_on = [google_container_node_pool.platform_nodes]
 }
 
 resource "google_service_account" "node_sa" {
@@ -274,10 +374,23 @@ resource "google_service_account" "platform_sa" {
   display_name = "ShipZen Platform Services (API, worker, controller)"
 }
 
+data "google_project" "this" {
+  project_id = var.gcp_project
+}
+
+# Only per-project secrets (security finding C6). The API and controller
+# create, read and delete shipzen-project-* secrets and nothing else; the
+# platform's own secrets reach them through ESO as Kubernetes Secrets.
+# Creating a secret is checked against the project, hence the first clause.
 resource "google_project_iam_member" "platform_secret_manager" {
   project = var.gcp_project
   role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${google_service_account.platform_sa.email}"
+
+  condition {
+    title      = "shipzen-project secrets only"
+    expression = "resource.type == \"cloudresourcemanager.googleapis.com/Project\" || resource.name.startsWith(\"projects/${data.google_project.this.number}/secrets/shipzen-project-\")"
+  }
 }
 
 resource "google_storage_bucket_iam_member" "platform_build_logs" {

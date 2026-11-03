@@ -27,6 +27,8 @@ resources:
   - rate-limit.yaml
   - tenant-deny-ingress.yaml
   - build-network-policy.yaml
+  - tenant-appproject.yaml
+  - tenant-policies.yaml
   - applicationset.yaml
   - loki.yaml
 

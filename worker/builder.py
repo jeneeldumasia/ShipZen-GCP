@@ -10,6 +10,13 @@ from kubernetes import client
 
 logger = logging.getLogger('builder')
 
+# Pinned build tools (supply chain): bump deliberately, with the new checksum.
+NIXPACKS_VERSION = "v1.41.0"
+NIXPACKS_URL = (f"https://github.com/railwayapp/nixpacks/releases/download/{NIXPACKS_VERSION}/"
+                f"nixpacks-{NIXPACKS_VERSION}-x86_64-unknown-linux-musl.tar.gz")
+NIXPACKS_SHA256 = "0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6"
+NIXPACKS_RUNNER_IMAGE = "alpine:3.20.3"
+
 
 def harden_build_job(job: dict, overrides: dict) -> dict:
     """Lock down a build Job (security finding C4). Builds run untrusted code.
@@ -22,6 +29,14 @@ def harden_build_job(job: dict, overrides: dict) -> dict:
     """
     pod = job["spec"]["template"]["spec"]
     pod["automountServiceAccountToken"] = False
+    # Own node pool, sandboxed with gVisor (security finding C5): a kernel or
+    # container escape lands in the sandbox on a build-only node, not next to
+    # the platform. BUILD_RUNTIME_CLASS="" turns gVisor off (e.g. if a tool
+    # misbehaves under it) while keeping the separate pool.
+    pod["nodeSelector"] = {"shipzen.jeneeldumasia.codes/node-type": "builder"}
+    runtime_class = os.environ.get("BUILD_RUNTIME_CLASS", "gvisor")
+    if runtime_class:
+        pod["runtimeClassName"] = runtime_class
     secret = overrides.get("registry_secret_name")
     if secret:
         pod.setdefault("volumes", []).append({
@@ -237,9 +252,14 @@ fi
         build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
         nixpacks_args = ["build", build_path, "--out", "/workspace"]
 
+        # A pinned Nixpacks release, checked against its SHA-256 before it runs
+        # (it used to be `curl https://nixpacks.com/install.sh | bash` on every
+        # build, in an image tagged :latest).
         nixpacks_cmd = (
-            "curl -sSL https://nixpacks.com/install.sh | bash && "
-            "/usr/local/bin/nixpacks \"$@\" && "
+            f"wget -q -O /tmp/nixpacks.tgz {NIXPACKS_URL} && "
+            f"echo '{NIXPACKS_SHA256}  /tmp/nixpacks.tgz' | sha256sum -c - && "
+            "tar -xzf /tmp/nixpacks.tgz -C /tmp nixpacks && "
+            "/tmp/nixpacks \"$@\" && "
             "if [ -f /workspace/.nixpacks/build.sh ] && [ -f /workspace/.nixpacks/Dockerfile ]; then "
             "echo 'Injecting Nixpacks build-args into Dockerfile for Kaniko...' && "
             "grep -o -- '--build-arg [^ ]*' /workspace/.nixpacks/build.sh | while read -r flag arg; do "
@@ -295,7 +315,7 @@ fi
                             },
                             {
                                 "name": "nixpacks-generate",
-                                "image": "ghcr.io/railwayapp/nixpacks:latest",
+                                "image": NIXPACKS_RUNNER_IMAGE,
                                 "command": ["/bin/sh", "-c", nixpacks_cmd, "--"],
                                 "args": nixpacks_args,
                                 "resources": {
