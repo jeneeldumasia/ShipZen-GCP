@@ -48,7 +48,7 @@ resource "google_project_service" "apis" {
     "cloudresourcemanager.googleapis.com",
     "sqladmin.googleapis.com",
     "redis.googleapis.com",
-    "iamcredentials.googleapis.com", # For Workload Identity Federation
+    "iamcredentials.googleapis.com",    # For Workload Identity Federation
     "servicenetworking.googleapis.com", # For Cloud SQL private VPC connection
   ])
 
@@ -202,12 +202,11 @@ resource "google_artifact_registry_repository" "platform" {
 }
 
 # ── GCS Bucket for Build Logs ─────────────────────────────────────────────────
-resource "random_id" "bucket_suffix" {
-  byte_length = 4
-}
-
+# The name is deterministic (project-scoped, like the Velero bucket). A random
+# suffix made every lost-state redeploy create a NEW bucket and strand the old
+# one; a fixed name lets scripts/adopt-orphaned-resources.sh re-import it.
 resource "google_storage_bucket" "build_logs" {
-  name                        = "shipzen-build-logs-${random_id.bucket_suffix.hex}"
+  name                        = "${var.gcp_project}-build-logs"
   location                    = var.gcp_region
   force_destroy               = true
   uniform_bucket_level_access = true
