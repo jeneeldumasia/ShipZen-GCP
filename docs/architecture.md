@@ -152,7 +152,7 @@ All of it is Terraform in `terraform/` (state in HCP Terraform, org
 GitHub Actions:
 
 - VPC `shipzen-vpc` with Cloud NAT and private services access for Cloud SQL
-- GKE `shipzen-cluster` (regional control plane in `us-central1`, nodes in `us-central1-c`, Dataplane V2), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
+- GKE `shipzen-cluster` (zonal, in `us-central1-c`, so the control plane is in GKE's free tier; Dataplane V2), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
 - Cloud SQL `shipzen-postgres` (private IP)
 - Artifact Registry, GCS buckets, Secret Manager, service accounts and IAM
 - Helm releases for every operator above, then ArgoCD, which takes over `infra/`

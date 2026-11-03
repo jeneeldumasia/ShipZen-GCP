@@ -45,6 +45,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
@@ -59,6 +61,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
@@ -70,7 +74,7 @@ jobs:
       - name: Pre-flight - Configure kubectl and force-finalize stuck Terminating namespaces
         run: |
           gcloud container clusters get-credentials shipzen-cluster \
-            --region us-central1 \
+            --zone us-central1-c \
             --project ${{ secrets.GCP_PROJECT_ID }} 2>/dev/null || true
           # If a previous Helm install failed and left namespaces stuck in Terminating,
           # Terraform's Helm provider cannot create resources inside them.
@@ -93,6 +97,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
@@ -137,7 +143,7 @@ jobs:
       - name: Configure kubectl
         run: |
           gcloud container clusters get-credentials shipzen-cluster \
-            --region us-central1 \
+            --zone us-central1-c \
             --project ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Restart platform services to pick up their Google identity

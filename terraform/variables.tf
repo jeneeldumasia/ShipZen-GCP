@@ -3,6 +3,12 @@ variable "gcp_project" {
   type        = string
 }
 
+variable "gcp_zone" {
+  description = "Zone for the GKE cluster. Zonal (not regional) so the control plane is covered by GKE's free tier instead of costing $0.10/hour."
+  type        = string
+  default     = "us-central1-c"
+}
+
 variable "gcp_region" {
   description = "The GCP region to deploy the infrastructure into."
   type        = string

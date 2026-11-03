@@ -55,7 +55,7 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
     """
     Submit a deployment request. Only a repo URL is required.
     - The platform generates the image URI automatically from GAR_REGISTRY_URL.
-    - Scaling is handled by Karpenter/KEDA — the user does not set replicas.
+    - The platform controls replicas; the user does not set them.
     - Port defaults to 8080; override only if your app listens elsewhere.
     """
     if project["status"] not in ("Ready", "Provisioning"):

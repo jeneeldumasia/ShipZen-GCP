@@ -77,6 +77,25 @@ before running Deploy Platform Infra.
 
 To stop messages, store an empty value: `echo -n '{"bot_token": "", "chat_id": ""}' | bash scripts/put-secret.sh shipzen-telegram`.
 
+**Protect Grafana and ArgoCD with Cloudflare Access** (one-time, free). Both are
+public hostnames behind only an admin password. `terraform/access.tf` puts a
+Cloudflare login in front of them, letting through only the emails in the
+`ADMIN_EMAILS` repository secret (each gets a one-time code by email):
+1. Cloudflare dashboard → **Zero Trust**: pick a team name and the Free plan (a
+   card may be asked for; Free doesn't charge).
+2. Add the permission **Account → Access: Apps and Policies → Edit** to the API
+   token in `CLOUDFLARE_API_TOKEN` (My Profile → API Tokens → edit).
+3. Add the repository secret `CLOUDFLARE_ACCOUNT_ID` (Cloudflare dashboard → the
+   zone → Overview → API → Account ID).
+4. Next **Deploy Platform Infra** (or **Apply Infrastructure Changes**) creates the
+   Access applications. Until step 3 is done, nothing changes.
+
+**Budget alert.** A Cloud Billing budget "ShipZen monthly (before credits)" of
+₹2,000/month emails billing admins at 50%, 90% and 100%. It counts usage *before*
+credits, so it still fires while credits pay the bill. It lives on the billing
+account, not in Terraform, so teardowns don't remove it. Change it under Billing →
+Budgets & alerts. It warns; it doesn't stop spending.
+
 **Secrets keep one version.** Workflows write Secret Manager values through
 `scripts/put-secret.sh`, which adds a version only when the value changed and destroys
 older ones. Every non-destroyed version is billed (6 are free), so use the script

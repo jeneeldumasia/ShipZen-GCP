@@ -87,11 +87,13 @@ resource "google_compute_router_nat" "nat" {
 
 # ── GKE ───────────────────────────────────────────────────────────────────────
 resource "google_container_cluster" "primary" {
-  name           = "shipzen-cluster"
-  location       = var.gcp_region
-  node_locations = ["us-central1-c"] # Single zone for dev (switched from us-central1-a to avoid stockout)
-  network        = google_compute_network.vpc.name
-  subnetwork     = google_compute_subnetwork.subnet.name
+  name = "shipzen-cluster"
+  # Zonal cluster: GKE's free tier covers one zonal control plane, a regional one
+  # costs $0.10/hour. The nodes were already single-zone. Changing this forces a
+  # new cluster, so it takes effect on the next Deploy Platform Infra.
+  location   = var.gcp_zone
+  network    = google_compute_network.vpc.name
+  subnetwork = google_compute_subnetwork.subnet.name
 
   remove_default_node_pool = true
   initial_node_count       = 1
@@ -118,7 +120,7 @@ resource "google_container_cluster" "primary" {
 
 resource "google_container_node_pool" "platform_nodes" {
   name       = "platform-nodes"
-  location   = var.gcp_region
+  location   = var.gcp_zone
   cluster    = google_container_cluster.primary.name
   node_count = 1 # Single zone, 1 node total for dev
 

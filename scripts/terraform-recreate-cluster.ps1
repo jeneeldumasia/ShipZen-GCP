@@ -7,6 +7,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [string]$Region = "us-central1",
+    [string]$Zone = "us-central1-c",   # the GKE cluster is zonal
     
     [Parameter(Mandatory=$false)]
     [string]$MachineType = "e2-standard-4"
@@ -125,7 +126,7 @@ if ($LASTEXITCODE -ne 0) {
     if ($clusterExists) {
         Write-Host ""
         Write-Host "Cluster still exists. Attempting manual deletion..." -ForegroundColor Yellow
-        gcloud container clusters delete shipzen-cluster --region $Region --project $ProjectId --quiet
+        gcloud container clusters delete shipzen-cluster --zone $Zone --project $ProjectId --quiet
         
         if ($LASTEXITCODE -ne 0) {
             Write-Host "ERROR: Manual deletion also failed" -ForegroundColor Red
@@ -169,7 +170,7 @@ Write-Host "Step 4: Configure kubectl" -ForegroundColor Magenta
 Write-Host "=============================================" -ForegroundColor Magenta
 Write-Host ""
 
-gcloud container clusters get-credentials shipzen-cluster --region $Region --project $ProjectId
+gcloud container clusters get-credentials shipzen-cluster --zone $Zone --project $ProjectId
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to get cluster credentials" -ForegroundColor Red

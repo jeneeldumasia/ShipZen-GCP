@@ -15,7 +15,7 @@ set -uo pipefail
 : "${TF_VAR_gcp_project:?TF_VAR_gcp_project must be set}"
 P="$TF_VAR_gcp_project"
 R="${TF_VAR_gcp_region:-us-central1}"
-CLUSTER_LOC="$R"
+CLUSTER_LOC="${TF_VAR_gcp_zone:-us-central1-c}"   # the cluster is zonal
 USE_CLOUD_SQL="${TF_VAR_use_cloud_sql:-true}"
 
 STATE="$(terraform state list 2>/dev/null || true)"
@@ -57,9 +57,9 @@ adopt google_compute_router_nat.nat         "projects/$P/regions/$R/routers/ship
 
 # GKE
 adopt google_container_cluster.primary      "projects/$P/locations/$CLUSTER_LOC/clusters/shipzen-cluster" \
-  gcloud container clusters describe shipzen-cluster --region "$CLUSTER_LOC" --project "$P"
+  gcloud container clusters describe shipzen-cluster --zone "$CLUSTER_LOC" --project "$P"
 adopt google_container_node_pool.platform_nodes "projects/$P/locations/$CLUSTER_LOC/clusters/shipzen-cluster/nodePools/platform-nodes" \
-  gcloud container node-pools describe platform-nodes --cluster shipzen-cluster --region "$CLUSTER_LOC" --project "$P"
+  gcloud container node-pools describe platform-nodes --cluster shipzen-cluster --zone "$CLUSTER_LOC" --project "$P"
 
 # Service accounts
 adopt google_service_account.node_sa        "$(sa shipzen-node-sa)"    gcloud iam service-accounts describe "shipzen-node-sa@$P.iam.gserviceaccount.com" --project "$P"

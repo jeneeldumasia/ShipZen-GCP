@@ -74,7 +74,7 @@ jobs:
         id: check_cluster
         run: |
           if gcloud container clusters describe shipzen-cluster \
-            --region us-central1 \
+            --zone us-central1-c \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --quiet 2>/dev/null; then
             echo "cluster_exists=true" >> $GITHUB_OUTPUT
@@ -87,7 +87,7 @@ jobs:
         if: steps.check_cluster.outputs.cluster_exists == 'true'
         run: |
           gcloud container clusters get-credentials shipzen-cluster \
-            --region us-central1 \
+            --zone us-central1-c \
             --project ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Switch ArgoCD to teardown mode
@@ -260,6 +260,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}

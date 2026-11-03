@@ -56,6 +56,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
@@ -80,6 +82,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
@@ -96,6 +100,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
@@ -132,7 +138,7 @@ jobs:
           install_components: 'gke-gcloud-auth-plugin'
 
       - name: Configure kubectl
-        run: gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+        run: gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Push Secrets to GCP Secret Manager
         run: |
