@@ -66,3 +66,40 @@ def _register_replacing(self, collector):
 
 
 _prom_registry.CollectorRegistry.register = _register_replacing
+
+
+# ---------------------------------------------------------------------------
+# Throwaway Postgres and Redis for the database tests (needs Docker). Defined
+# once here so every test module shares the same containers: importing these
+# fixtures into several modules used to start one container per module, while
+# application modules kept talking to the first one.
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def postgres_container():
+    from _docker import is_docker_running
+    if not is_docker_running():
+        pytest.skip("Docker daemon is not running")
+    import psycopg2
+    from testcontainers.postgres import PostgresContainer
+    with PostgresContainer("mirror.gcr.io/library/postgres:15-alpine", dbname="shipzen") as postgres:
+        os.environ["DATABASE_URL"] = postgres.get_connection_url().replace("+psycopg2", "")
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "api", "schema.sql")
+            with open(schema_path, "r") as f:
+                cur.execute(f.read())
+        conn.close()
+        yield postgres
+
+
+@pytest.fixture(scope="session")
+def redis_container():
+    from _docker import is_docker_running
+    if not is_docker_running():
+        pytest.skip("Docker daemon is not running")
+    from testcontainers.redis import RedisContainer
+    with RedisContainer("mirror.gcr.io/library/redis:7-alpine") as redis_server:
+        os.environ["REDIS_HOST"] = redis_server.get_container_host_ip()
+        os.environ["REDIS_PORT"] = str(redis_server.get_exposed_port(6379))
+        yield redis_server

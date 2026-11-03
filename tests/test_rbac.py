@@ -4,7 +4,7 @@ from fastapi import HTTPException
 import psycopg2
 import os
 
-from tests.test_core import postgres_container, is_docker_running
+from _docker import is_docker_running
 
 # Needs a Postgres testcontainer; skip (like test_core) when Docker isn't running.
 pytestmark = pytest.mark.skipif(not is_docker_running(), reason="Docker daemon is not running")

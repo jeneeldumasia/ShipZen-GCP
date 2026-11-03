@@ -1,20 +1,10 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
 import os
 import threading
 import psycopg2
 
-import docker
-
-def is_docker_running():
-    try:
-        client = docker.from_env()
-        client.ping()
-        return True
-    except Exception:
-        return False
+from _docker import is_docker_running
 
 pytestmark = pytest.mark.skipif(not is_docker_running(), reason="Docker daemon is not running")
 
@@ -23,26 +13,7 @@ os.environ["S3_LOG_BUCKET"] = "test-bucket"
 os.environ["STREAM_NAME"] = "test_stream"
 os.environ["CONSUMER_GROUP"] = "test_group"
 
-@pytest.fixture(scope="session")
-def postgres_container():
-    with PostgresContainer("mirror.gcr.io/library/postgres:15-alpine", dbname="shipzen") as postgres:
-        os.environ["DATABASE_URL"] = postgres.get_connection_url().replace("+psycopg2", "")
-        # Initialize schema
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "api", "schema.sql")
-            with open(schema_path, "r") as f:
-                cur.execute(f.read())
-        conn.close()
-        yield postgres
-
-@pytest.fixture(scope="session")
-def redis_container():
-    with RedisContainer("mirror.gcr.io/library/redis:7-alpine") as redis_server:
-        os.environ["REDIS_HOST"] = redis_server.get_container_host_ip()
-        os.environ["REDIS_PORT"] = str(redis_server.get_exposed_port(6379))
-        yield redis_server
+# postgres_container / redis_container are session fixtures in conftest.py.
 
 @pytest.fixture(autouse=True)
 def setup_db(postgres_container):
@@ -88,8 +59,12 @@ def test_deployment_state_machine(postgres_container):
 
 # --- 2. Rollback Flow End-to-End ---
 def test_rollback_skips_build(redis_container, postgres_container):
-    from worker.main import process_message
-    
+    # Load worker/main.py with its own sibling modules (metrics, config, ...);
+    # a plain package import picked up the controller's same-named modules.
+    from _component import load
+    worker = load("worker")
+    process_message = worker.process_message
+
     # Setup test data
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     conn.autocommit = True
@@ -108,11 +83,11 @@ def test_rollback_skips_build(redis_container, postgres_container):
     
     mock_queue = MagicMock()
     
-    from worker.state_machine import StateMachine
-    sm = StateMachine()
+    sm = worker.StateMachine()
+    sm._redis = MagicMock()  # status pub/sub isn't under test
 
     # The actual regression guard: ensure subprocess.run (used for git clone and crane) is NOT called!
-    with patch("worker.main.subprocess.run") as mock_sub:
+    with patch.object(worker.subprocess, "run") as mock_sub:
         process_message(mock_queue, sm, "msg-123", payload)
         mock_sub.assert_not_called()
         
@@ -195,7 +170,8 @@ def test_env_var_secret_id_uses_project_id():
         return MagicMock()
 
     # put_env_var stores values through secret_store; patch the client there.
-    secret_store = put_env_var.__globals__["save_env"].__globals__
+    # Unwrap the rate-limit decorator to reach the router module's globals.
+    secret_store = put_env_var.__wrapped__.__globals__["save_env"].__globals__
     mock_sm = MagicMock()
     with patch.dict(secret_store, {"_sm_client": mock_sm}):
         mock_sm.access_secret_version.side_effect = fake_access_secret_version

@@ -67,7 +67,9 @@ def get_connection():
     if db_pool is None:                     # fast path — no lock once initialised
         with _db_pool_lock:
             if db_pool is None:             # double-checked locking
-                db_pool = ThreadedConnectionPool(1, DB_POOL_MAX, dsn=DATABASE_URL)
+                # Read the URL now, not only at import: a module imported before the
+                # database was known (tests, tooling) still connects to the right one.
+                db_pool = ThreadedConnectionPool(1, DB_POOL_MAX, dsn=os.environ.get("DATABASE_URL") or DATABASE_URL)
     if not _pool_slots.acquire(timeout=DB_POOL_WAIT_SECONDS):
         raise HTTPException(status_code=503, detail="Database busy, please retry",
                             headers={"Retry-After": "2"})
