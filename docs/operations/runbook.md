@@ -16,7 +16,7 @@ rarely need `kubectl`. First-time setup is in [setup.md](setup.md).
 | **Cluster Report** (`cluster-report.yaml`) | Something looks wrong | Read-only. Posts deployments, pods, ArgoCD status, gateway IP and source ranges, PVC disks and orphaned disks, and warning events as annotations on the run. |
 | **Security Check** (`security-check.yaml`) | After changing IAM or network policies, and after each rebuild | Proves the builder identity can push images and nothing else, and that tenant and build pods are network-isolated. |
 | **Container Security Scan** (`security-scan.yaml`) | Before a release, or after changing a Dockerfile | Trivy scan; fails on HIGH/CRITICAL. |
-| **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets, or set up WhatsApp | Pushes those GitHub secrets into Secret Manager (ESO picks them up) and sends a WhatsApp test message if configured. |
+| **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets, or set up Telegram alerts | Pushes those GitHub secrets into Secret Manager (ESO picks them up) and sends a Telegram test message if configured. |
 | **Deploy DevBox** (`deploy-devbox.yaml`) | You want the remote dev VM | See [devbox.md](devbox.md). |
 | **Disable Deletion Protection** | Before destroying the cluster manually | Turns off GKE deletion protection through Terraform. |
 | **Debug Cluster** (`debug.yaml`) | Ad-hoc | Dumps cluster state to the log. Prefer **Cluster Report**. |
@@ -67,12 +67,14 @@ folder, and ArgoCD re-creates the apps.
 (`gcloud storage cp gs://<project>-shipzen-db-backups/history/<file> gs://<project>-shipzen-db-backups/latest.sql.gz`)
 before running Deploy Platform Infra.
 
-**Get alerts on WhatsApp** (one-time):
-1. Follow the WhatsApp steps at https://www.callmebot.com/blog/free-api-whatsapp-messages/: add CallMeBot's number (listed there) as a contact and send it `I allow callmebot to send me messages`. It replies with your API key.
-2. In GitHub: repository → Settings → Secrets and variables → Actions, add `WHATSAPP_PHONE` (with country code, for example `+91…`) and `WHATSAPP_APIKEY`.
-3. Run **Deploy Secrets to GKE**. It stores both in Secret Manager (`shipzen-whatsapp`) and sends you a test message. The relay picks the change up within about 10 minutes, with no restart.
+**Get alerts on Telegram** (one-time, free):
+1. In Telegram, open **@BotFather**, send `/newbot`, pick a name and a username ending in `bot`. It replies with a **bot token** (`123456789:AA...`). Treat it like a password.
+2. Open your new bot and send it any message (a bot can't message you until you do).
+3. Get your **chat ID**: open `https://api.telegram.org/bot<token>/getUpdates` in a browser (on your phone if your work network blocks Telegram) and copy `"chat":{"id": ...}`. It's a number.
+4. In GitHub: repository → Settings → Secrets and variables → Actions, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+5. Run **Deploy Secrets to GKE**. It stores both in Secret Manager (`shipzen-telegram`) and sends you a test message. The in-cluster relay picks the change up within about 10 minutes, with no restart. Teardown alerts (failed backup, failed teardown) use the repository secrets directly, so they work from step 4 on, even while the platform is down.
 
-To stop messages, store an empty value: `echo -n '{"phone": "", "apikey": ""}' | bash scripts/put-secret.sh shipzen-whatsapp`.
+To stop messages, store an empty value: `echo -n '{"bot_token": "", "chat_id": ""}' | bash scripts/put-secret.sh shipzen-telegram`.
 
 **Secrets keep one version.** Workflows write Secret Manager values through
 `scripts/put-secret.sh`, which adds a version only when the value changed and destroys

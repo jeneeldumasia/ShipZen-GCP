@@ -56,6 +56,6 @@ under [Known gaps](#known-gaps), not under controls.
 
 1. **Network isolation needs a cluster built after this change.** Dataplane V2 can only be chosen when a cluster is created, so a cluster created earlier has the policies but doesn't enforce them. **Security Check** fails until the next rebuild.
 2. **Builds run as root inside the container** (`runAsUser: 0`; Kaniko needs it to unpack images). Nixpacks is installed with `curl | bash` at build time, not from a pinned image.
-3. **Alerts depend on a free third-party relay.** WhatsApp messages go through CallMeBot. If it's down, Alertmanager retries, but there is no second channel.
+3. **Alerts have a single channel.** Everything goes to one Telegram chat (official Bot API). If Telegram is down, Alertmanager retries, but there is no second channel. The bot token can post to that chat, so keep it secret.
 4. **One allowlisted user.** Fine for a personal platform; there is no self-service sign-up or invite flow.
 5. **Grafana and ArgoCD use admin passwords.** There is no SSO in front of them.

@@ -1,12 +1,12 @@
-# WhatsApp alerts. Alertmanager's webhook receiver (terraform/monitoring.tf) posts
+# Telegram alerts. Alertmanager's webhook receiver (terraform/monitoring.tf) posts
 # firing/resolved alert groups to this relay, which sends one plain-language
-# message through CallMeBot. Credentials: Secret Manager "shipzen-whatsapp"
-# ({"phone": "+91...", "apikey": "..."}), filled by the Deploy Secrets workflow
-# from the WHATSAPP_PHONE / WHATSAPP_APIKEY repository secrets.
+# message with a Telegram bot. Credentials: Secret Manager "shipzen-telegram"
+# ({"bot_token": "...", "chat_id": "..."}), filled by the Deploy Secrets workflow
+# from the TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID repository secrets.
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
-  name: shipzen-whatsapp
+  name: shipzen-telegram
   namespace: observability
 spec:
   refreshInterval: 10m
@@ -14,16 +14,16 @@ spec:
     name: gcp-secret-manager
     kind: ClusterSecretStore
   target:
-    name: shipzen-whatsapp
+    name: shipzen-telegram
   data:
-    - secretKey: phone
+    - secretKey: bot_token
       remoteRef:
-        key: shipzen-whatsapp
-        property: phone
-    - secretKey: apikey
+        key: shipzen-telegram
+        property: bot_token
+    - secretKey: chat_id
       remoteRef:
-        key: shipzen-whatsapp
-        property: apikey
+        key: shipzen-telegram
+        property: chat_id
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -83,8 +83,8 @@ spec:
           volumeMounts:
             - name: code
               mountPath: /app
-            - name: whatsapp
-              mountPath: /etc/whatsapp
+            - name: telegram
+              mountPath: /etc/telegram
               readOnly: true
             - name: alert-text
               mountPath: /etc/alert-text
@@ -93,9 +93,9 @@ spec:
         - name: code
           configMap:
             name: alert-relay-code
-        - name: whatsapp
+        - name: telegram
           secret:
-            secretName: shipzen-whatsapp
+            secretName: shipzen-telegram
             optional: true
         - name: alert-text
           configMap:
