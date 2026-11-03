@@ -562,3 +562,26 @@ def test_project_webhook_ignores_pushes_from_another_repo(env):
     r = env.client.post(f"/webhooks/github/{pid}", content=body,
                         headers={"X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)})
     assert r.status_code == 403
+
+
+# ── H7: deploy limits ────────────────────────────────────────────────────────
+
+def test_monthly_deploy_limit_per_project(env):
+    pid = _make_project(env)
+    env.stubs.set("MAX_DEPLOYS_PER_PROJECT_PER_MONTH", 1)
+    env.as_user("owner")
+    first = env.client.post(f"/projects/{pid}/deployments", json={"repo_url": "https://github.com/o/r"})
+    assert first.status_code == 202
+    _sql("UPDATE deployments SET state = 'Running'")
+    second = env.client.post(f"/projects/{pid}/deployments", json={"repo_url": "https://github.com/o/r"})
+    assert second.status_code == 429 and "this month" in second.json()["detail"]
+
+
+def test_active_deploys_per_user_limit(env):
+    p1 = _make_project(env, name="One")
+    p2 = _make_project(env, name="Two")
+    env.stubs.set("MAX_ACTIVE_DEPLOYS_PER_USER", 1)
+    env.as_user("owner")
+    assert env.client.post(f"/projects/{p1}/deployments", json={"repo_url": "https://github.com/o/r"}).status_code == 202
+    r = env.client.post(f"/projects/{p2}/deployments", json={"repo_url": "https://github.com/o/r"})
+    assert r.status_code == 429 and "in progress" in r.json()["detail"]

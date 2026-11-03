@@ -21,7 +21,8 @@ spec:
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: default
+      # Restricted project: only tenant kinds, no cluster-wide objects (C1).
+      project: tenants
       source:
         repoURL: https://github.com/jeneeldumasia/shipzen-tenants.git
         targetRevision: HEAD
