@@ -87,7 +87,19 @@ Every deployment gets its own hostname:
 ExternalDNS creates the Cloudflare record; Cloudflare terminates TLS for visitors
 and talks to the gateway with an origin certificate.
 
-**Rollback** redeploys the newest earlier Running release with a different image.
+**Blue-green releases.** Each deploy is a new release (its own Deployment, Service
+and route) next to the live one, and must pass its readiness checks before it's
+marked Running. Then the controller makes it the project's live release
+(`projects.live_deployment_id`): the stable vanity URL switches to it, and the
+previous release keeps running for `RELEASE_GRACE_MINUTES` (10) before it's scaled
+to 0. That means no gap while the route switches.
+
+**Rollback:**
+- **Within the grace period:** instant. The previous release is still running, so
+  rollback just makes it live again.
+- **After the grace period:** it redeploys the newest earlier Running release with
+  a different image, without rebuilding.
+
 **Restart** rolls the Deployment's pods. **Cancel** stops a queued or building
 deployment.
 
