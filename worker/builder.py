@@ -8,13 +8,46 @@ import logging
 from kubernetes import client
 
 
-def get_ecr_credentials():
-    # Deprecated: ECR authentication is now handled natively via IRSA
-    # attached to the shipzen-builder-sa ServiceAccount.
-    pass
-
-
 logger = logging.getLogger('builder')
+
+# Pinned build tools (supply chain): bump deliberately, with the new checksum.
+NIXPACKS_VERSION = "v1.41.0"
+NIXPACKS_URL = (f"https://github.com/railwayapp/nixpacks/releases/download/{NIXPACKS_VERSION}/"
+                f"nixpacks-{NIXPACKS_VERSION}-x86_64-unknown-linux-musl.tar.gz")
+NIXPACKS_SHA256 = "0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6"
+NIXPACKS_RUNNER_IMAGE = "alpine:3.20.3"
+
+
+def harden_build_job(job: dict, overrides: dict) -> dict:
+    """Lock down a build Job (security finding C4). Builds run untrusted code.
+
+    - No Kubernetes API token in the pod.
+    - Kaniko's only registry credential is the per-build Docker config the
+      worker creates (overrides["registry_secret_name"]): a 1-hour token that can
+      push to shipzen-staging and nothing else. The pod has no Google identity of
+      its own, and the build NetworkPolicy blocks the metadata server.
+    """
+    pod = job["spec"]["template"]["spec"]
+    pod["automountServiceAccountToken"] = False
+    # Own node pool, sandboxed with gVisor (security finding C5): a kernel or
+    # container escape lands in the sandbox on a build-only node, not next to
+    # the platform. BUILD_RUNTIME_CLASS="" turns gVisor off (e.g. if a tool
+    # misbehaves under it) while keeping the separate pool.
+    pod["nodeSelector"] = {"shipzen.jeneeldumasia.codes/node-type": "builder"}
+    runtime_class = os.environ.get("BUILD_RUNTIME_CLASS", "gvisor")
+    if runtime_class:
+        pod["runtimeClassName"] = runtime_class
+    secret = overrides.get("registry_secret_name")
+    if secret:
+        pod.setdefault("volumes", []).append({
+            "name": "registry-auth",
+            "secret": {"secretName": secret, "items": [{"key": "config.json", "path": "config.json"}]},
+        })
+        for c in pod["containers"]:
+            if c["name"] == "kaniko":
+                c.setdefault("volumeMounts", []).append(
+                    {"name": "registry-auth", "mountPath": "/kaniko/.docker", "readOnly": True})
+    return job
 
 
 def git_auth_env_refs(secret_name):
@@ -56,16 +89,11 @@ class DockerfileBuilder(Builder):
         git_clone_env += git_auth_env_refs(overrides.get("github_secret_name"))
         clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
-        # Safely extract base URI for cache
-        base_uri = image_uri.split('@')[0]
-        if ':' in base_uri.split('/')[-1]:
-            base_uri = base_uri.rsplit(':', 1)[0]
-        cache_uri = f"{base_uri}:cache"
 
         context_dir = overrides.get("buildContext", "").strip("/")
         kaniko_context = f"dir:///workspace/{context_dir}" if context_dir else "dir:///workspace"
 
-        return {
+        return harden_build_job({
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
@@ -115,11 +143,10 @@ class DockerfileBuilder(Builder):
                                     f"--context={kaniko_context}",
                                     "--dockerfile=Dockerfile",
                                     f"--destination={image_uri}",
-                                    "--cache=true",
-                                    f"--cache-repo={cache_uri}",
-                                    "--cache-copy-layers=true",
-                                    "--cache-ttl=168h",
-                                    "--compressed-caching=false"
+                                    # No shared remote layer cache: every build could write it, so one
+                                    # tenant could poison another's layers. The digest of what was
+                                    # pushed goes to the termination message for the worker (C4).
+                                    "--digest-file=/dev/termination-log"
                                 ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
@@ -141,7 +168,7 @@ class DockerfileBuilder(Builder):
                     }
                 }
             }
-        }
+        }, overrides)
 
 
 
@@ -220,19 +247,19 @@ if [ -f package.json ]; then
 fi
 """
 
-        # Safely extract base URI handling digests and ports
-        base_uri = image_uri.split('@')[0]
-        if ':' in base_uri.split('/')[-1]:
-            base_uri = base_uri.rsplit(':', 1)[0]
-        cache_uri = f"{base_uri}:cache"
 
         context_dir = overrides.get("buildContext", "").strip("/")
         build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
         nixpacks_args = ["build", build_path, "--out", "/workspace"]
 
+        # A pinned Nixpacks release, checked against its SHA-256 before it runs
+        # (it used to be `curl https://nixpacks.com/install.sh | bash` on every
+        # build, in an image tagged :latest).
         nixpacks_cmd = (
-            "curl -sSL https://nixpacks.com/install.sh | bash && "
-            "/usr/local/bin/nixpacks \"$@\" && "
+            f"wget -q -O /tmp/nixpacks.tgz {NIXPACKS_URL} && "
+            f"echo '{NIXPACKS_SHA256}  /tmp/nixpacks.tgz' | sha256sum -c - && "
+            "tar -xzf /tmp/nixpacks.tgz -C /tmp nixpacks && "
+            "/tmp/nixpacks \"$@\" && "
             "if [ -f /workspace/.nixpacks/build.sh ] && [ -f /workspace/.nixpacks/Dockerfile ]; then "
             "echo 'Injecting Nixpacks build-args into Dockerfile for Kaniko...' && "
             "grep -o -- '--build-arg [^ ]*' /workspace/.nixpacks/build.sh | while read -r flag arg; do "
@@ -243,7 +270,7 @@ fi
             "fi; done; fi"
         )
 
-        return {
+        return harden_build_job({
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
@@ -288,7 +315,7 @@ fi
                             },
                             {
                                 "name": "nixpacks-generate",
-                                "image": "ghcr.io/railwayapp/nixpacks:latest",
+                                "image": NIXPACKS_RUNNER_IMAGE,
                                 "command": ["/bin/sh", "-c", nixpacks_cmd, "--"],
                                 "args": nixpacks_args,
                                 "resources": {
@@ -311,11 +338,10 @@ fi
                                     "--context=dir:///workspace",
                                     "--dockerfile=.nixpacks/Dockerfile",
                                     f"--destination={image_uri}",
-                                    "--cache=true",
-                                    f"--cache-repo={cache_uri}",
-                                    "--cache-copy-layers=true",
-                                    "--cache-ttl=168h",
-                                    "--compressed-caching=false"
+                                    # No shared remote layer cache: every build could write it, so one
+                                    # tenant could poison another's layers. The digest of what was
+                                    # pushed goes to the termination message for the worker (C4).
+                                    "--digest-file=/dev/termination-log"
                                 ],
                                 "resources": {
                                     "requests": {"cpu": "1", "memory": "2Gi"},
@@ -337,4 +363,4 @@ fi
                     }
                 }
             }
-        }
+        }, overrides)

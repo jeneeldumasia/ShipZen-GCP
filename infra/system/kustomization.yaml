@@ -4,8 +4,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - build-namespace.yaml
-  - schema-configmap.yaml
-  - schema-job.yaml
   - servicemonitors.yaml
   # alertmanager-config.yaml routes alerts to Slack/PagerDuty. Disabled: the Slack webhook in
   # Secret Manager (shipzen-alerts / slack-webhook-url) is a placeholder, so the operator rejected
@@ -29,6 +27,8 @@ resources:
   - rate-limit.yaml
   - tenant-deny-ingress.yaml
   - build-network-policy.yaml
+  - tenant-appproject.yaml
+  - tenant-policies.yaml
   - applicationset.yaml
   - loki.yaml
 

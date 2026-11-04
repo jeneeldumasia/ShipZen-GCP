@@ -110,7 +110,8 @@ def db():
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); conn.autocommit = True
     cur = conn.cursor(cursor_factory=DictCursor)
     cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-    cur.execute((ROOT / "api" / "schema.sql").read_text())
+    from _component import apply_migrations
+    apply_migrations(os.environ["DATABASE_URL"])
     cur.execute("INSERT INTO users (id,email,role) VALUES ('owner','o@x','user'),('viewer','v@x','user')")
     cur.execute("INSERT INTO projects (id,owner_id,name,namespace,status) VALUES ('p1','owner','demo','demo-ns','Ready')")
     cur.execute("INSERT INTO project_members VALUES ('p1','owner','owner'),('p1','viewer','viewer')")
@@ -180,8 +181,11 @@ def test_worker_reads_init_container_logs():
 
 
 def test_crane_token_is_not_passed_on_the_command_line():
-    src = inspect.getsource(worker.monitor_job)
-    assert "--password-stdin" in src and '"-p", password' not in src
+    # crane logs in through _crane_login (used by monitor_job) since builds were
+    # moved to staging + digest promotion.
+    src = inspect.getsource(worker._crane_login)
+    assert "--password-stdin" in src and '"-p"' not in src
+    assert "_crane_login(" in inspect.getsource(worker.monitor_job)
 
 
 # ── Controller ───────────────────────────────────────────────────────────────

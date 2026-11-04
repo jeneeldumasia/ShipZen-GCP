@@ -7,6 +7,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [string]$Region = "us-central1",
+    [string]$Zone = "us-central1-c",   # the GKE cluster is zonal
     
     [Parameter(Mandatory=$false)]
     [string]$ClusterName = "shipzen-cluster"
@@ -26,7 +27,7 @@ Write-Host "This means Google Cloud doesn't have enough capacity in the requeste
 Write-Host ""
 
 Write-Host "Current cluster status:" -ForegroundColor Cyan
-gcloud container clusters describe $ClusterName --region=$Region --project=$ProjectId --format="table(name,location,status,currentMasterVersion,currentNodeVersion,currentNodeCount)"
+gcloud container clusters describe $ClusterName --zone=$Zone --project=$ProjectId --format="table(name,location,status,currentMasterVersion,currentNodeVersion,currentNodeCount)"
 
 Write-Host ""
 Write-Host "OPTIONS:" -ForegroundColor Cyan
@@ -57,7 +58,7 @@ switch ($choice) {
         if ($confirm -eq "YES") {
             Write-Host ""
             Write-Host "Deleting cluster..." -ForegroundColor Yellow
-            gcloud container clusters delete $ClusterName --region=$Region --project=$ProjectId --quiet
+            gcloud container clusters delete $ClusterName --zone=$Zone --project=$ProjectId --quiet
             
             Write-Host ""
             Write-Host "Cluster deleted. Now run terraform to recreate:" -ForegroundColor Green
@@ -76,16 +77,16 @@ switch ($choice) {
         Write-Host "Attempting node pool resize..." -ForegroundColor Yellow
         
         # Get the default node pool name
-        $nodePoolName = gcloud container node-pools list --cluster=$ClusterName --region=$Region --project=$ProjectId --format="value(name)" | Select-Object -First 1
+        $nodePoolName = gcloud container node-pools list --cluster=$ClusterName --zone=$Zone --project=$ProjectId --format="value(name)" | Select-Object -First 1
         
         Write-Host "Resizing node pool '$nodePoolName' to 0..." -ForegroundColor Cyan
-        gcloud container clusters resize $ClusterName --region=$Region --project=$ProjectId --node-pool=$nodePoolName --num-nodes=0 --quiet
+        gcloud container clusters resize $ClusterName --zone=$Zone --project=$ProjectId --node-pool=$nodePoolName --num-nodes=0 --quiet
         
         Write-Host "Waiting 30 seconds..." -ForegroundColor Cyan
         Start-Sleep -Seconds 30
         
         Write-Host "Resizing node pool back to 1..." -ForegroundColor Cyan
-        gcloud container clusters resize $ClusterName --region=$Region --project=$ProjectId --node-pool=$nodePoolName --num-nodes=1 --quiet
+        gcloud container clusters resize $ClusterName --zone=$Zone --project=$ProjectId --node-pool=$nodePoolName --num-nodes=1 --quiet
         
         Write-Host ""
         Write-Host "Resize complete. Check cluster status:" -ForegroundColor Green
@@ -95,7 +96,7 @@ switch ($choice) {
     "3" {
         Write-Host ""
         Write-Host "Operation cancelled. To investigate:" -ForegroundColor Yellow
-        Write-Host "  gcloud container clusters describe $ClusterName --region=$Region --project=$ProjectId" -ForegroundColor Cyan
+        Write-Host "  gcloud container clusters describe $ClusterName --zone=$Zone --project=$ProjectId" -ForegroundColor Cyan
     }
     
     default {

@@ -8,6 +8,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [string]$Region = "us-central1",
+    [string]$Zone = "us-central1-c",   # the GKE cluster is zonal
     
     [Parameter(Mandatory=$false)]
     [string]$ClusterName = "shipzen-cluster"
@@ -87,12 +88,12 @@ if ([string]::IsNullOrEmpty($ProjectId)) {
 # ============================================================================
 Write-SectionHeader "2. GKE Cluster Status"
 
-$clusterStatus = gcloud container clusters describe $ClusterName --region=$Region --format="value(status)" 2>$null
+$clusterStatus = gcloud container clusters describe $ClusterName --zone=$Zone --format="value(status)" 2>$null
 if ($clusterStatus -eq "RUNNING") {
     Write-Status "Cluster '$ClusterName' is RUNNING" -Level Success
     
     # Get cluster credentials
-    gcloud container clusters get-credentials $ClusterName --region=$Region --project=$ProjectId 2>&1 | Out-Null
+    gcloud container clusters get-credentials $ClusterName --zone=$Zone --project=$ProjectId 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Write-Status "Cluster credentials configured" -Level Success
     } else {

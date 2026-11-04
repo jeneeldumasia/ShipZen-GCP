@@ -43,7 +43,7 @@ jobs:
       - name: Cleanup Stuck Webhooks
         working-directory: ./terraform
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }} || true
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project ${{ secrets.GCP_PROJECT_ID }} || true
           # Only delete specific webhooks known to cause stuck ArgoCD syncs.
           # Do NOT use --all: that would delete Kyverno and cert-manager webhooks too.
           # shipzen-platform-webhook: ArgoCD application webhook that sometimes sticks post-deploy.
@@ -59,6 +59,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
@@ -77,6 +79,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
@@ -99,6 +103,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
@@ -108,7 +114,7 @@ jobs:
         run: bash ../scripts/ci-run.sh "Terraform Plan" terraform plan -no-color -input=false -out=tfplan
 
       - name: Configure kubectl
-        run: gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+        run: gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project ${{ secrets.GCP_PROJECT_ID }}
         continue-on-error: true
 
       - name: Pre-flight - Force-finalize stuck Terminating namespaces
@@ -136,6 +142,8 @@ jobs:
           TF_VAR_gcp_project: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_region: us-central1
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_access_allowed_emails: ${{ secrets.ADMIN_EMAILS }}
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}

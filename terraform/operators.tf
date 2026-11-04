@@ -34,6 +34,46 @@ resource "google_service_account_iam_binding" "eso_workload_identity" {
   ]
 }
 
+# Tenant ExternalSecrets use their own store and identity (security finding
+# C6): it can read shipzen-project-* secrets and nothing else, so even a
+# tenant manifest naming shipzen-github-app gets nothing. The platform store
+# (gcp-secret-manager, identity eso_sa) only serves platform namespaces.
+resource "google_service_account" "eso_tenant_sa" {
+  account_id   = "shipzen-eso-tenant-sa"
+  display_name = "ShipZen ESO for tenant namespaces (shipzen-project-* only)"
+}
+
+resource "google_project_iam_member" "eso_tenant_accessor" {
+  project = var.gcp_project
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.eso_tenant_sa.email}"
+
+  condition {
+    title      = "shipzen-project secrets only"
+    expression = "resource.name.startsWith(\"projects/${data.google_project.this.number}/secrets/shipzen-project-\")"
+  }
+}
+
+resource "google_service_account_iam_binding" "eso_tenant_workload_identity" {
+  service_account_id = google_service_account.eso_tenant_sa.name
+  role               = "roles/iam.workloadIdentityUser"
+  members = [
+    "serviceAccount:${var.gcp_project}.svc.id.goog[external-secrets/eso-tenant]"
+  ]
+}
+
+resource "kubernetes_service_account" "eso_tenant" {
+  metadata {
+    name      = "eso-tenant"
+    namespace = "external-secrets"
+    annotations = {
+      "iam.gke.io/gcp-service-account" = google_service_account.eso_tenant_sa.email
+    }
+  }
+  automount_service_account_token = false
+  depends_on                      = [helm_release.external_secrets]
+}
+
 resource "helm_release" "external_secrets" {
   name             = "external-secrets"
   repository       = "https://charts.external-secrets.io"
@@ -72,7 +112,7 @@ resource "null_resource" "gateway_api_crds" {
     cluster_name = google_container_cluster.primary.name
   }
   provisioner "local-exec" {
-    command = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project} && kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml"
+    command = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.gcp_zone} --project ${var.gcp_project} && kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml"
   }
   depends_on = [time_sleep.wait_for_cluster_auth]
 }
@@ -101,7 +141,7 @@ resource "null_resource" "cluster_secret_store" {
   }
   provisioner "local-exec" {
     command = <<EOT
-      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.gcp_region} --project ${var.gcp_project}
+      gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.gcp_zone} --project ${var.gcp_project}
       
       echo "Waiting for ClusterSecretStore CRD to be registered..."
       until kubectl get crd clustersecretstores.external-secrets.io >/dev/null 2>&1; do
@@ -135,9 +175,33 @@ kind: ClusterSecretStore
 metadata:
   name: gcp-secret-manager
 spec:
+  # Platform secrets: only for the platform's own namespaces.
+  conditions:
+    - namespaces: ["shipzen-system", "observability"]
   provider:
     gcpsm:
       projectID: "${var.gcp_project}"
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: gcp-secret-manager-tenants
+spec:
+  conditions:
+    - namespaceSelector:
+        matchLabels:
+          shipzen.jeneeldumasia.codes/tenant: "true"
+  provider:
+    gcpsm:
+      projectID: "${var.gcp_project}"
+      auth:
+        workloadIdentity:
+          clusterLocation: "${var.gcp_zone}"
+          clusterName: "${google_container_cluster.primary.name}"
+          clusterProjectID: "${var.gcp_project}"
+          serviceAccountRef:
+            name: eso-tenant
+            namespace: external-secrets
 EOF
       do
         RETRY_COUNT=$((RETRY_COUNT+1))

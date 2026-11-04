@@ -201,7 +201,7 @@ jobs:
           GAR_REGISTRY: "us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}"
         run: |
           TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
-          if ! gcloud container clusters get-credentials shipzen-cluster --region us-central1 \
+          if ! gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c \
                --project ${{ secrets.GCP_PROJECT_ID }} 2>/dev/null; then
             echo "Cluster not running; skipping rollout (the next apply deploys :latest)."
             exit 0

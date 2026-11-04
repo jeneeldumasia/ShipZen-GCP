@@ -26,6 +26,7 @@ if [ "${1:-}" = "--delete" ]; then DELETE=true; shift; fi
 PROJECT="${1:?usage: $0 [--delete] PROJECT [CLUSTER]}"
 CLUSTER="${2:-shipzen-cluster}"
 REGION="${REGION:-us-central1}"
+ZONE="${ZONE:-us-central1-c}"   # the GKE cluster is zonal
 
 summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >> "$GITHUB_STEP_SUMMARY"; echo "$*"; }
 
@@ -57,7 +58,7 @@ if [ "$DELETE" != "true" ]; then
   exit 0
 fi
 
-if gcloud container clusters describe "$CLUSTER" --region "$REGION" --project "$PROJECT" >/dev/null 2>&1; then
+if gcloud container clusters describe "$CLUSTER" --zone "$ZONE" --project "$PROJECT" >/dev/null 2>&1; then
   summary "Not deleting: cluster $CLUSTER still exists, so these may belong to scaled-down workloads."
   exit 1
 fi
