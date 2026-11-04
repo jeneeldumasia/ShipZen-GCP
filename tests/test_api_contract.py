@@ -904,7 +904,7 @@ def test_build_folder_is_validated_kept_on_redeploy_and_copied_to_pushes(env):
 
     (secret,) = _sql("SELECT webhook_secret FROM projects WHERE id = %s", (pid,))[0]
     body = json.dumps({"ref": "refs/heads/main",
-                       "repository": {"id": 1, "clone_url": "https://github.com/o/r.git"}}).encode()
+                       "repository": {"id": 1, "clone_url": "https://github.com/o/r"}}).encode()
     assert env.client.post(f"/webhooks/github/{pid}", content=body, headers={
         "X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)}).status_code == 200
     assert _sql("SELECT build_context FROM deployments WHERE project_id = %s AND triggered_by = 'push'",
