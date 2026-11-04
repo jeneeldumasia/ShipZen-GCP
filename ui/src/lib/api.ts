@@ -116,6 +116,8 @@ export interface Deployment {
   commit_author?: string | null;
   commit_url?: string | null;
   triggered_by?: string | null;
+  kind?: "production" | "preview";
+  pr_number?: number | null;
 }
 
 export interface Build {

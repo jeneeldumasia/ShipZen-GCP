@@ -8,12 +8,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_github_app_token(repo_url: str, write: bool = False) -> str:
+def get_github_app_token(repo_url: str, write: bool = False, permissions: dict = None) -> str:
     """Mint a GitHub App installation token for exactly one repository.
 
     The token is limited to that repository and to `contents: read` (or
     `contents: write` when write=True, which only the controller needs, to
-    commit to the tenants repo). Without these limits a token minted to clone
+    commit to the tenants repo), or to exactly `permissions` when given. Without these limits a token minted to clone
     one repo could read and push to every repo in the installation.
     """
     GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
@@ -39,7 +39,7 @@ def get_github_app_token(repo_url: str, write: bool = False) -> str:
             f"https://api.github.com/app/installations/{installation_id}/access_tokens",
             headers=headers, timeout=10,
             json={"repositories": [repo],
-                  "permissions": {"contents": "write" if write else "read"}})
+                  "permissions": permissions or {"contents": "write" if write else "read"}})
         if token_resp.status_code != 201:
             logger.error(f"GitHub refused an installation token for {owner}/{repo}: HTTP {token_resp.status_code}")
             return None
@@ -47,6 +47,23 @@ def get_github_app_token(repo_url: str, write: bool = False) -> str:
     except Exception as e:
         logger.error(f"Error fetching GitHub App token: {type(e).__name__}")
         return None
+
+
+def comment_on_pull_request(repo_url: str, number: int, body: str) -> bool:
+    """Post a comment on a pull request, with a token limited to that repo and
+    `pull_requests: write`. False (never raises) if the App lacks the permission."""
+    token = get_github_app_token(repo_url, permissions={"pull_requests": "write"})
+    if not token:
+        return False
+    try:
+        owner, repo = repo_url.rstrip("/").removesuffix(".git").split("/")[-2:]
+        r = requests.post(f"https://api.github.com/repos/{owner}/{repo}/issues/{int(number)}/comments",
+                          headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
+                          json={"body": body}, timeout=10)
+        return r.status_code == 201
+    except Exception as e:
+        logger.warning(f"Could not comment on the pull request: {type(e).__name__}")
+        return False
 
 
 def git_auth_header(token: str) -> str:

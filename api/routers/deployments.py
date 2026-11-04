@@ -79,7 +79,7 @@ def _create_deployment(request: Request, project_id: str, body: CreateDeployment
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT 1 FROM deployments WHERE project_id = %s AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
+                    "SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'production' AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
                     (project_id,)
                 )
                 if cur.fetchone():
@@ -174,6 +174,8 @@ def redeploy(request: Request, project_id: str, deployment_id: str,
              current_user: User = Depends(get_current_user)):
     """Build and deploy the same repository, branch and port again (picks up new commits)."""
     source = _get_deployment_or_404(project_id, deployment_id)
+    if source.get("kind") == "preview":
+        raise HTTPException(status_code=409, detail="Previews rebuild when you push to the pull request.")
     body = CreateDeploymentRequest(repo_url=source["repo_url"], port=source.get("port") or 8080,
                                    branch=source.get("branch") or project.get("branch") or "main")
     return _create_deployment(request, project_id, body, project, current_user,
@@ -255,13 +257,13 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
             # period (replicas > 0) or already scaled to 0.
             cur.execute("""
                 SELECT deployment_id, image_uri FROM deployments
-                WHERE project_id = %s AND state = 'Running' AND replicas > 0
+                WHERE project_id = %s AND kind = 'production' AND state = 'Running' AND replicas > 0
                 ORDER BY (deployment_id = %s) DESC, created_at DESC LIMIT 1;
             """, (project_id, project.get("live_deployment_id") or ""))
             live = cur.fetchone()
             cur.execute("""
                 SELECT * FROM deployments
-                WHERE project_id = %s AND state = 'Running'
+                WHERE project_id = %s AND kind = 'production' AND state = 'Running'
                   AND deployment_id IS DISTINCT FROM %s
                   AND image_uri IS DISTINCT FROM %s
                 ORDER BY created_at DESC LIMIT 1;
@@ -366,7 +368,8 @@ def list_deployments(
 
     query = """
         SELECT deployment_id, project_id, repo_url, image_uri, replicas, port, state, updated_at, last_error,
-               created_at, branch, commit_sha, commit_message, commit_author, commit_url, triggered_by
+               created_at, branch, commit_sha, commit_message, commit_author, commit_url, triggered_by,
+               kind, pr_number
         FROM deployments
         WHERE project_id = %s
     """

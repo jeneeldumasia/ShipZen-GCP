@@ -199,7 +199,7 @@ def apply_env(request: Request, project_id: str, project: dict = Depends(verify_
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT deployment_id FROM deployments WHERE project_id = %s AND state = 'Running' "
+                "SELECT deployment_id FROM deployments WHERE project_id = %s AND kind = 'production' AND state = 'Running' "
                 "AND replicas > 0 ORDER BY (deployment_id = %s) DESC, created_at DESC LIMIT 1;",
                 (project_id, project.get("live_deployment_id") or ""))
             row = cur.fetchone()
