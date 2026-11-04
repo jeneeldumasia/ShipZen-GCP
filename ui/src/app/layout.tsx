@@ -11,6 +11,8 @@ import { getBaseUrl } from "@/lib/api";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Navigation } from "@/components/Navigation";
+import { PlatformBanner } from "@/components/PlatformBanner";
+import type { PlatformStatus } from "@/lib/api";
 import { Toaster } from "sonner";
 
 import { ViewTransitions } from 'next-view-transitions';
@@ -18,19 +20,18 @@ import { ViewTransitions } from 'next-view-transitions';
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   
-  let userWithRole = session?.user as any;
-  if (session && (session as { accessToken?: string }).accessToken) {
+  // Admin announcement and deploy freeze, shown above every page.
+  let platformStatus: PlatformStatus | null = null;
+  const token = (session as { accessToken?: string } | null)?.accessToken;
+  if (token) {
     try {
-      const res = await fetch(`${getBaseUrl()}/users/me`, {
-        headers: { Authorization: `Bearer ${(session as { accessToken?: string }).accessToken}` },
+      const res = await fetch(`${getBaseUrl()}/platform/status`, {
+        headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store'
       });
-      if (res.ok) {
-        const data = await res.json();
-        userWithRole = { ...userWithRole, is_admin: data.is_admin };
-      }
+      if (res.ok) platformStatus = await res.json();
     } catch (e) {
-      console.error("Failed to fetch user role", e);
+      console.error("Failed to fetch platform status", e);
     }
   }
 
@@ -62,6 +63,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Navigation />
             {/* Pure Canvas Layout */}
             <div className="w-full min-h-screen flex flex-col items-center pt-24 px-8">
+              <PlatformBanner status={platformStatus} />
               <main className="flex-1 w-full max-w-5xl animate-fade-in z-10 relative">
                 {children}
               </main>

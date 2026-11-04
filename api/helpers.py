@@ -34,9 +34,26 @@ MAX_DEPLOYS_PER_PROJECT_PER_MONTH = int(os.getenv("MAX_DEPLOYS_PER_PROJECT_PER_M
 
 
 def check_deploy_limits(project_id: str, user_id: str = None) -> None:
-    """429 if the project used up this month's deploys, or the user has too many in progress."""
+    """Refuse a new deploy: 423 while an admin has paused deploys, 403 when the
+    project owner is suspended, 429 if the project used up this month's deploys
+    or the user has too many in progress."""
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT value FROM platform_settings WHERE key = 'deploy_freeze';")
+            row = cur.fetchone()
+            freeze = row[0] if row else None
+            if freeze and freeze.get("paused"):
+                reason = freeze.get("reason")
+                raise HTTPException(
+                    status_code=423,
+                    detail="Deploys are paused by a platform admin" + (f": {reason}" if reason else "."))
+            cur.execute(
+                "SELECT u.suspended_at IS NOT NULL FROM projects p JOIN users u ON u.id = p.owner_id "
+                "WHERE p.id = %s;", (project_id,))
+            row = cur.fetchone()
+            if row and row[0]:
+                raise HTTPException(
+                    status_code=403, detail="This project's owner is suspended, so it can't deploy.")
             cur.execute(
                 "SELECT count(*) FROM deployments "
                 "WHERE project_id = %s AND created_at >= date_trunc('month', NOW());",
