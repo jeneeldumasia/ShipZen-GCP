@@ -41,6 +41,23 @@ spec:
       ports:
         - port: 988
           protocol: TCP
+    - to:      # Loki: runtime logs for the app page
+        - podSelector:
+            matchLabels:
+              app: loki
+      ports:
+        - port: 3100
+          protocol: TCP
+    - to:      # Prometheus: metrics for the app page
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9090
+          protocol: TCP
     - ports:   # HTTPS anywhere: GitHub, Google APIs, the Kubernetes API (private endpoint)
         - port: 443
           protocol: TCP
