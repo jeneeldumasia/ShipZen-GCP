@@ -30,6 +30,17 @@ resource "helm_release" "argocd" {
 resource "null_resource" "argocd_github_app" {
   count = var.github_app_id != "" ? 1 : 0
 
+  # Re-run whenever the App's credentials change. Without triggers this only
+  # ran when the cluster was created, so after a key rotation ArgoCD kept the
+  # old (deleted) key and every sync failed with 401 from GitHub. Only a hash
+  # of the key is stored in Terraform state.
+  triggers = {
+    cluster      = google_container_cluster.primary.id
+    app_id       = var.github_app_id
+    installation = var.github_app_installation_id
+    key_sha256   = sha256(var.github_app_private_key)
+  }
+
   provisioner "local-exec" {
     # Pass the private key via env var to avoid writing it to disk.
     # 'printf' is used (not 'echo') so no trailing newline is appended.
