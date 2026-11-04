@@ -123,6 +123,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                       <span className="text-sm text-text-primary truncate max-w-xs">
                         {d.commit_message ?? d.repo_url}
                       </span>
+                      {d.kind === "preview" && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand/10 text-brand border border-brand/30">
+                          Preview{d.pr_number ? ` · PR #${d.pr_number}` : ""}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-1 ml-[22px] text-xs text-text-secondary">
                       {d.commit_sha && (

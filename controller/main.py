@@ -194,7 +194,7 @@ TENANT_REPO_URL = os.environ.get("TENANT_REPO_URL", "https://github.com/jeneeldu
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 
-from shipzen_common.github_app import get_github_app_token
+from shipzen_common.github_app import comment_on_pull_request, get_github_app_token
 from shipzen_common.hostnames import valid_vanity, vanity_hostname
 from shipzen_common.repo_config import valid_health_check_path, valid_image_digest, valid_port
 from shipzen_common.notify import notify_deployment
@@ -835,7 +835,7 @@ def sync_vanity_route(cur, project) -> None:
         # The release the project says is live (blue-green switch, instant
         # rollback), if it's actually up; else the newest running one.
         cur.execute(
-            "SELECT deployment_id FROM deployments WHERE project_id = %s AND state = 'Running' "
+            "SELECT deployment_id FROM deployments WHERE project_id = %s AND kind = 'production' AND state = 'Running' "
             "AND replicas > 0 ORDER BY (deployment_id = %s) DESC, created_at DESC LIMIT 1;",
             (project.id, project.live_deployment_id or ""))
         row = cur.fetchone()
@@ -862,6 +862,54 @@ def sync_vanity_route(cur, project) -> None:
         logger.warning(f"Vanity route sync failed for {project.namespace}: {e}")
 
 
+def promote_release(conn, cur, project, d_id: str) -> None:
+    """Blue-green switch: this release is now the live one.
+
+    The previous ones keep running for RELEASE_GRACE_MINUTES (scaled to 0
+    afterwards, at the top of a later sweep), so the stable URL never points at
+    a release that's already gone, and a rollback meanwhile is instant.
+    Previews are never touched.
+    """
+    cur.execute("UPDATE projects SET live_deployment_id = %s WHERE id = %s;", (d_id, project.id))
+    cur.execute(
+        "UPDATE deployments SET scale_down_after = NOW() + make_interval(mins => %s) "
+        "WHERE project_id = %s AND deployment_id != %s AND kind = 'production' AND state = 'Running' "
+        "AND replicas > 0 AND scale_down_after IS NULL;",
+        (RELEASE_GRACE_MINUTES, project.id, d_id))
+    # Keep the newest KEEP_RELEASES scaled-down releases as rollback targets;
+    # older ones become Superseded, and the orphan cleanup removes their
+    # Deployment, Service, HTTPRoute, ExternalSecret and GitOps file (task 22).
+    cur.execute(
+        """UPDATE deployments SET state = 'Superseded'
+           WHERE deployment_id IN (
+               SELECT deployment_id FROM deployments
+               WHERE project_id = %s AND kind = 'production' AND state = 'Running' AND replicas = 0
+               ORDER BY created_at DESC OFFSET %s);""",
+        (project.id, KEEP_RELEASES))
+    conn.commit()
+    shipzen_deployment_success_total.inc()
+
+
+def preview_url(project, d_id: str) -> str:
+    return f"https://{d_id[:8]}-{_k8s_slug(project.name)}-shipzen.jeneeldumasia.codes"
+
+
+def announce_preview(conn, project, d_id: str, db_dep: dict) -> None:
+    """Email the team and comment the preview URL on the pull request (once each)."""
+    url = preview_url(project, d_id)
+    pr = db_dep.get('pr_number')
+    notify_deployment(conn, _redis_client, d_id, "preview", f"Pull request #{pr}\nPreview: {url}")
+    try:
+        if not _redis_client.set(f"shipzen:pr-comment:{d_id}", "1", nx=True, ex=7 * 24 * 3600):
+            return
+        sha = (db_dep.get('commit_sha') or "")[:7]
+        body = f"**ShipZen preview** is ready: {url}" + (f"\n\nBuilt from `{sha}`." if sha else "")
+        if not comment_on_pull_request(db_dep['repo_url'], pr, body):
+            logger.info(f"Could not comment on PR #{pr} (the GitHub App may lack Pull requests: write)")
+    except Exception as e:
+        logger.warning(f"Preview comment for {d_id} failed: {type(e).__name__}")
+
+
 SCALING_ANNOTATION = "shipzen.jeneeldumasia.codes/scaling"
 
 
@@ -879,6 +927,7 @@ def release_scaling(project, d_id: str, db_dep: dict) -> dict:
     spec = size_spec(size_name)
     db_replicas = db_dep.get('replicas', 1)
     is_live = (db_dep.get('state') == 'Running' and (db_replicas or 0) > 0
+               and (db_dep.get('kind') or 'production') == 'production'
                and project.live_deployment_id in (None, d_id))
     if not is_live:
         mn = mx = db_replicas if db_replicas is not None else 1
@@ -1021,34 +1070,19 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                             "UPDATE deployments SET state = %s, last_error = NULL WHERE deployment_id = %s;",
                             ('Running', d_id)
                         )
-                        # Blue-green switch: this release is now the live one.
-                        # The previous ones keep running for RELEASE_GRACE_MINUTES
-                        # (scaled to 0 afterwards, at the top of a later sweep),
-                        # so the stable URL never points at a release that's
-                        # already gone, and a rollback meanwhile is instant.
-                        cur.execute("UPDATE projects SET live_deployment_id = %s WHERE id = %s;",
-                                    (d_id, project.id))
-                        cur.execute(
-                            "UPDATE deployments SET scale_down_after = NOW() + make_interval(mins => %s) "
-                            "WHERE project_id = %s AND deployment_id != %s AND state = 'Running' "
-                            "AND replicas > 0 AND scale_down_after IS NULL;",
-                            (RELEASE_GRACE_MINUTES, project.id, d_id)
-                        )
-                        # Keep the newest KEEP_RELEASES scaled-down releases as
-                        # rollback targets; older ones become Superseded, and the
-                        # orphan cleanup below removes their Deployment, Service,
-                        # HTTPRoute, ExternalSecret and GitOps file (task 22).
-                        cur.execute(
-                            """UPDATE deployments SET state = 'Superseded'
-                               WHERE deployment_id IN (
-                                   SELECT deployment_id FROM deployments
-                                   WHERE project_id = %s AND state = 'Running' AND replicas = 0
-                                   ORDER BY created_at DESC OFFSET %s);""",
-                            (project.id, KEEP_RELEASES)
-                        )
-                        conn.commit()
-                        shipzen_deployment_success_total.inc()
-                        notify_deployment(conn, _redis_client, d_id, "live")
+                        if (db_dep.get('kind') or 'production') == 'preview':
+                            # A pull request preview never becomes the live release;
+                            # it replaces the PR's previous preview instead.
+                            cur.execute(
+                                "UPDATE deployments SET state = 'Superseded' WHERE project_id = %s "
+                                "AND kind = 'preview' AND pr_number = %s AND deployment_id != %s "
+                                "AND state = 'Running';", (project.id, db_dep.get('pr_number'), d_id))
+                            conn.commit()
+                            shipzen_deployment_success_total.inc()
+                            announce_preview(conn, project, d_id, db_dep)
+                        else:
+                            promote_release(conn, cur, project, d_id)
+                            notify_deployment(conn, _redis_client, d_id, "live")
                         try:
                             _redis_client.publish(f"shipzen:status:{d_id}", json.dumps(
                                 {"state": "Running", "last_error": None}))
