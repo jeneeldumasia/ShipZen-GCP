@@ -13,6 +13,15 @@ import { Webhooks } from "./Webhooks";
 import { ProjectShortcuts } from "./ProjectShortcuts";
 import { ProjectProvisioningStatus } from "./ProjectProvisioningStatus";
 
+function describeTrigger(t: string): string {
+  if (t === "push") return "push";
+  if (t === "rollback") return "rollback";
+  if (t === "preview") return "preview";
+  if (t.startsWith("redeploy:")) return "redeploy";
+  if (t.startsWith("user:")) return "manual deploy";
+  return t;
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -110,7 +119,19 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2.5">
                       <GitBranch size={14} className="text-text-secondary flex-shrink-0" />
-                      <span className="font-mono text-xs text-text-primary truncate max-w-xs">{d.repo_url}</span>
+                      <span className="text-sm text-text-primary truncate max-w-xs">
+                        {d.commit_message ?? d.repo_url}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 ml-[22px] text-xs text-text-secondary">
+                      {d.commit_sha && (
+                        d.commit_url
+                          ? <a href={d.commit_url} target="_blank" rel="noopener noreferrer" className="font-mono hover:text-brand">{d.commit_sha.slice(0, 7)}</a>
+                          : <span className="font-mono">{d.commit_sha.slice(0, 7)}</span>
+                      )}
+                      {d.branch && <span>on {d.branch}</span>}
+                      {d.commit_author && <span>by {d.commit_author}</span>}
+                      {d.triggered_by && <span className="opacity-75">· {describeTrigger(d.triggered_by)}</span>}
                     </div>
                     {d.last_error && d.state === "Failed" && (
                       <p className="text-xs text-red-500 mt-1 ml-[22px] truncate max-w-xs">{d.last_error}</p>

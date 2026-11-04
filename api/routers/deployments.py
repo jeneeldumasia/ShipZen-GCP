@@ -57,6 +57,11 @@ class CreateDeploymentRequest(BaseModel):
 @router.post("/projects/{project_id}/deployments", status_code=202, tags=["Deployments"])
 @limiter.limit("5/minute")
 def create_deployment(request: Request, project_id: str, body: CreateDeploymentRequest, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
+    return _create_deployment(request, project_id, body, project, current_user)
+
+
+def _create_deployment(request: Request, project_id: str, body: CreateDeploymentRequest, project: dict,
+                       current_user: User, triggered_by: Optional[str] = None):
     """
     Submit a deployment request. Only a repo URL is required.
     - The platform generates the image URI automatically from GAR_REGISTRY_URL.
@@ -104,8 +109,9 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
                 cur.execute(
                     """
                     INSERT INTO deployments
-                        (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
+                        (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
+                         branch, triggered_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, %s)
                     RETURNING *;
                     """,
                     (
@@ -113,6 +119,7 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
                         body.repo_url, image_uri,
                         1,           # Platform controls scaling — initial replica count is 1
                         body.port,
+                        body.branch, triggered_by or f"user:{current_user.user_id}",
                     ),
                 )
                 deployment = dict(cur.fetchone())
@@ -158,6 +165,19 @@ def create_deployment(request: Request, project_id: str, body: CreateDeploymentR
         logger.warning(f"Failed to publish project_reconcile event: {pub_err}")
 
     return _serialize(deployment)
+
+
+@router.post("/projects/{project_id}/deployments/{deployment_id}/redeploy", status_code=202, tags=["Deployments"])
+@limiter.limit("5/minute")
+def redeploy(request: Request, project_id: str, deployment_id: str,
+             project: dict = Depends(verify_project_write_access),
+             current_user: User = Depends(get_current_user)):
+    """Build and deploy the same repository, branch and port again (picks up new commits)."""
+    source = _get_deployment_or_404(project_id, deployment_id)
+    body = CreateDeploymentRequest(repo_url=source["repo_url"], port=source.get("port") or 8080,
+                                   branch=source.get("branch") or project.get("branch") or "main")
+    return _create_deployment(request, project_id, body, project, current_user,
+                              triggered_by=f"redeploy:{current_user.user_id}")
 
 
 @router.post("/projects/{project_id}/deployments/{deployment_id}/cancel", status_code=202, tags=["Deployments"])
@@ -280,8 +300,9 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
             deployment_id = str(uuid.uuid4())
             cur.execute("""
                 INSERT INTO deployments
-                    (deployment_id, project_id, repo_url, image_uri, image_digest, replicas, port, state)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'Queued')
+                    (deployment_id, project_id, repo_url, image_uri, image_digest, replicas, port, state,
+                     branch, commit_sha, commit_message, commit_author, commit_url, triggered_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'Queued', %s, %s, %s, %s, %s, 'rollback')
                 RETURNING *;
             """, (
                 deployment_id, project_id, last_good['repo_url'],
@@ -289,7 +310,9 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
                 last_good['image_uri'], last_good.get('image_digest'),
                 # Old releases were scaled to 0 by the controller; copying that
                 # value made the rollback wait for a ready pod that never came.
-                1, last_good['port']
+                1, last_good['port'],
+                last_good.get('branch'), last_good.get('commit_sha'), last_good.get('commit_message'),
+                last_good.get('commit_author'), last_good.get('commit_url'),
             ))
             cur.fetchone()
 
@@ -342,7 +365,8 @@ def list_deployments(
     """
 
     query = """
-        SELECT deployment_id, project_id, repo_url, image_uri, replicas, port, state, updated_at, last_error
+        SELECT deployment_id, project_id, repo_url, image_uri, replicas, port, state, updated_at, last_error,
+               created_at, branch, commit_sha, commit_message, commit_author, commit_url, triggered_by
         FROM deployments
         WHERE project_id = %s
     """

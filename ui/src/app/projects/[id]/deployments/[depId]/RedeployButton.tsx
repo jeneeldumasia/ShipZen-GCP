@@ -6,14 +6,15 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
-export function RedeployButton({ projectId, repoUrl, port }: { projectId: string; repoUrl: string; port: number }) {
+export function RedeployButton({ projectId, deploymentId }: { projectId: string; deploymentId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   async function handleRedeploy() {
     setLoading(true);
     try {
-      const newDeployment = await api.deployments.create(projectId, { repo_url: repoUrl, port });
+      // Same repository, branch and port; picks up new commits.
+      const newDeployment = await api.deployments.redeploy(projectId, deploymentId);
       toast.success("Deployment queued successfully");
       router.push(`/projects/${projectId}/deployments/${newDeployment.deployment_id}`);
     } catch (e) {
@@ -33,7 +34,7 @@ export function RedeployButton({ projectId, repoUrl, port }: { projectId: string
 
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
-  }, [loading, projectId, repoUrl, port]);
+  }, [loading, projectId, deploymentId]);
 
   return (
     <button
