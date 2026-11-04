@@ -257,6 +257,7 @@ def test_vanity_route_renders_one_route_to_the_live_release():
     assert doc["spec"]["rules"][0]["backendRefs"][0]["name"] == "dep-123-svc"
 
 
-def test_tenant_namespace_carries_only_a_valid_vanity_label():
+def test_tenant_namespace_carries_only_a_valid_vanity_label(monkeypatch):
+    monkeypatch.chdir(ROOT / "controller")  # the controller loads templates/ relative to its directory
     assert 'vanity: "myapp"' in controller.render_tenant("ns-a", "p1", "My App", "myapp")
     assert 'vanity: ""' in controller.render_tenant("ns-a", "p1", "My App", "bad--name")
