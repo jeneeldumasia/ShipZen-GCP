@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ChevronDown, ChevronUp, Globe, GitBranch, Rocket, Settings2 } from "lucide-react";
+import { ArrowLeft, Loader2, ChevronDown, ChevronUp, Globe, GitBranch, Rocket, Settings2, ScanSearch, Check } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, DetectedService } from "@/lib/api";
 
 export default function NewDeploymentPage() {
   const router = useRouter();
@@ -17,6 +17,29 @@ export default function NewDeploymentPage() {
   const [port, setPort]                 = useState(8080);
   const [error, setError]               = useState("");
   const [loading, setLoading]           = useState(false);
+  // Repo intelligence: detected services; picking one sets port and build folder.
+  const [services, setServices]         = useState<DetectedService[] | null>(null);
+  const [analyzing, setAnalyzing]       = useState(false);
+  const [buildContext, setBuildContext] = useState("");
+
+  async function analyze() {
+    setAnalyzing(true);
+    setServices(null);
+    try {
+      const res = await api.analyze(repoUrl, branch);
+      setServices(res.services);
+      if (res.services.length === 1) pick(res.services[0]);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not analyze the repository");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  function pick(s: DetectedService) {
+    setBuildContext(s.path);
+    if (s.port) setPort(s.port);
+  }
 
   // New states for branch fetching
   const [branches, setBranches]               = useState<string[]>([]);
@@ -62,7 +85,9 @@ export default function NewDeploymentPage() {
     setError("");
     setLoading(true);
     try {
-      const dep = await api.deployments.create(projectId, { repo_url: repoUrl, branch, port });
+      const dep = await api.deployments.create(projectId, {
+        repo_url: repoUrl, branch, port, build_context: buildContext || undefined,
+      });
       toast.success("Deployment submitted successfully");
       router.push(`/projects/${projectId}/deployments/${dep.deployment_id}`);
     } catch (err: unknown) {
@@ -159,6 +184,47 @@ export default function NewDeploymentPage() {
           )}
         </div>
 
+        {/* Analyze: what ShipZen detects in the repo, and why */}
+        <div>
+          <button type="button" onClick={analyze} disabled={!repoUrl.includes("github.com") || analyzing}
+            className="btn-ghost text-xs disabled:opacity-50">
+            {analyzing ? <Loader2 size={13} className="animate-spin" /> : <ScanSearch size={13} />}
+            {analyzing ? "Analyzing…" : "Analyze repository"}
+          </button>
+          {services && services.length === 0 && (
+            <p className="text-xs text-text-secondary mt-2">Nothing recognisable found; ShipZen will still try to build it.</p>
+          )}
+          {services && services.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {services.map(s => {
+                const chosen = buildContext === s.path;
+                return (
+                  <button key={s.path || "root"} type="button" onClick={() => pick(s)}
+                    className={`w-full text-left rounded-lg border p-3 transition-colors ${chosen ? "border-brand ring-1 ring-brand" : "border-canvas-border hover:border-text-secondary"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-text-primary">
+                        {s.path || "Repository root"}
+                        <span className="ml-2 text-xs font-normal text-text-secondary">
+                          {[s.framework, s.type, s.package_manager, s.runtime_version].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        port {s.port ?? 8080} · {Math.round(s.confidence * 100)}%
+                        {chosen && <Check size={13} className="text-brand" />}
+                      </span>
+                    </div>
+                    {s.reasons && s.reasons.length > 0 && (
+                      <ul className="mt-1.5 space-y-0.5">
+                        {s.reasons.map((r, i) => <li key={i} className="text-xs text-text-secondary">• {r}</li>)}
+                      </ul>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Advanced */}
         <div>
           <button
@@ -183,6 +249,18 @@ export default function NewDeploymentPage() {
                   onChange={e => setPort(Number(e.target.value))}
                   className="input w-32"
                 />
+                <label className="block text-sm font-medium text-text-primary mb-1.5 mt-4">Build folder</label>
+                <input
+                  type="text"
+                  value={buildContext}
+                  onChange={e => setBuildContext(e.target.value)}
+                  placeholder="(repository root)"
+                  className="input font-mono"
+                  maxLength={200}
+                />
+                <p className="text-xs text-text-secondary mt-1.5">
+                  For monorepos: the folder with your app, like <code className="bg-canvas-border px-1 rounded">apps/web</code>. Kept for later pushes and previews.
+                </p>
                 <p className="text-xs text-text-secondary mt-1.5">
                   The port your app listens on. Defaults to 8080.
                   Can also be set via <code className="bg-canvas-border px-1 rounded">shipzen.yaml</code> in your repo.

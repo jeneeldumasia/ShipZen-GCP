@@ -24,6 +24,7 @@ from helpers import _get_deployment_or_404, _serialize, check_deploy_limits, ima
 from platform_clients import _aioredis_client, _gcs_client, _redis_client, apps_v1, get_redis
 from ratelimit import limiter
 from validation import _REPO_URL_RE
+from shipzen_common.repo_config import RepoConfigError, parse_repo_config
 
 logger = logging.getLogger('api')
 router = APIRouter()
@@ -33,6 +34,18 @@ class CreateDeploymentRequest(BaseModel):
     repo_url: str
     port: Optional[int] = 8080
     branch: Optional[str] = "main"
+    # Folder to build (picked from Analyze); a repo's shipzen.yaml takes precedence.
+    build_context: Optional[str] = None
+
+    @field_validator("build_context")
+    @classmethod
+    def validate_build_context(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v.strip("/") == "":
+            return None
+        try:
+            return parse_repo_config({"buildContext": v})["buildContext"]
+        except RepoConfigError as e:
+            raise ValueError(str(e).replace("shipzen.yaml: buildContext", "build_context"))
 
     @field_validator("repo_url")
     @classmethod
@@ -110,8 +123,8 @@ def _create_deployment(request: Request, project_id: str, body: CreateDeployment
                     """
                     INSERT INTO deployments
                         (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
-                         branch, triggered_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, %s)
+                         branch, triggered_by, build_context)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, %s, %s)
                     RETURNING *;
                     """,
                     (
@@ -120,6 +133,7 @@ def _create_deployment(request: Request, project_id: str, body: CreateDeployment
                         1,           # Platform controls scaling — initial replica count is 1
                         body.port,
                         body.branch, triggered_by or f"user:{current_user.user_id}",
+                        body.build_context,
                     ),
                 )
                 deployment = dict(cur.fetchone())
@@ -132,6 +146,7 @@ def _create_deployment(request: Request, project_id: str, body: CreateDeployment
                     "project_id":    project_id,
                     "repo_url":      body.repo_url,
                     "branch":        body.branch,
+                    "build_context": body.build_context or "",
                     "image_name":    image_uri,
                     "queued_at":     queued_at,
                     "retries":       "0",
@@ -177,7 +192,8 @@ def redeploy(request: Request, project_id: str, deployment_id: str,
     if source.get("kind") == "preview":
         raise HTTPException(status_code=409, detail="Previews rebuild when you push to the pull request.")
     body = CreateDeploymentRequest(repo_url=source["repo_url"], port=source.get("port") or 8080,
-                                   branch=source.get("branch") or project.get("branch") or "main")
+                                   branch=source.get("branch") or project.get("branch") or "main",
+                                   build_context=source.get("build_context"))
     return _create_deployment(request, project_id, body, project, current_user,
                               triggered_by=f"redeploy:{current_user.user_id}")
 
@@ -369,7 +385,7 @@ def list_deployments(
     query = """
         SELECT deployment_id, project_id, repo_url, image_uri, replicas, port, state, updated_at, last_error,
                created_at, branch, commit_sha, commit_message, commit_author, commit_url, triggered_by,
-               kind, pr_number
+               kind, pr_number, build_context, notes
         FROM deployments
         WHERE project_id = %s
     """
