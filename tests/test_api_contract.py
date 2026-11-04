@@ -620,3 +620,26 @@ def test_vanity_subdomain_is_unique_among_live_projects(env):
     # Once the first project is deleted, the name is free again.
     assert env.client.delete(f"/projects/{p1}").status_code == 202
     assert env.client.put(f"/projects/{p2}/subdomain", json={"subdomain": "shop"}).status_code == 200
+
+
+# ── Blue-green: instant rollback within the grace period ─────────────────────
+
+def test_rollback_within_grace_period_is_instant(env):
+    pid = _make_project(env)
+    # 'old' just stopped being live: still running (replicas 1), grace period set.
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
+                                     created_at, scale_down_after)
+            VALUES ('old', %s, 'https://github.com/o/r', 'img:old', 1, 8080, 'Running',
+                    NOW() - INTERVAL '5 minutes', NOW() + INTERVAL '5 minutes'),
+                   ('new', %s, 'https://github.com/o/r', 'img:new', 1, 8080, 'Running', NOW(), NULL)""",
+         (pid, pid))
+    _sql("UPDATE projects SET live_deployment_id = 'new' WHERE id = %s", (pid,))
+    env.as_user("editor")
+    r = env.client.post(f"/projects/{pid}/rollback")
+    assert r.status_code == 202
+    assert r.json()["instant"] is True and r.json()["deployment_id"] == "old"
+    assert _sql("SELECT live_deployment_id FROM projects WHERE id = %s", (pid,)) == [("old",)]
+    # No new release was created; the one we left now has its own grace period.
+    assert _sql("SELECT count(*) FROM deployments WHERE project_id = %s", (pid,)) == [(2,)]
+    assert _sql("SELECT scale_down_after IS NOT NULL FROM deployments WHERE deployment_id = 'new'") == [(True,)]
+    assert _sql("SELECT scale_down_after FROM deployments WHERE deployment_id = 'old'") == [(None,)]
