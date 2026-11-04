@@ -24,6 +24,8 @@
    - [Phase 8: Security Audit & UI "Zenith" Redesign](#phase-8-security-audit--ui-zenith-redesign)
    - [Phase 9: Secret Manager Migration & Kyverno Policy Hardening](#phase-9-secret-manager-migration--kyverno-policy-hardening)
    - [Phase 10: Multi-Region Readiness & DLQ Atomicity](#phase-10-multi-region-readiness--dlq-atomicity)
+   - [Phase 11: Hardening the Disposable Platform](#phase-11-hardening-the-disposable-platform)
+   - [Phase 12: Product Features](#phase-12-product-features)
 4. [Major Turning Points & Architectural Shifts](#4-major-turning-points--architectural-shifts)
 5. [Component Lifecycles & Evolution](#5-component-lifecycles--evolution)
 6. [Technology Adoption & Removal Matrix](#6-technology-adoption--removal-matrix)
@@ -347,6 +349,53 @@ Developer (Local / cURL)
 
 ---
 
+### Phase 11: Hardening the Disposable Platform
+* **Date Range:** October 2026 – early November 2026
+* **Pull requests:** #14 – #46
+
+#### What Changed
+1. **Isolation:**
+   - Dataplane V2 network policies.
+   - A push-only builder identity, with apps run by image digest.
+   - Sandboxed (gVisor) build and tenant node pools.
+   - Split secret stores.
+   - The API holds no GitHub token in the browser and has no `git`.
+2. **Zero idle cost:**
+   - A zonal cluster.
+   - Teardown exports Cloud SQL to GCS and deletes it.
+   - Orphaned disks are cleaned up.
+   - Auto-Destroy runs at 9 h idle, with a 12 h hard cap.
+3. **Operations:**
+   - Numbered migrations.
+   - Telegram alerts through a relay.
+   - Generated Grafana dashboards.
+4. **Releases:**
+   - Free vanity URLs.
+   - Blue-green releases with a 10-minute grace period and instant rollback.
+   - Cleanup of superseded releases.
+
+### Phase 12: Product Features
+* **Date Range:** November 4, 2026
+* **Pull requests:** #50 – #59
+
+#### What Changed
+1. **Commit-aware deploys (#50):** every deploy records its commit and what
+   triggered it. Adds **Redeploy**, and **Apply now** for env vars.
+2. **Runtime logs and metrics on the app page (#51):** the API queries Loki and
+   Prometheus.
+3. **Scaling (#52):** instance sizes, min/max instances and an HPA.
+4. **Email notifications through Resend (#53):** deploy live, failed, app down
+   and preview ready.
+5. **Pull-request preview deploys (#55):** fork PRs are ignored.
+6. **Repo intelligence (#56):**
+   - explained detection and a build-folder picker;
+   - plain-language build-failure diagnosis, with one automatic retry for safe fixes.
+7. **Vanity URL status (#57).**
+8. **Admin operations (#59):** announcement banner, deploy freeze, user
+   suspension and a session-cost meter.
+
+---
+
 # 4. Major Turning Points & Architectural Shifts
 
 ```text
@@ -500,32 +549,27 @@ Impact: Zero plain-text credentials in repository; dynamic IAM-based secret acce
 
 # 9. Current Codebase Master Reference Guide
 
-### Key Questions Answered
+This section used to restate the architecture and had drifted (it still named
+Celery, Amazon services and `kubectl apply` rollouts). The current picture lives
+in one place each:
 
-#### 1. What are the major components?
-* **`api/` (FastAPI):** User authentication, REST API, WebSocket server, GitHub webhooks, and database interface.
-* **`worker/` (Python/Celery/Redis):** Queue consumer orchestrating build lifecycles and spawning ephemeral builder pods.
-* **`controller/` (Python K8s Controller):** Reconciler watching PostgreSQL desired states and applying Kubernetes manifests for tenant apps.
-* **`ui/` (Next.js 15):** Dashboard console with real-time log viewers, project controls, command palette, and admin tools.
-* **`terraform/`:** Infrastructure as Code managing GCP VPC, GKE, Cluster Autoscaler, Kyverno, PostgreSQL, Redis, and Secret Manager.
-* **`infra/`:** Kustomize manifests managed via ArgoCD GitOps.
+| Question | Where |
+|---|---|
+| What are the components and how does a deploy flow? | [architecture.md](architecture.md) |
+| Why is it built this way? | [decisions.md](decisions.md) |
+| How is it secured, and what's still open? | [security.md](security.md) |
+| How do I operate it? | [operations/runbook.md](operations/runbook.md) |
+| What does a user see? | [using-shipzen.md](using-shipzen.md) |
 
-#### 2. Where does data enter the system and where does it go?
-* **Trigger:** A developer pushes to GitHub (received at `/api/v1/webhooks/github`) or clicks "Deploy" in the UI (`POST /api/v1/projects/{id}/deployments`).
-* **Database Entry:** API creates a deployment row in PostgreSQL with status `QUEUED`.
-* **Queue Entry:** API pushes a payload (`deployment_id`, `repo_url`, `branch`) to Redis Stream `deploy_stream`.
-* **Execution:** Worker picks up the message, spawns an ephemeral builder Pod in `shipzen-build`.
-* **Artifact Output:** Builder pushes the container image to Amazon Artifact Registry and uploads logs to Amazon GCS.
-* **Rollout:** Controller detects `BUILD_COMPLETE`, generates tenant manifests, and applies them to the cluster via Kubernetes API.
-* **Routing:** Envoy Gateway binds the tenant service to `[project-name].shipzen.dev`.
-
-#### 3. How are failures and dead-lettering handled?
-* Any container build failure or timeout marks the deployment as `FAILED` with explicit error logs in GCS.
-* Corrupted or unprocessable Redis messages are atomically moved to `deploy_stream:dlq` via Lua scripts.
-* Worker restarts run `recover_pending_messages` via `xautoclaim` to reclaim any orphaned tasks.
-
-#### 4. How is the system deployed and updated?
-* Push to `main` branch triggers `.github/workflows/build-push.yaml`.
-* Images are built, scanned with Trivy, and pushed to Amazon Artifact Registry.
-* GitHub Actions updates `newTag: sha-xxxxxx` in `infra/kustomization.yaml` and commits back to Git.
-* ArgoCD detects the Git commit and executes an automated rolling update on the GKE cluster.
+In short, as of November 2026:
+- The **API** (FastAPI) writes desired state to Cloud SQL Postgres and queues
+  deploys through a transactional outbox into a Redis Stream.
+- The **worker** builds each deploy in a single-use Kaniko/Nixpacks Job on a
+  sandboxed Spot node. It pushes the image to Artifact Registry (`shipzen-builds`)
+  and stores the build logs in GCS.
+- The **controller** renders tenant manifests, commits them to `shipzen-tenants`,
+  and **ArgoCD** applies them.
+- Each release gets `<8 chars>-<slug>-shipzen.jeneeldumasia.codes`, and the
+  project's vanity name follows the live release.
+- Merges to `main` build `sha-<commit>` images, which **Build and Push** pins in
+  `infra/kustomization.yaml` for ArgoCD to roll out.

@@ -85,11 +85,14 @@ restart. Every later **Deploy Platform Infra** keeps them (it never overwrites
 
 - **New chat or token:** update the repository secrets and run **Deploy Secrets
   to GKE** again.
-- **Stop all alerts:** store empty values:
-  ```bash
-  echo -n '{"bot_token": "", "chat_id": ""}' | bash scripts/put-secret.sh shipzen-telegram
-  ```
-  and delete the two repository secrets.
+- **Stop all alerts:** delete the two repository secrets.
+  - **If deploy emails are on** (`RESEND_API_KEY` is set), run **Deploy Secrets
+    to GKE**. It rewrites `shipzen-telegram` with an empty token and keeps the
+    Resend key.
+  - **Otherwise**, store empty values:
+    ```bash
+    echo -n '{"bot_token": "", "chat_id": ""}' | bash scripts/put-secret.sh shipzen-telegram
+    ```
 - **Token leaked:** in @BotFather send `/revoke`, pick the bot, then update
   `TELEGRAM_BOT_TOKEN` and rerun **Deploy Secrets to GKE**.
 
@@ -111,4 +114,7 @@ users. If they exist, these are no longer used:
 - Alertmanager routing (`warning`, `high` and `critical` go to the `telegram`
   receiver): `terraform/monitoring.tf`.
 - Workflow sender: `scripts/notify.sh`.
+- The same Secret Manager secret, `shipzen-telegram`, also carries `resend_api_key`
+  for deploy emails (exposed in-cluster as the `shipzen-notify` ExternalSecret). One
+  secret instead of two keeps Secret Manager inside its free versions.
 - Why Telegram, and why a relay: [decisions.md #14](../decisions.md).

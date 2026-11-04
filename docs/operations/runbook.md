@@ -16,7 +16,9 @@ rarely need `kubectl`. First-time setup is in [setup.md](setup.md).
 | **Cluster Report** (`cluster-report.yaml`) | Something looks wrong | Read-only. Posts deployments, pods, ArgoCD status, gateway IP and source ranges, PVC disks and orphaned disks, and warning events as annotations on the run. |
 | **Security Check** (`security-check.yaml`) | After changing IAM or network policies, and after each rebuild | Proves the builder identity can push images and nothing else, and that tenant and build pods are network-isolated. |
 | **Container Security Scan** (`security-scan.yaml`) | Before a release, or after changing a Dockerfile | Trivy scan; fails on HIGH/CRITICAL. |
-| **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets, or set up Telegram alerts | Pushes those GitHub secrets into Secret Manager (ESO picks them up) and sends a Telegram test message if configured. |
+| **Deploy Secrets to GKE** (`deploy-secrets.yaml`) | You rotated OAuth / GitHub App / auth secrets, or set up Telegram alerts or email | Pushes those GitHub secrets into Secret Manager (ESO picks them up), including `SHIPZEN_DATA_KEY` (create-only) and the Resend key, and sends a Telegram test message if configured. |
+| **Set Up Email** (`setup-email.yaml`) | Once, after adding `RESEND_API_KEY`; safe to re-run | Registers the domain with Resend and writes its SPF/DKIM records to Cloudflare (they survive teardowns). Touches no cloud infrastructure. |
+| **Tests** (`tests.yaml`) | Automatic on pull requests and pushes | `pytest`, including the Postgres-backed API contract tests. |
 | **Deploy DevBox** (`deploy-devbox.yaml`) | You want the remote dev VM | See [devbox.md](devbox.md). |
 | **Disable Deletion Protection** | Before destroying the cluster manually | Turns off GKE deletion protection through Terraform. |
 | **Debug Cluster** (`debug.yaml`) | Ad-hoc | Dumps cluster state to the log. Prefer **Cluster Report**. |
@@ -31,7 +33,7 @@ billing.
 | ShipZen | https://shipzen.jeneeldumasia.codes |
 | ArgoCD | https://argocd.jeneeldumasia.codes (user `admin`) |
 | Grafana | https://grafana-shipzen.jeneeldumasia.codes (user `admin`, password from the `GRAFANA_PASSWORD` secret) |
-| kubectl | `gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project <project>` |
+| kubectl | `gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project <project>` |
 | Tenant manifests | https://github.com/jeneeldumasia/shipzen-tenants |
 | Terraform state | HCP Terraform, org `jeneel-shipzen`, workspace `ShipZen-GCP` |
 
@@ -75,7 +77,44 @@ before running Deploy Platform Infra.
 4. In GitHub: repository → Settings → Secrets and variables → Actions, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 5. Run **Deploy Secrets to GKE**. It stores both in Secret Manager (`shipzen-telegram`) and sends you a test message. The in-cluster relay picks the change up within about 10 minutes, with no restart. Teardown alerts (failed backup, failed teardown) use the repository secrets directly, so they work from step 4 on, even while the platform is down.
 
-To stop messages, store an empty value: `echo -n '{"bot_token": "", "chat_id": ""}' | bash scripts/put-secret.sh shipzen-telegram`.
+To stop messages: see [telegram-alerts.md](telegram-alerts.md#change-or-stop-alerts). `shipzen-telegram` also holds the Resend key for deploy emails, so don't blank it by hand while emails are on.
+
+**Send deploy emails** (one-time, free: Resend's free tier is 3,000 emails a month).
+Users get an email when a deploy goes live, fails, an app goes down, or a preview
+is ready. Emails go to their GitHub-verified address, and each user can turn them
+off with the bell in the top bar.
+1. Create a Resend account and an API key. Give it full access for the setup
+   step; afterwards you can replace it with a sending-only key.
+2. Add it as the repository secret `RESEND_API_KEY`.
+3. Run **Set Up Email**. It registers `jeneeldumasia.codes` with Resend and adds
+   the DNS records in Cloudflare. Verification takes a few minutes; Resend's
+   dashboard shows when the domain is verified.
+4. Run **Deploy Secrets to GKE**. It adds the key to `shipzen-telegram` as
+   `resend_api_key`. It goes there rather than into a new secret because Secret
+   Manager is free only up to 6 versions. The worker and controller read it
+   through the `shipzen-notify` ExternalSecret.
+
+Without a key nothing is sent, and nothing fails.
+
+**PR preview deploys** need the GitHub App to deliver pull-request events. In the
+App's settings, grant **Pull requests: Read & write** (write is only for the
+preview comment). Subscribe to the **Pull request** event, then approve the new
+permission on the installation.
+
+**Run the platform as an admin.** Admin → System:
+- **Session Cost:** what the running cluster costs per hour, a session total, and the
+  time left before auto-destroy. These are node list prices, so the figure is an upper bound.
+- **Platform Controls:**
+  - publish an announcement banner (info / warning / critical) that every user sees;
+  - pause all new deploys with a reason (a deploy freeze). Running apps and builds
+    already started carry on.
+
+Admin → Users:
+- **Suspend** with an optional reason. The user is signed out within seconds, and
+  their projects can't deploy. Their running apps keep serving.
+- **Restore** undoes it.
+
+Every action is in the audit log.
 
 **Protect Grafana and ArgoCD with Cloudflare Access** (one-time, free). Both are
 public hostnames behind only an admin password. `terraform/access.tf` puts a
@@ -125,6 +164,12 @@ Start with **Cluster Report**, then the Grafana **Overview** page.
 | A deploy stays in Building | Builder Job failing or no node room | Build log in the UI; `kubectl get jobs,pods -n shipzen-build`; Grafana "Room to grow". |
 | An app shows Offline | Crashing, wrong port, or out of memory | Grafana **Your app** → crashes and logs. The app must listen on `$PORT` on `0.0.0.0`. |
 | Old namespaces keep coming back in ArgoCD | A tenant folder outlived its project | The controller removes ownerless folders about every 20 min; check its logs for "Orphan GC". |
+| Every deploy gets 423 "Deploys are paused" | An admin turned on the deploy freeze | Admin → System → **Resume deploys** |
+| A user gets 403 "Your ShipZen account is suspended" | An admin suspended them | Admin → Users → **Restore** |
+| No preview for a pull request | The App lacks pull-request events/permission, the PR comes from a fork, the project already has 3 PRs with previews, or deploys are paused | API log: "Ignored pull request … from a fork" or "No preview for …" says which |
+| No deploy emails | No `RESEND_API_KEY` in `shipzen-telegram`, domain not verified, or the user turned emails off | Worker/controller logs say "Resend refused an email" or "Could not send email"; rerun **Set Up Email** and **Deploy Secrets to GKE** |
+| App page Logs or Metrics empty | Promtail or Prometheus not running yet, or the release just started | `kubectl get pods -n shipzen-system -l app.kubernetes.io/name=promtail` (Promtail must tolerate the tenant taint); give metrics a minute |
+| Vanity URL 404 right after setting it | DNS and the route still propagating | The Vanity URL card shows **Setting up…** until the route is accepted; allow a few minutes |
 | Everyone suddenly signed out / 401s | The user's GitHub token was revoked, or GitHub is down or rate-limiting | The API log says which (401 vs 503 with `Retry-After`). Sign in again for 401. |
 | The site is down but pods are fine | Gateway or Cloudflare | Overview "Internet gateway" tile; Cloudflare DNS should point at the gateway IP. |
 | Namespaces stuck Terminating during teardown | Finalizers on ArgoCD apps or webhooks | **Infra Teardown** already clears them; rerun it. |

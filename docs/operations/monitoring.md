@@ -5,6 +5,14 @@ Overview**. The dashboards are written for people who don't run Kubernetes: plai
 titles, green or red instead of raw numbers, and an (i) on every panel saying
 what it means.
 
+Users don't need Grafana for their own apps. Each deployment page has a **Logs**
+tab (Loki, live and searchable) and a **Metrics** tab (Prometheus: requests, 5xx
+errors, p95 latency, CPU, memory, instances, restarts). The API queries both
+through `api/observability_client.py`, scoped to the project's namespace and
+release. Deploy events (live, failed, down, preview ready) reach users by
+**email** (Resend, `shipzen_common/notify.py`); platform alerts below go to
+Telegram.
+
 ## Dashboards
 
 | Dashboard | Folder | Answers |
@@ -26,7 +34,7 @@ The chart's stock Kubernetes dashboards are turned off
 | Deploys, builds, queue | `shipzen_*` metrics from the worker and controller |
 | API traffic | `shipzen_api_*` from the API's `/metrics` |
 | Database up | `shipzen_database_up`, set by the controller from a `SELECT 1` every 30 s |
-| App logs | Loki (Promtail ships every pod's stdout), Grafana datasource "Logs" |
+| App logs | Loki (Promtail ships every pod's stdout; it tolerates every taint so it also runs on the sandboxed tenant and build nodes), Grafana datasource "Logs" |
 
 Tenant namespaces are recognised by their `tenant-quota` ResourceQuota, and Envoy
 stats are mapped to a namespace through the route name
@@ -63,6 +71,10 @@ problem every 12 hours, and sends a ✅ message when it clears. Only `warning`,
 `high` and `critical` are sent. The relay (`infra/system/alert-relay/relay.py`)
 uses the same plain words as Grafana. It is only ever called by that webhook;
 nothing polls. Setup steps: [telegram-alerts.md](telegram-alerts.md).
+
+`KubeMemoryOvercommit` and `KubeCPUOvercommit` go to the null receiver (like
+`Watchdog`): on a 1–3 node, single-zone cluster where each build books ~3 GiB they
+fire on every build with nothing to act on.
 
 Scheduler, controller-manager, etcd and kube-proxy scraping is disabled, because
 GKE manages those and they would raise permanent false alarms.
