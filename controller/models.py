@@ -19,6 +19,7 @@ class ProjectSchema(BaseModel):
     status: ProjectStatus = Field(default=ProjectStatus.PROVISIONING)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     deleted_at: Optional[datetime] = None
+    subdomain: Optional[str] = None
 
     @field_serializer('created_at', 'deleted_at')
     def serialize_dt(self, dt: datetime, _info):

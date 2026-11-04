@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  # The project's stable, owner-chosen hostname. Always points at the live
+  # release; the controller re-renders it when a new release goes live.
+  name: vanity-route
+  namespace: {{ namespace }}
+  labels:
+    shipzen.jeneeldumasia.codes/project: "{{ project_slug }}"
+    shipzen.jeneeldumasia.codes/vanity: "true"
+spec:
+  parentRefs:
+    - name: shipzen-gateway
+      namespace: shipzen-system
+  hostnames:
+    - {{ hostname | tojson }}
+  rules:
+    - backendRefs:
+        - name: {{ live_deployment }}-svc
+          port: 80

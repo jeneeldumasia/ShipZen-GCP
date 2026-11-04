@@ -192,6 +192,7 @@ GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 
 from shipzen_common.github_app import get_github_app_token
+from shipzen_common.hostnames import valid_vanity, vanity_hostname
 from shipzen_common.repo_config import valid_health_check_path, valid_image_digest, valid_port
 
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
@@ -306,18 +307,11 @@ def refresh_tenant_manifests(projects):
     """
     if _orphan_gc_counter % ORPHAN_GC_EVERY != 0:  # counter advanced by gc_orphan_tenant_folders
         return
-    template = jinja_env.get_template("tenant.yaml.j2")
     for row in projects:
         if row.get("status") != ProjectStatus.READY.value:
             continue
         try:
-            manifests = template.render(
-                namespace=row["namespace"],
-                project_id=row["id"],
-                project_slug=_k8s_slug(row.get("name")),
-                gar_registry=GAR_REGISTRY,
-                gcp_project=GCP_PROJECT,
-            )
+            manifests = render_tenant(row["namespace"], row["id"], row.get("name"), row.get("subdomain"))
             commit_manifests_to_git(row["namespace"], "tenant.yaml", manifests)
         except Exception as e:
             logger.warning(f"Tenant manifest refresh failed for {row.get('namespace')}: {e}")
@@ -736,14 +730,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
             if project.status == ProjectStatus.PROVISIONING:
                 logger.info(
                     f"Provisioning project: {project.name} ({project.namespace})")
-                template = jinja_env.get_template("tenant.yaml.j2")
-                manifests = template.render(
-                    namespace=project.namespace,
-                    project_id=project.id,
-                    project_slug=_k8s_slug(project.name),
-                    gar_registry=GAR_REGISTRY,
-                    gcp_project=GCP_PROJECT,
-                )
+                manifests = render_tenant(project.namespace, project.id, project.name, project.subdomain)
                 commit_manifests_to_git(project.namespace, "tenant.yaml", manifests)
 
                 if check_namespace_exists(project.namespace):
@@ -793,6 +780,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                 else:
                     reconcile_deployments(
                         project_conn, project_cur, project, global_deps, global_svcs, global_routes, global_ext_secrets)
+                    sync_vanity_route(project_cur, project)
 
     except Exception as e:
         # HIGH-02 Fix: Use project_data['_id'] since 'id' was popped
@@ -809,6 +797,61 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
             logger.error(f"Failed to set FAILED state: {rb_err}")
     finally:
         close_db_connection(project_conn)
+
+
+def render_tenant(namespace: str, project_id: str, name: str, subdomain=None) -> str:
+    """tenant.yaml for a project. The namespace's slug and vanity labels are
+    what the Kyverno hostname policy checks routes against."""
+    return jinja_env.get_template("tenant.yaml.j2").render(
+        namespace=namespace,
+        project_id=project_id,
+        project_slug=_k8s_slug(name),
+        vanity=subdomain if valid_vanity(subdomain) else "",
+        gar_registry=GAR_REGISTRY,
+        gcp_project=GCP_PROJECT,
+    )
+
+
+# (subdomain, live deployment) last written per project, so the GitOps repo is
+# only touched when something changed. Empty after a restart: one resync.
+_vanity_synced: dict = {}
+
+
+def sync_vanity_route(cur, project) -> None:
+    """Point <subdomain>-shipzen.jeneeldumasia.codes at the project's live release.
+
+    Written as vanity.yaml next to the releases; removed when the project has no
+    vanity name or nothing live. tenant.yaml carries the name as a namespace
+    label first, because the Kyverno hostname policy only admits it from there.
+    """
+    sub = project.subdomain if valid_vanity(project.subdomain) else None
+    live = None
+    if sub:
+        cur.execute(
+            "SELECT deployment_id FROM deployments WHERE project_id = %s AND state = 'Running' "
+            "AND replicas > 0 ORDER BY created_at DESC LIMIT 1;", (project.id,))
+        row = cur.fetchone()
+        live = row[0] if row else None
+    state = (sub, live)
+    if _vanity_synced.get(project.id) == state:
+        return
+    try:
+        commit_manifests_to_git(project.namespace, "tenant.yaml",
+                                render_tenant(project.namespace, project.id, project.name, sub))
+        if sub and live:
+            manifest = jinja_env.get_template("vanity-route.yaml.j2").render(
+                namespace=project.namespace,
+                project_slug=_k8s_slug(project.name),
+                hostname=vanity_hostname(sub),
+                live_deployment=live,
+            )
+            commit_manifests_to_git(project.namespace, "vanity.yaml", manifest)
+            logger.info(f"Vanity hostname {vanity_hostname(sub)} -> release {live}")
+        else:
+            commit_manifests_to_git(project.namespace, "vanity.yaml", "", delete=True)
+        _vanity_synced[project.id] = state
+    except Exception as e:
+        logger.warning(f"Vanity route sync failed for {project.namespace}: {e}")
 
 
 def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_routes, global_ext_secrets):

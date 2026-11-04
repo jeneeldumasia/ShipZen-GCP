@@ -13,13 +13,14 @@ from pydantic import BaseModel, field_validator
 
 from audit import log_audit_event
 from auth import User, evict_user_token_cache, get_current_user
-from database import assert_project_owner, get_connection, verify_project_access
+from database import assert_project_owner, get_connection, verify_project_access, verify_project_write_access
 from crypto_box import encrypt_value
 from github_access import check_repo_access, download_snapshot
 from helpers import _serialize
 from platform_clients import _redis_client
 from ratelimit import limiter
 from secret_store import delete_project_secret, ensure_project_secret
+from shipzen_common.hostnames import vanity_hostname, vanity_problem
 from validation import (_NAMESPACE_RE, _PROJECT_NAME_RE, _REPO_URL_RE, _RESERVED_NS_EXACT, _RESERVED_NS_PREFIXES)
 
 logger = logging.getLogger('api')
@@ -181,6 +182,51 @@ def list_projects(
 def get_project(request: Request, project_id: str, project: dict = Depends(verify_project_access)):
     """Get a single project by ID."""
     return _serialize(project)
+
+
+class SetSubdomainRequest(BaseModel):
+    # None or "" removes the vanity name.
+    subdomain: Optional[str] = None
+
+
+@router.put("/projects/{project_id}/subdomain", tags=["Projects"])
+@limiter.limit("10/minute")
+def set_project_subdomain(request: Request, project_id: str, body: SetSubdomainRequest,
+                          project: dict = Depends(verify_project_write_access),
+                          current_user: User = Depends(get_current_user)):
+    """Give the project a free vanity hostname, <subdomain>-shipzen.jeneeldumasia.codes,
+    that always points at its live release (or remove it)."""
+    sub = (body.subdomain or "").strip().lower() or None
+    if sub:
+        problem = vanity_problem(sub)
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=DictCursor) as cur:
+                cur.execute("UPDATE projects SET subdomain = %s WHERE id = %s RETURNING *;", (sub, project_id))
+                row = dict(cur.fetchone())
+            conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        raise HTTPException(status_code=409, detail=f"'{sub}' is already taken. Try another name.")
+
+    log_audit_event(
+        project_id=project_id,
+        user_id=current_user.user_id,
+        action="SET_SUBDOMAIN",
+        resource_type="project",
+        resource_id=project_id,
+        details={"subdomain": sub},
+    )
+    try:
+        _redis_client.publish("shipzen:events:project_reconcile",
+                              json.dumps({"project_id": project_id, "event": "subdomain_changed"}))
+    except Exception as pub_err:
+        logger.warning(f"Failed to publish project_reconcile event: {pub_err}")
+
+    out = _serialize(row)
+    out["vanity_url"] = f"https://{vanity_hostname(sub)}" if sub else None
+    return out
 
 
 @router.delete("/projects/{project_id}", status_code=202, tags=["Projects"])
