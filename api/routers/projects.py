@@ -14,7 +14,8 @@ from pydantic import BaseModel, field_validator
 from audit import log_audit_event
 from auth import User, evict_user_token_cache, get_current_user
 from database import assert_project_owner, get_connection, verify_project_access
-from github_access import check_repo_access
+from crypto_box import encrypt_value
+from github_access import check_repo_access, download_snapshot
 from helpers import _serialize
 from platform_clients import _redis_client
 from ratelimit import limiter
@@ -88,7 +89,7 @@ def create_project(request: Request, body: CreateProjectRequest, current_user: U
                     RETURNING *;
                     """,
                     (project_id, current_user.user_id,
-                     body.name, body.namespace, webhook_secret,
+                     body.name, body.namespace, encrypt_value(webhook_secret),
                      body.repo_url, body.branch,
                      repo["id"] if repo else None, repo["full_name"] if repo else None),
                 )
@@ -355,7 +356,6 @@ async def analyze_repo(request: Request, body: AnalyzeRequest, current_user: Use
     """Analyze a Git repository and detect deployable services."""
     import asyncio
     import tempfile
-    import subprocess
     from analyzer import RepoAnalyzer
 
     # Validate branch name to prevent shell injection
@@ -364,17 +364,9 @@ async def analyze_repo(request: Request, body: AnalyzeRequest, current_user: Use
 
     def _clone_and_analyze():
         with tempfile.TemporaryDirectory() as tmpdir:
-            try:
-                subprocess.run(
-                    ["git", "clone", "--depth", "1", "-b",
-                        body.branch, body.repo_url, tmpdir],
-                    check=True, capture_output=True, timeout=60
-                )
-            except subprocess.TimeoutExpired:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Repository clone timed out after 60 seconds"
-                )
+            # A size-capped snapshot from the GitHub API with the user's token,
+            # not `git clone` of an arbitrary URL from the API pod (H3).
+            download_snapshot(current_user, body.repo_url, body.branch, tmpdir)
             analyzer = RepoAnalyzer(
                 repo_path=tmpdir,
                 repo_name=body.repo_url.split('/')[-1].replace('.git', ''))
@@ -385,8 +377,8 @@ async def analyze_repo(request: Request, body: AnalyzeRequest, current_user: Use
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to clone repo for analysis: {e}")
+        logger.error(f"Failed to read repo for analysis: {type(e).__name__}")
         raise HTTPException(
-            status_code=400, detail="Failed to clone repository")
+            status_code=400, detail="Failed to read the repository")
 
     return {"services": [s.__dict__ for s in services]}

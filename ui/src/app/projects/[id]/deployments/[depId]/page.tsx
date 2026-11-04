@@ -9,7 +9,6 @@ import { CancelDeployButton } from "./CancelDeployButton";
 import { ProgressBar } from "./ProgressBar";
 import { LiveLogPanel } from "./LiveLogPanel";
 import { CopyErrorButton } from "./CopyErrorButton";
-import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -61,8 +60,6 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
   }
   catch { notFound(); }
 
-  const session = await auth();
-  const token = (session as { accessToken?: string })?.accessToken;
   const isActive = ["Queued", "Building", "Deploying", "Verifying"].includes(deployment.state);
   const needsLiveUpdates = isActive;
   const shortId = deployment.deployment_id.slice(0, 8);
@@ -71,7 +68,7 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
 
   return (
     <div className="w-full animate-fade-in relative">
-      {needsLiveUpdates && <AutoRefresh projectId={params.id} deploymentId={params.depId} token={token} />}
+      {needsLiveUpdates && <AutoRefresh projectId={params.id} deploymentId={params.depId} />}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-16">
@@ -130,7 +127,6 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
           <LiveLogPanel
             projectId={params.id}
             deploymentId={params.depId}
-            token={token}
           />
         </div>
       )}

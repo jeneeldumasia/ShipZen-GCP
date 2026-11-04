@@ -90,6 +90,14 @@ Cloudflare login in front of them, letting through only the emails in the
 4. Next **Deploy Platform Infra** (or **Apply Infrastructure Changes**) creates the
    Access applications. Until step 3 is done, nothing changes.
 
+**Encrypt secrets stored in Postgres** (one-time, optional). Per-project webhook
+secrets are encrypted with `SHIPZEN_DATA_KEY` when it's set. Generate a key once:
+`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+Add it as the repository secret `SHIPZEN_DATA_KEY`. The next **Deploy Platform
+Infra** stores it in Secret Manager (`shipzen-data-key`), and only creates it once.
+**Never change it.** It's what decrypts those values, including in database backups.
+Without it, values are stored as before.
+
 **Budget alert.** A Cloud Billing budget "ShipZen monthly (before credits)" of
 ₹2,000/month emails billing admins at 50%, 90% and 100%. It counts usage *before*
 credits, so it still fires while credits pay the bill. It lives on the billing

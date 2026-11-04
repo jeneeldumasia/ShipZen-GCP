@@ -5,6 +5,8 @@ per project (secret_store.py), synced into the project's pods. /env lists key
 names; /secrets lists keys with masked values. Values are never returned.
 Every change is written to the audit log.
 """
+import functools
+import inspect
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,7 +16,7 @@ from audit import log_audit_event
 from auth import User, get_current_user
 from database import verify_project_access, verify_project_write_access
 from ratelimit import limiter
-from secret_store import is_not_found, load_env, save_env
+from secret_store import env_write_lock, is_not_found, load_env, save_env
 from validation import _ENV_KEY_RE, _ENV_VALUE_MAX
 
 logger = logging.getLogger('api')
@@ -47,6 +49,22 @@ class PutEnvVarRequest(BaseModel):
 PutSecretRequest = PutEnvVarRequest
 
 
+def _serialized(endpoint):
+    """Run a write endpoint under the project's env lock (M2).
+
+    Each write reads the project's whole KEY: value object, changes one key and
+    stores a new version. Two at once used to lose one of the changes.
+    """
+    sig = inspect.signature(endpoint)
+
+    @functools.wraps(endpoint)
+    def wrapper(*args, **kwargs):
+        project = sig.bind_partial(*args, **kwargs).arguments["project"]
+        with env_write_lock(project["id"]):
+            return endpoint(*args, **kwargs)
+    return wrapper
+
+
 def _audit(project_id: str, user: User, action: str, key: str):
     log_audit_event(project_id=project_id, user_id=user.user_id, action=action,
                     resource_type="project", resource_id=project_id, details={"key": key})
@@ -69,6 +87,7 @@ def get_env_vars(request: Request, project_id: str, project: dict = Depends(veri
 
 @router.put("/projects/{project_id}/env", tags=["Environment"])
 @limiter.limit("20/minute")
+@_serialized
 def put_env_var(request: Request, project_id: str, body: PutEnvVarRequest, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """Add or update an environment variable for a project."""
     try:
@@ -89,6 +108,7 @@ def put_env_var(request: Request, project_id: str, body: PutEnvVarRequest, proje
 
 @router.delete("/projects/{project_id}/env/{key}", tags=["Environment"])
 @limiter.limit("20/minute")
+@_serialized
 def delete_env_var(request: Request, project_id: str, key: str, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     try:
         values = load_env(project['id'])
@@ -121,6 +141,7 @@ def list_secrets(request: Request, project_id: str, project: dict = Depends(veri
 
 @router.post("/projects/{project_id}/secrets", status_code=200, tags=["Secrets"])
 @limiter.limit("20/minute")
+@_serialized
 def put_secret(request: Request, project_id: str, body: PutSecretRequest, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """Add or update a secret for a project."""
     try:
@@ -143,6 +164,7 @@ def put_secret(request: Request, project_id: str, body: PutSecretRequest, projec
 
 @router.delete("/projects/{project_id}/secrets/{key}", status_code=200, tags=["Secrets"])
 @limiter.limit("20/minute")
+@_serialized
 def delete_secret(request: Request, project_id: str, key: str, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
     """Delete a secret key from a project."""
     try:

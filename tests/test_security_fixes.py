@@ -204,3 +204,31 @@ def test_build_digest_comes_only_from_kaniko_termination_message(message, ok):
         else:
             with pytest.raises(RuntimeError):
                 worker._build_digest("pod")
+
+
+# ── Task 25: secrets stored in Postgres are encrypted when a key is set ───────
+
+def _crypto_box():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("shipzen_crypto_box", ROOT / "api" / "crypto_box.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_webhook_secrets_are_encrypted_with_a_key():
+    from cryptography.fernet import Fernet
+    box = _crypto_box()
+    with patch.dict("os.environ", {"SHIPZEN_DATA_KEY": Fernet.generate_key().decode()}):
+        stored = box.encrypt_value("hmac-secret")
+        assert stored.startswith("enc:v1:") and "hmac-secret" not in stored
+        assert box.decrypt_value(stored) == "hmac-secret"
+        assert box.decrypt_value("legacy-plain") == "legacy-plain"   # old rows still work
+
+
+def test_without_a_key_values_are_stored_as_before():
+    box = _crypto_box()
+    with patch.dict("os.environ", {"SHIPZEN_DATA_KEY": ""}):
+        assert box.encrypt_value("hmac-secret") == "hmac-secret"
+        with pytest.raises(RuntimeError):
+            box.decrypt_value("enc:v1:abc")
