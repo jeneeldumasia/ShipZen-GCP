@@ -29,14 +29,33 @@ def get_me(request: Request, current_user: User = Depends(get_current_user)):
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=DictCursor) as cur:
-                cur.execute("SELECT id, email, role FROM users WHERE id = %s;", (current_user.user_id,))
+                cur.execute("SELECT id, email, role, email_notifications FROM users WHERE id = %s;",
+                            (current_user.user_id,))
                 row = cur.fetchone()
     except Exception as e:
         logger.error(f"Failed to fetch user profile: {e}")
         raise HTTPException(status_code=500, detail="Database error")
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"user_id": row["id"], "email": row["email"], "role": row["role"], "is_admin": current_user.is_admin}
+    return {"user_id": row["id"], "email": row["email"], "role": row["role"], "is_admin": current_user.is_admin,
+            "email_notifications": row["email_notifications"]}
+
+
+class NotificationsRequest(BaseModel):
+    email: bool
+
+
+@router.put("/users/me/notifications", tags=["Users"])
+@limiter.limit("10/minute")
+def set_my_notifications(request: Request, body: NotificationsRequest,
+                         current_user: User = Depends(get_current_user)):
+    """Turn deployment emails (live / failed / down) on or off for yourself."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET email_notifications = %s WHERE id = %s;",
+                        (body.email, current_user.user_id))
+        conn.commit()
+    return {"email_notifications": body.email}
 
 
 class UpdateRoleRequest(BaseModel):
