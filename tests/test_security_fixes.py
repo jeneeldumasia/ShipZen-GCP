@@ -303,3 +303,10 @@ def test_only_the_live_release_gets_the_project_scaling():
     bad = SimpleNamespace(instance_size="huge", min_instances=9, max_instances=1, live_deployment_id="live")
     assert ctrl.release_scaling(bad, "live", {"state": "Running", "replicas": 1})["scaling_key"] == "small:1:1"
 
+
+def test_previews_never_get_the_live_release_scaling():
+    from types import SimpleNamespace
+    ctrl = load("controller")
+    project = SimpleNamespace(instance_size="medium", min_instances=2, max_instances=3, live_deployment_id=None)
+    preview = ctrl.release_scaling(project, "pv", {"state": "Running", "replicas": 1, "kind": "preview"})
+    assert (preview["replicas"], preview["autoscale"]) == (1, False)

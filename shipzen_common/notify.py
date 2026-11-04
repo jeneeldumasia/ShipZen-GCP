@@ -28,6 +28,7 @@ EVENTS = {
     "live": ("is live", "Your deployment of {project} is live."),
     "failed": ("failed to deploy", "Your deployment of {project} failed."),
     "down": ("is down", "{project} stopped responding: its instances keep crashing."),
+    "preview": ("preview is ready", "A preview of {project} for a pull request is ready."),
 }
 
 
