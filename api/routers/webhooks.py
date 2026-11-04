@@ -103,7 +103,7 @@ async def github_webhook(request: Request, project_id: str):
             with conn.cursor(cursor_factory=DictCursor) as cur:
                 # CRIT-02: Guard against duplicate webhook deliveries
                 cur.execute(
-                    "SELECT 1 FROM deployments WHERE project_id = %s AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
+                    "SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'production' AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
                     (project_id,)
                 )
                 if cur.fetchone():
@@ -172,7 +172,8 @@ async def github_app_webhook(request: Request):
     if not signature_header:
         raise HTTPException(status_code=400, detail="Missing signature")
 
-    if request.headers.get("X-GitHub-Event") != "push":
+    event = request.headers.get("X-GitHub-Event")
+    if event not in ("push", "pull_request"):
         return JSONResponse(status_code=200, content={"message": "event ignored"})
 
     app_secret = os.getenv("GITHUB_APP_WEBHOOK_SECRET")
@@ -192,6 +193,9 @@ async def github_app_webhook(request: Request):
         payload = json.loads(body_bytes)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if event == "pull_request":
+        return _handle_pull_request(payload)
 
     branch = "main"
     if "ref" in payload:
@@ -278,7 +282,7 @@ async def github_app_webhook(request: Request):
                 with conn.cursor() as cur:
                     # CRIT-02: Guard against in-flight deployments from concurrent webhook deliveries
                     cur.execute(
-                        "SELECT 1 FROM deployments WHERE project_id = %s AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
+                        "SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'production' AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
                         (project_id,)
                     )
                     if cur.fetchone():
@@ -322,3 +326,108 @@ async def github_app_webhook(request: Request):
         deployed_ids.append(deployment_id)
 
     return {"message": "Deployments triggered via GitHub App", "deployment_ids": deployed_ids}
+
+
+# ── Preview deploys for pull requests ────────────────────────────────────────
+
+MAX_PREVIEWS_PER_PROJECT = 3
+_PR_BUILD_ACTIONS = {"opened", "synchronize", "reopened"}
+_ACTIVE = "('Queued', 'Building', 'Deploying', 'Verifying', 'Running')"
+
+
+def _handle_pull_request(payload: dict) -> dict:
+    """Build a preview of an open pull request; remove its previews when it closes.
+
+    Only pull requests whose branch lives in the project's own repository get a
+    preview: a fork's code is untrusted and could be anyone's.
+    """
+    action = payload.get("action")
+    pr = payload.get("pull_request") or {}
+    number = pr.get("number")
+    base_repo = (pr.get("base") or {}).get("repo") or {}
+    head = pr.get("head") or {}
+    head_repo = head.get("repo") or {}
+    if not isinstance(number, int) or not base_repo.get("id"):
+        return {"message": "event ignored"}
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute("SELECT id, repo_url FROM projects WHERE github_repo_id = %s "
+                        "AND deleted_at IS NULL AND status = 'Ready';", (int(base_repo["id"]),))
+            projects = cur.fetchall()
+            if not projects:
+                return {"message": "No project for this repository, event ignored"}
+            if action == "closed":
+                cur.execute(
+                    "UPDATE deployments SET state = 'Superseded', updated_at = NOW() "
+                    "WHERE project_id = ANY(%s) AND kind = 'preview' AND pr_number = %s "
+                    "AND state IN ('Running', 'Failed');",
+                    ([p["id"] for p in projects], number))
+                conn.commit()
+                return {"message": f"Previews of PR #{number} removed"}
+    if action not in _PR_BUILD_ACTIONS:
+        return {"message": "event ignored"}
+    if head_repo.get("id") != base_repo.get("id"):
+        logger.info(f"Ignored pull request #{number} from a fork: no preview for untrusted code")
+        return {"message": "Pull requests from forks don't get previews"}
+    sha, ref = head.get("sha"), head.get("ref")
+    if not isinstance(ref, str) or not ref or not isinstance(sha, str) or len(sha) > 40:
+        return {"message": "event ignored"}
+
+    created = []
+    for project in projects:
+        project_id = project["id"]
+        try:
+            check_deploy_limits(project_id)
+        except HTTPException as limit:
+            logger.info(f"No preview for {project_id}: {limit.detail}")
+            continue
+        deployment_id = str(uuid.uuid4())
+        image_uri = image_uri_for(project_id, deployment_id)
+        title = (pr.get("title") or "")[:500] or None
+        author = ((pr.get("user") or {}).get("login") or "")[:255] or None
+        pr_url = pr.get("html_url") if str(pr.get("html_url") or "").startswith("https://github.com/") else None
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'preview' AND pr_number = %s "
+                        "AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
+                        (project_id, number))
+                    if cur.fetchone():
+                        continue
+                    cur.execute(
+                        f"SELECT count(DISTINCT pr_number) FROM deployments WHERE project_id = %s "
+                        f"AND kind = 'preview' AND pr_number <> %s AND state IN {_ACTIVE};",
+                        (project_id, number))
+                    if cur.fetchone()[0] >= MAX_PREVIEWS_PER_PROJECT:
+                        logger.info(f"No preview for {project_id} PR #{number}: "
+                                    f"{MAX_PREVIEWS_PER_PROJECT} pull requests already have one")
+                        continue
+                    cur.execute("SELECT port FROM deployments WHERE project_id = %s AND kind = 'production' "
+                                "ORDER BY created_at DESC LIMIT 1;", (project_id,))
+                    port_row = cur.fetchone()
+                    port = port_row[0] if port_row and port_row[0] else 8080
+                    cur.execute(
+                        """
+                        INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
+                                                 branch, triggered_by, commit_sha, commit_message, commit_author,
+                                                 commit_url, kind, pr_number)
+                        VALUES (%s, %s, %s, %s, 1, %s, 'Queued', %s, 'preview', %s, %s, %s, %s, 'preview', %s)
+                        """,
+                        (deployment_id, project_id, project["repo_url"], image_uri, port, ref,
+                         sha, title, author, pr_url, number))
+                    queue_deployment(cur, {
+                        "deployment_id": deployment_id, "project_id": project_id,
+                        "repo_url": project["repo_url"], "branch": ref, "image_name": image_uri,
+                        "queued_at": str(time.time()), "retries": "0",
+                    })
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to queue the preview for {project_id} PR #{number}: {e}")
+            continue
+        log_audit_event(project_id=project_id, user_id="github-app", action="PREVIEW_DEPLOY",
+                        resource_type="deployment", resource_id=deployment_id,
+                        details={"pr_number": number, "branch": ref})
+        created.append(deployment_id)
+    return {"message": "Preview deployments triggered", "deployment_ids": created}

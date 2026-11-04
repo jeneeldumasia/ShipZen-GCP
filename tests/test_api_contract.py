@@ -821,3 +821,66 @@ def test_no_resend_key_means_no_email(monkeypatch):
     notify.notify_deployment(conn, MagicMock(), "d1", "live")
     conn.cursor.assert_not_called()
 
+
+# ── Preview deploys ──────────────────────────────────────────────────────────
+
+def _pr_event(env, monkeypatch, action="opened", number=7, head_repo_id=1, sha="b" * 40):
+    monkeypatch.setenv("GITHUB_APP_WEBHOOK_SECRET", "app-secret")
+    body = json.dumps({
+        "action": action,
+        "pull_request": {
+            "number": number, "title": "Add search", "html_url": f"https://github.com/o/r/pull/{number}",
+            "user": {"login": "dev"},
+            "base": {"repo": {"id": 1}},
+            "head": {"ref": "feature", "sha": sha, "repo": {"id": head_repo_id}},
+        },
+    }).encode()
+    return env.client.post("/webhooks/github-app", content=body, headers={
+        "X-GitHub-Event": "pull_request", "x-hub-signature-256": _signed("app-secret", body)})
+
+
+def test_pull_request_gets_a_preview_deployment(env, monkeypatch):
+    pid = _make_project(env)
+    assert _sql("SELECT github_repo_id FROM projects WHERE id = %s", (pid,)) == [(1,)]
+    r = _pr_event(env, monkeypatch)
+    assert r.status_code == 200 and len(r.json()["deployment_ids"]) == 1
+    assert _sql("SELECT kind, pr_number, branch, triggered_by, commit_sha, commit_message, state FROM deployments "
+                "WHERE project_id = %s", (pid,)) == [("preview", 7, "feature", "preview", "b" * 40, "Add search", "Queued")]
+    # the same PR while its preview is still building: no second build
+    assert _pr_event(env, monkeypatch, action="synchronize").json()["deployment_ids"] == []
+
+
+def test_fork_pull_requests_get_no_preview(env, monkeypatch):
+    pid = _make_project(env)
+    r = _pr_event(env, monkeypatch, head_repo_id=999)
+    assert r.status_code == 200
+    assert _sql("SELECT count(*) FROM deployments WHERE project_id = %s", (pid,)) == [(0,)]
+
+
+def test_previews_are_capped_and_removed_when_the_pr_closes(env, monkeypatch):
+    pid = _make_project(env)
+    for n in (1, 2, 3):
+        _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state, kind, pr_number)
+                VALUES (%s, %s, 'https://github.com/o/r', 'img', 1, 8080, 'Running', 'preview', %s)""", (f"p{n}", pid, n))
+    assert _pr_event(env, monkeypatch, number=4).json()["deployment_ids"] == []
+    _pr_event(env, monkeypatch, action="closed", number=2)
+    assert _sql("SELECT state FROM deployments WHERE deployment_id = 'p2'") == [("Superseded",)]
+    assert len(_pr_event(env, monkeypatch, number=4).json()["deployment_ids"]) == 1
+
+
+def test_previews_dont_block_production_or_become_rollback_targets(env):
+    pid = _make_project(env)
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state, kind, pr_number)
+            VALUES ('pv', %s, 'https://github.com/o/r', 'img-preview', 1, 8080, 'Building', 'preview', 5)""", (pid,))
+    env.as_user("editor")
+    assert env.client.post(f"/projects/{pid}/deployments", json={"repo_url": "https://github.com/o/r"}).status_code == 202
+    _sql("UPDATE deployments SET state = 'Running' WHERE project_id = %s", (pid,))
+    assert env.client.post(f"/projects/{pid}/rollback").status_code == 409
+
+
+def test_previews_cannot_be_redeployed_to_production(env):
+    pid = _make_project(env)
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state, kind, pr_number, branch)
+            VALUES ('pv', %s, 'https://github.com/o/r', 'img', 1, 8080, 'Running', 'preview', 5, 'feature')""", (pid,))
+    env.as_user("editor")
+    assert env.client.post(f"/projects/{pid}/deployments/pv/redeploy").status_code == 409
