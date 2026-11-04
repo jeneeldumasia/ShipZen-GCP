@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 import { EnvVars } from "./EnvVars";
+import { VanityDomain } from "./VanityDomain";
 import { Webhooks } from "./Webhooks";
 import { ProjectShortcuts } from "./ProjectShortcuts";
 import { ProjectProvisioningStatus } from "./ProjectProvisioningStatus";
@@ -137,6 +138,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         )}
       </div>
 
+      <VanityDomain projectId={project.id} initial={project.subdomain ?? null} />
       <EnvVars projectId={project.id} />
       <Webhooks />
       <ProjectShortcuts projectId={project.id} />

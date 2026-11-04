@@ -91,6 +91,7 @@ export interface Project {
   deleted_at: string | null;
   webhook_secret?: string;
   deployments_count?: number;
+  subdomain?: string | null;
 }
 
 export interface Deployment {
@@ -150,6 +151,11 @@ export const api = {
       request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
     delete: (id: string) =>
       request<{ message: string }>(`/projects/${id}`, { method: "DELETE" }),
+    setSubdomain: (id: string, subdomain: string | null) =>
+      request<Project & { vanity_url: string | null }>(`/projects/${id}/subdomain`, {
+        method: "PUT",
+        body: JSON.stringify({ subdomain }),
+      }),
   },
 
   deployments: {
