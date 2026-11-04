@@ -15,7 +15,7 @@ set -uo pipefail
 : "${TF_VAR_gcp_project:?TF_VAR_gcp_project must be set}"
 P="$TF_VAR_gcp_project"
 R="${TF_VAR_gcp_region:-us-central1}"
-CLUSTER_LOC="$R"
+CLUSTER_LOC="${TF_VAR_gcp_zone:-us-central1-c}"   # the cluster is zonal
 USE_CLOUD_SQL="${TF_VAR_use_cloud_sql:-true}"
 
 STATE="$(terraform state list 2>/dev/null || true)"
@@ -57,15 +57,16 @@ adopt google_compute_router_nat.nat         "projects/$P/regions/$R/routers/ship
 
 # GKE
 adopt google_container_cluster.primary      "projects/$P/locations/$CLUSTER_LOC/clusters/shipzen-cluster" \
-  gcloud container clusters describe shipzen-cluster --region "$CLUSTER_LOC" --project "$P"
+  gcloud container clusters describe shipzen-cluster --zone "$CLUSTER_LOC" --project "$P"
 adopt google_container_node_pool.platform_nodes "projects/$P/locations/$CLUSTER_LOC/clusters/shipzen-cluster/nodePools/platform-nodes" \
-  gcloud container node-pools describe platform-nodes --cluster shipzen-cluster --region "$CLUSTER_LOC" --project "$P"
+  gcloud container node-pools describe platform-nodes --cluster shipzen-cluster --zone "$CLUSTER_LOC" --project "$P"
 
 # Service accounts
 adopt google_service_account.node_sa        "$(sa shipzen-node-sa)"    gcloud iam service-accounts describe "shipzen-node-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.builder_sa     "$(sa shipzen-builder-sa)" gcloud iam service-accounts describe "shipzen-builder-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.platform_sa    "$(sa shipzen-platform-sa)" gcloud iam service-accounts describe "shipzen-platform-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.eso_sa         "$(sa shipzen-eso-sa)"     gcloud iam service-accounts describe "shipzen-eso-sa@$P.iam.gserviceaccount.com" --project "$P"
+adopt google_service_account.eso_tenant_sa       "$(sa shipzen-eso-tenant-sa)"     gcloud iam service-accounts describe "shipzen-eso-tenant-sa@$P.iam.gserviceaccount.com" --project "$P"
 adopt google_service_account.velero_sa      "$(sa velero-backup-sa)"   gcloud iam service-accounts describe "velero-backup-sa@$P.iam.gserviceaccount.com" --project "$P"
 
 # Artifact Registry
@@ -73,6 +74,8 @@ adopt google_artifact_registry_repository.shipzen_builds "projects/$P/locations/
   gcloud artifacts repositories describe shipzen-builds --location "$R" --project "$P"
 adopt google_artifact_registry_repository.platform       "projects/$P/locations/$R/repositories/shipzen-platform" \
   gcloud artifacts repositories describe shipzen-platform --location "$R" --project "$P"
+adopt google_artifact_registry_repository.shipzen_staging "projects/$P/locations/$R/repositories/shipzen-staging" \
+  gcloud artifacts repositories describe shipzen-staging --location "$R" --project "$P"
 
 # Storage
 adopt google_storage_bucket.build_logs     "$P-build-logs"   gcloud storage buckets describe "gs://$P-build-logs" --project "$P"

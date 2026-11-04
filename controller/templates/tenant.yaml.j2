@@ -5,6 +5,9 @@ metadata:
   labels:
     shipzen.jeneeldumasia.codes/project-id: "{{ project_id }}"
     shipzen.jeneeldumasia.codes/tenant: "true"
+    # Route hostnames in this namespace must end in -<slug>-shipzen.jeneeldumasia.codes
+    # (Kyverno policy restrict-tenant-hostnames).
+    shipzen.jeneeldumasia.codes/slug: "{{ project_slug }}"
     # Basic pod security isolation
     pod-security.kubernetes.io/enforce: restricted
 ---

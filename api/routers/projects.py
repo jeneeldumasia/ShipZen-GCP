@@ -14,6 +14,7 @@ from pydantic import BaseModel, field_validator
 from audit import log_audit_event
 from auth import User, evict_user_token_cache, get_current_user
 from database import assert_project_owner, get_connection, verify_project_access
+from github_access import check_repo_access
 from helpers import _serialize
 from platform_clients import _redis_client
 from ratelimit import limiter
@@ -72,6 +73,8 @@ def create_project(request: Request, body: CreateProjectRequest, current_user: U
     Create a new project. The controller picks up status=Provisioning
     and creates the tenant namespace + RBAC in Kubernetes.
     """
+    # C3: a project may only name a GitHub repository the user can read.
+    repo = check_repo_access(current_user, body.repo_url) if body.repo_url else None
     project_id = str(uuid.uuid4())
     webhook_secret = secrets.token_hex(32)
     try:
@@ -79,13 +82,15 @@ def create_project(request: Request, body: CreateProjectRequest, current_user: U
             with conn.cursor(cursor_factory=DictCursor) as cur:
                 cur.execute(
                     """
-                    INSERT INTO projects (id, owner_id, name, namespace, status, webhook_secret, repo_url, branch)
-                    VALUES (%s, %s, %s, %s, 'Provisioning', %s, %s, %s)
+                    INSERT INTO projects (id, owner_id, name, namespace, status, webhook_secret, repo_url, branch,
+                                          github_repo_id, github_repo_full_name)
+                    VALUES (%s, %s, %s, %s, 'Provisioning', %s, %s, %s, %s, %s)
                     RETURNING *;
                     """,
                     (project_id, current_user.user_id,
                      body.name, body.namespace, webhook_secret,
-                     body.repo_url, body.branch),
+                     body.repo_url, body.branch,
+                     repo["id"] if repo else None, repo["full_name"] if repo else None),
                 )
                 project = dict(cur.fetchone())
 

@@ -1,0 +1,95 @@
+# Kyverno rules for tenant namespaces (label shipzen.jeneeldumasia.codes/tenant=true).
+# Defence in depth behind the controller's templates and the tenant AppProject.
+
+# Security finding C6: a tenant ExternalSecret may read only its own project's
+# secret, and only through the tenant store (whose Google identity can read
+# shipzen-project-* and nothing else). Without this a tenant manifest could ask
+# the store for another project's secret.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: tenant-externalsecret-own-project
+  annotations:
+    policies.kyverno.io/title: Tenant ExternalSecrets read only their own project's secret
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: own-project-secret-through-tenant-store
+      match:
+        any:
+          - resources:
+              kinds:
+                - external-secrets.io/v1beta1/ExternalSecret
+              namespaceSelector:
+                matchLabels:
+                  shipzen.jeneeldumasia.codes/tenant: "true"
+      context:
+        - name: projectId
+          apiCall:
+            urlPath: "/api/v1/namespaces/{{ request.namespace }}"
+            jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/project-id"'
+      validate:
+        message: >-
+          Tenant ExternalSecrets may only read shipzen-project-{{ projectId }} through
+          the gcp-secret-manager-tenants store.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.secretStoreRef.name || '' }}"
+                operator: NotEquals
+                value: gcp-secret-manager-tenants
+              - key: "{{ request.object.spec.dataFrom[].extract.key || `[]` }}"
+                operator: AnyNotIn
+                value:
+                  - "shipzen-project-{{ projectId }}"
+              - key: "{{ length(request.object.spec.data || `[]`) }}"
+                operator: GreaterThan
+                value: 0
+              # dataFrom.find matches secrets by name pattern: never for tenants.
+              - key: "{{ length(request.object.spec.dataFrom[].find || `[]`) }}"
+                operator: GreaterThan
+                value: 0
+---
+# Security finding H4: every hostname shares one Gateway, which accepts routes
+# from all namespaces. A tenant route may only claim hostnames of its own
+# project (<deployment>-<project slug>-shipzen.jeneeldumasia.codes), never the
+# platform's or another project's.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-tenant-hostnames
+  annotations:
+    policies.kyverno.io/title: Tenant routes only use their own project's hostnames
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: own-project-hostnames
+      match:
+        any:
+          - resources:
+              kinds:
+                - gateway.networking.k8s.io/v1/HTTPRoute
+              namespaceSelector:
+                matchLabels:
+                  shipzen.jeneeldumasia.codes/tenant: "true"
+      context:
+        - name: slug
+          apiCall:
+            urlPath: "/api/v1/namespaces/{{ request.namespace }}"
+            jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/slug" || '''''
+      validate:
+        message: >-
+          Hostnames in this namespace must look like
+          <deployment>-{{ slug }}-shipzen.jeneeldumasia.codes.
+        deny:
+          conditions:
+            any:
+              - key: "{{ slug }}"
+                operator: Equals
+                value: ""
+              - key: "{{ request.object.spec.hostnames || `[]` }}"
+                operator: AnyNotIn
+                value:
+                  - "*-{{ slug }}-shipzen.jeneeldumasia.codes"

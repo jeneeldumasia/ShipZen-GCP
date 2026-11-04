@@ -96,8 +96,10 @@ deployment.
 Postgres tables: `users`, `projects`, `project_members` (owner / editor / viewer),
 `deployments`, `builds`, `audit_logs` (append-only), and `outbox_events`, which
 the API relays to Redis so a deploy is never queued without being recorded (or
-the reverse). The schema is applied by `infra/system/schema-job.yaml` from
-`schema-configmap.yaml`.
+the reverse). The schema lives in numbered migrations, `api/migrations/NNNN_*.sql`,
+which the API applies at startup (`api/migrate.py`, recorded in `schema_migrations`,
+serialised with an advisory lock). To change it, add the next numbered file; never
+edit one that has been applied.
 
 Not in Postgres:
 
@@ -135,7 +137,7 @@ Identity Federation; pods use GKE Workload Identity.
 | Google service account | Used by | Can do |
 |---|---|---|
 | `shipzen-platform-sa` | API, worker, controller | Manage Secret Manager secrets, write build logs, administer `shipzen-builds` |
-| `shipzen-builder-sa` | build Jobs only | Push to `shipzen-builds`. Nothing else: builds run untrusted Dockerfiles. The **Security Check** workflow proves this. |
+| `shipzen-builder-sa` | build Jobs, via a 1-hour token the worker mints per build (build pods have no identity of their own) | Push to `shipzen-staging`. Nothing else: builds run untrusted Dockerfiles. The worker copies each verified digest into `shipzen-builds`. |
 | `shipzen-eso-sa` | External Secrets Operator | Read secrets |
 | `shipzen-node-sa` | GKE nodes | Logging, monitoring, image pulls |
 | `velero-backup-sa` | Velero | Its backup bucket |
@@ -152,7 +154,7 @@ All of it is Terraform in `terraform/` (state in HCP Terraform, org
 GitHub Actions:
 
 - VPC `shipzen-vpc` with Cloud NAT and private services access for Cloud SQL
-- GKE `shipzen-cluster` (regional control plane in `us-central1`, nodes in `us-central1-c`, Dataplane V2), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
+- GKE `shipzen-cluster` (zonal, in `us-central1-c`, so the control plane is in GKE's free tier; Dataplane V2), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
 - Cloud SQL `shipzen-postgres` (private IP)
 - Artifact Registry, GCS buckets, Secret Manager, service accounts and IAM
 - Helm releases for every operator above, then ArgoCD, which takes over `infra/`

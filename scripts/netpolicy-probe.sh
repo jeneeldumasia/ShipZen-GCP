@@ -57,9 +57,9 @@ probe() {  # probe <namespace> <metadata server: allow|deny>
   kubectl delete pod "$pod" -n "$ns" --ignore-not-found --wait=false >/dev/null 2>&1
 }
 
-# Tenants never get credentials from the metadata server. Builds must: it is how
-# they get the push-only builder identity (whose limits the identity probe checks).
+# Neither tenants nor builds may reach the metadata server: builds get only a
+# per-build staging push token from the worker (security finding C4).
 if [ -n "$TENANT_NS" ]; then probe "$TENANT_NS" deny; else echo "SKIP | no tenant namespace to probe"; fi
-probe shipzen-build allow
+probe shipzen-build deny
 
 exit "$FAIL"

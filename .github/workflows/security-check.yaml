@@ -1,8 +1,8 @@
 name: Security Check
 
 # Two checks, both from inside the cluster with throwaway pods (deleted afterwards):
-# 1. The build pods' identity can push images and do nothing else. Builds run
-#    untrusted user Dockerfiles.
+# 1. Build pods have no Google identity at all. Builds run untrusted user
+#    Dockerfiles; they push only with a per-build staging token from the worker.
 # 2. Network isolation: a tenant pod and a build pod cannot reach the platform,
 #    Cloud SQL or the metadata server, but can reach the internet.
 
@@ -35,7 +35,7 @@ jobs:
         env:
           PROJECT: ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project "$PROJECT"
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project "$PROJECT"
 
           cat > /tmp/probe.sh <<'EOF'
           set -u
@@ -47,11 +47,12 @@ jobs:
             echo "$mark | $label | expected $expect, got $got | $(echo "$out" | tail -n1 | cut -c1-140)"
           }
           echo "identity: $(gcloud config get-value account 2>/dev/null)"
+          check "get a token from the metadata server" deny  curl -sf -m 5 -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
           check "list Secret Manager secrets"        deny  gcloud secrets list --project "$P" --limit 1
           check "read the GitHub App secret"         deny  gcloud secrets versions access latest --secret shipzen-github-app --project "$P"
           check "list build-log buckets"             deny  gcloud storage buckets list --project "$P"
           check "list platform images"               deny  gcloud artifacts docker images list "us-central1-docker.pkg.dev/$P/shipzen-platform" --limit 1
-          check "list tenant build images"           allow gcloud artifacts docker images list "us-central1-docker.pkg.dev/$P/shipzen-builds" --limit 1
+          check "list verified tenant images"        deny  gcloud artifacts docker images list "us-central1-docker.pkg.dev/$P/shipzen-builds" --limit 1
           EOF
 
           kubectl delete pod iam-probe -n shipzen-build --ignore-not-found
@@ -66,16 +67,16 @@ jobs:
           echo "$RESULT"
           body="${RESULT//'%'/'%25'}"; body="${body//$'\n'/%0A}"
           if echo "$RESULT" | grep -q "^FAIL"; then
-            echo "::error title=Builder identity has access it should not::$body"; exit 1
+            echo "::error title=Build pods have access they should not::$body"; exit 1
           fi
-          echo "::notice title=Builder identity: push-only confirmed::$body"
+          echo "::notice title=Build pods: no Google identity confirmed::$body"
 
       - name: Probe network isolation
         if: always()
         env:
           PROJECT: ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project "$PROJECT"
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project "$PROJECT"
           SQL_IP="$(gcloud sql instances describe shipzen-postgres --project "$PROJECT" --format='value(ipAddresses[0].ipAddress)' 2>/dev/null)"
           set +e
           RESULT="$(scripts/netpolicy-probe.sh "$SQL_IP" 2>&1)"; rc=$?

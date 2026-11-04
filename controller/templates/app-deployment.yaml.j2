@@ -8,7 +8,9 @@ metadata:
 spec:
   refreshInterval: "1h"
   secretStoreRef:
-    name: gcp-secret-manager
+    # Tenant store: its Google identity can only read shipzen-project-* secrets,
+    # and Kyverno only lets this ExternalSecret read its own project's (C6).
+    name: gcp-secret-manager-tenants
     kind: ClusterSecretStore
   target:
     name: {{ deployment_name }}-secrets-sync
@@ -45,6 +47,11 @@ spec:
         prometheus.io/port: "{{ port | default(8080) }}"
         prometheus.io/path: "/metrics"
     spec:
+      # Tenant apps run on their own node pool, sandboxed with gVisor (security
+      # finding C5), never next to the platform or builds.
+      runtimeClassName: gvisor
+      nodeSelector:
+        shipzen.jeneeldumasia.codes/node-type: tenant
       # Fix #5.4: toleration to schedule on the dedicated tenant NodePool.
       # Tenant nodes are tainted shipzen.jeneeldumasia.codes/dedicated=tenant:NoSchedule
       # so builder workloads cannot mix with tenant app pods.
@@ -160,7 +167,7 @@ metadata:
     shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
 spec:
   # Fix #19: minAvailable: 1 on a single-replica deployment makes the pod
-  # permanently un-evictable, blocking Karpenter consolidation and node drains.
+  # permanently un-evictable, blocking cluster-autoscaler scale-down and node drains.
   # Use maxUnavailable: 1 instead — this allows voluntary evictions while
   # still protecting multi-replica deployments from losing all pods at once.
   maxUnavailable: 1

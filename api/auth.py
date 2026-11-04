@@ -1,7 +1,7 @@
 import os
 import logging
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import asyncio
 
@@ -27,8 +27,11 @@ def _csv_env(name: str) -> set:
 
 # GitHub logins allowed to use the platform. Anyone with a GitHub account could
 # previously sign in, create projects and run builds on the cluster.
-# Empty/unset keeps the old open behaviour (local development only).
 ALLOWED_GITHUB_USERS = _csv_env("ALLOWED_GITHUB_USERS")
+# Fail closed: an empty allowlist lets everyone in only in local development
+# (ENVIRONMENT=development). Anywhere else, including when ENVIRONMENT is unset,
+# it lets nobody in, so losing the variable can't open the platform to the world.
+OPEN_SIGNUP = os.getenv("ENVIRONMENT", "production") == "development"
 
 
 # M-6 Fix: Reusable httpx.AsyncClient singleton to avoid per-request overhead
@@ -70,6 +73,9 @@ _github_cb_open = False
 class User:
     user_id: str
     role: str = 'user'
+    # The user's own GitHub token, used to check which repositories they can
+    # read (github_access.py). Never logged or returned (repr=False).
+    github_token: Optional[str] = field(default=None, repr=False, compare=False)
 
     @property
     def is_admin(self) -> bool:
@@ -194,7 +200,7 @@ async def get_current_user(
             "login": gh_user["login"],
             "email": email or gh_user.get("email")
         }
-        if ALLOWED_GITHUB_USERS and user_info["login"].lower() not in ALLOWED_GITHUB_USERS:
+        if (ALLOWED_GITHUB_USERS or not OPEN_SIGNUP) and user_info["login"].lower() not in ALLOWED_GITHUB_USERS:
             logger.warning(f"Rejected sign-in from GitHub user '{user_info['login']}' (not in ALLOWED_GITHUB_USERS)")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -221,7 +227,7 @@ async def get_current_user(
 
     from database import get_or_create_user
     db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"], user_info["login"])
-    user = User(user_id=user_info["id"], role=db_user["role"])
+    user = User(user_id=user_info["id"], role=db_user["role"], github_token=token)
     with _cache_lock:
         _token_cache[cache_key] = user
         _user_to_cache_keys[user.user_id].add(cache_key)

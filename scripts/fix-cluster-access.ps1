@@ -8,6 +8,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [string]$Region = "us-central1",
+    [string]$Zone = "us-central1-c",   # the GKE cluster is zonal
     
     [Parameter(Mandatory=$false)]
     [string]$ClusterName = "shipzen-cluster"
@@ -98,7 +99,7 @@ try {
 # Check if cluster exists
 Write-Host ""
 Write-Host "[5/7] Checking if cluster exists..." -ForegroundColor Yellow
-$clusterExists = gcloud container clusters list --filter="name=$ClusterName" --format="value(name)" --region=$Region 2>$null
+$clusterExists = gcloud container clusters list --filter="name=$ClusterName" --format="value(name)" --zone=$Zone 2>$null
 if ([string]::IsNullOrEmpty($clusterExists)) {
     Write-Host "✗ Cluster '$ClusterName' not found in region '$Region'" -ForegroundColor Red
     Write-Host ""
@@ -114,12 +115,12 @@ if ([string]::IsNullOrEmpty($clusterExists)) {
 # Check cluster status
 Write-Host ""
 Write-Host "[6/7] Checking cluster status..." -ForegroundColor Yellow
-$clusterStatus = gcloud container clusters describe $ClusterName --region=$Region --format="value(status)" 2>$null
+$clusterStatus = gcloud container clusters describe $ClusterName --zone=$Zone --format="value(status)" 2>$null
 if ($clusterStatus -ne "RUNNING") {
     Write-Host "✗ Cluster is not running. Status: $clusterStatus" -ForegroundColor Red
     Write-Host ""
     Write-Host "Cluster details:" -ForegroundColor Yellow
-    gcloud container clusters describe $ClusterName --region=$Region
+    gcloud container clusters describe $ClusterName --zone=$Zone
     exit 1
 } else {
     Write-Host "✓ Cluster is RUNNING" -ForegroundColor Green
@@ -129,7 +130,7 @@ if ($clusterStatus -ne "RUNNING") {
 Write-Host ""
 Write-Host "[7/7] Configuring kubectl credentials..." -ForegroundColor Yellow
 try {
-    gcloud container clusters get-credentials $ClusterName --region=$Region --project=$ProjectId
+    gcloud container clusters get-credentials $ClusterName --zone=$Zone --project=$ProjectId
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to get credentials"
     }

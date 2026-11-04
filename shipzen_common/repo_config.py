@@ -28,6 +28,11 @@ def valid_health_check_path(value) -> bool:
     return isinstance(value, str) and bool(HEALTH_PATH_RE.match(value))
 
 
+def valid_image_digest(value) -> bool:
+    """An OCI content digest: sha256 followed by 64 lowercase hex characters."""
+    return isinstance(value, str) and bool(re.fullmatch(r"sha256:[0-9a-f]{64}", value))
+
+
 def valid_port(value) -> bool:
     # bool is an int subclass; `port: true` is not a port.
     return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 65535

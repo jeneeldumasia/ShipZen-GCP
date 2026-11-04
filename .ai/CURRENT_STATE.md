@@ -15,7 +15,7 @@ wiped the database. Secret Manager values are written with `scripts/put-secret.s
 ## Infrastructure
 | Resource | State |
 |---|---|
-| GKE `shipzen-cluster` | us-central1 control plane, nodes in us-central1-c, Workload Identity, **Dataplane V2 on clusters created after 2026-10-31** |
+| GKE `shipzen-cluster` | zonal in us-central1-c (control plane in GKE free tier; use `--zone us-central1-c`), Workload Identity, **Dataplane V2 on clusters created after 2026-10-31** |
 | Node pool `platform-nodes` | e2-standard-4, autoscale 1–3 |
 | Cloud SQL `shipzen-postgres` | POSTGRES_15, db-f1-micro, private IP (`use_cloud_sql = true`) |
 | Redis | Bitnami chart in `shipzen-system`, AOF on |

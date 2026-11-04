@@ -77,11 +77,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     // Invite-only: refuse GitHub sign-in for logins not in ALLOWED_GITHUB_USERS
     // (comma-separated). The API enforces the same list; this stops strangers
-    // getting a session at all. Unset = open (local development).
+    // getting a session at all. Fails closed: an empty list lets nobody in,
+    // except in local development or with ALLOW_OPEN_SIGNUP=true.
     async signIn({ account, profile }) {
+      if (account?.provider !== "github") return true
       const allowed = (process.env.ALLOWED_GITHUB_USERS || "")
         .split(",").map((u) => u.trim().toLowerCase()).filter(Boolean)
-      if (allowed.length === 0 || account?.provider !== "github") return true
+      if (allowed.length === 0) {
+        return process.env.NODE_ENV === "development" || process.env.ALLOW_OPEN_SIGNUP === "true"
+      }
       const login = String((profile as { login?: string } | undefined)?.login || "").toLowerCase()
       return allowed.includes(login)
     },

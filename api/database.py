@@ -67,7 +67,9 @@ def get_connection():
     if db_pool is None:                     # fast path — no lock once initialised
         with _db_pool_lock:
             if db_pool is None:             # double-checked locking
-                db_pool = ThreadedConnectionPool(1, DB_POOL_MAX, dsn=DATABASE_URL)
+                # Read the URL now, not only at import: a module imported before the
+                # database was known (tests, tooling) still connects to the right one.
+                db_pool = ThreadedConnectionPool(1, DB_POOL_MAX, dsn=os.environ.get("DATABASE_URL") or DATABASE_URL)
     if not _pool_slots.acquire(timeout=DB_POOL_WAIT_SECONDS):
         raise HTTPException(status_code=503, detail="Database busy, please retry",
                             headers={"Retry-After": "2"})
@@ -164,26 +166,14 @@ def enforce_retention_policy():
 
 
 def init_db():
-    """Run schema.sql to ensure tables exist on startup."""
-    try:
-        schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
-        with open(schema_path, "r") as f:
-            schema_sql = f.read()
+    """Bring the schema up to date (api/migrations/, see migrate.py).
 
-        conn = get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(schema_sql)
-            conn.commit()
-            logger.info("Database schema initialized successfully.")
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Failed to execute schema.sql: {e}")
-            raise
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.error(f"Failed to read/initialize database schema: {e}")
+    Raises if a migration fails, so the API doesn't start against a schema its
+    code doesn't match; the pod restarts and the error is in its log.
+    """
+    from migrate import apply_migrations
+    applied = apply_migrations(os.environ.get("DATABASE_URL") or DATABASE_URL)
+    logger.info(f"Database schema up to date ({len(applied)} migration(s) applied now).")
 
 
 WRITE_ROLES = ("owner", "editor")

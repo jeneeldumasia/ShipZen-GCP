@@ -22,7 +22,7 @@ jobs:
 
       - name: Debug Cluster
         run: |
-          gcloud container clusters get-credentials shipzen-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project ${{ secrets.GCP_PROJECT_ID }}
           echo "=== NODES ==="
           kubectl get nodes -o wide || true
           echo "=== PODS ==="

@@ -10,6 +10,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
+    # Only for GKE Sandbox (sandbox_config), which the GA provider doesn't expose.
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"
@@ -30,6 +35,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.gcp_project
+  region  = var.gcp_region
+}
+
+provider "google-beta" {
   project = var.gcp_project
   region  = var.gcp_region
 }
@@ -87,11 +97,13 @@ resource "google_compute_router_nat" "nat" {
 
 # ── GKE ───────────────────────────────────────────────────────────────────────
 resource "google_container_cluster" "primary" {
-  name           = "shipzen-cluster"
-  location       = var.gcp_region
-  node_locations = ["us-central1-c"] # Single zone for dev (switched from us-central1-a to avoid stockout)
-  network        = google_compute_network.vpc.name
-  subnetwork     = google_compute_subnetwork.subnet.name
+  name = "shipzen-cluster"
+  # Zonal cluster: GKE's free tier covers one zonal control plane, a regional one
+  # costs $0.10/hour. The nodes were already single-zone. Changing this forces a
+  # new cluster, so it takes effect on the next Deploy Platform Infra.
+  location   = var.gcp_zone
+  network    = google_compute_network.vpc.name
+  subnetwork = google_compute_subnetwork.subnet.name
 
   remove_default_node_pool = true
   initial_node_count       = 1
@@ -106,11 +118,21 @@ resource "google_container_cluster" "primary" {
   # in every tenant namespace. Without it they are accepted but do nothing.
   datapath_provider = "ADVANCED_DATAPATH"
 
+  # Nodes get no public IPs (security finding H6); they reach the internet
+  # through Cloud NAT. The control plane keeps its public, IAM-authenticated
+  # endpoint: GitHub-hosted runners have no fixed IPs to allowlist. Closing it
+  # needs the DNS-based endpoint (google provider >= 6).
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = false
+    master_ipv4_cidr_block  = "172.16.0.32/28"
+  }
+
   lifecycle {
     # Switching the datapath requires a new cluster. Ignore it on an existing
     # cluster so "Apply Infrastructure Changes" never replaces a live cluster;
     # the next Deploy Platform Infra (after a teardown) creates it with Dataplane V2.
-    ignore_changes = [datapath_provider]
+    ignore_changes = [datapath_provider, private_cluster_config]
   }
 
   depends_on = [google_project_service.apis]
@@ -118,7 +140,7 @@ resource "google_container_cluster" "primary" {
 
 resource "google_container_node_pool" "platform_nodes" {
   name       = "platform-nodes"
-  location   = var.gcp_region
+  location   = var.gcp_zone
   cluster    = google_container_cluster.primary.name
   node_count = 1 # Single zone, 1 node total for dev
 
@@ -151,6 +173,86 @@ resource "google_container_node_pool" "platform_nodes" {
     # spot = true
   }
   depends_on = [google_project_iam_member.node_sa_roles]
+}
+
+# ── Sandboxed node pools for untrusted code (security finding C5) ────────────
+# Builds run user Dockerfiles and tenant apps run user code. Each gets its own
+# tainted pool with GKE Sandbox (gVisor), so a container or kernel escape stays
+# in a sandbox on a node that holds no platform credentials. Both scale to zero.
+
+resource "google_container_node_pool" "build_nodes" {
+  provider = google-beta
+  name     = "build-nodes"
+  location = var.gcp_zone
+  cluster  = google_container_cluster.primary.name
+
+  autoscaling {
+    min_node_count = 0
+    max_node_count = 2
+  }
+
+  node_config {
+    machine_type    = var.platform_machine_type
+    disk_size_gb    = 50
+    disk_type       = "pd-standard"
+    image_type      = "COS_CONTAINERD" # required by GKE Sandbox
+    spot            = true             # builds are short and retryable; ~60-90% cheaper
+    service_account = google_service_account.node_sa.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    labels = {
+      "shipzen.jeneeldumasia.codes/node-type" = "builder"
+    }
+    taint {
+      key    = "shipzen.jeneeldumasia.codes/dedicated"
+      value  = "builder"
+      effect = "NO_SCHEDULE"
+    }
+    sandbox_config {
+      sandbox_type = "gvisor"
+    }
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+  depends_on = [google_container_node_pool.platform_nodes]
+}
+
+resource "google_container_node_pool" "tenant_nodes" {
+  provider = google-beta
+  name     = "tenant-nodes"
+  location = var.gcp_zone
+  cluster  = google_container_cluster.primary.name
+
+  autoscaling {
+    min_node_count = 0
+    max_node_count = 3
+  }
+
+  node_config {
+    machine_type    = "e2-standard-2"
+    disk_size_gb    = 30
+    disk_type       = "pd-standard"
+    image_type      = "COS_CONTAINERD"
+    service_account = google_service_account.node_sa.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    labels = {
+      "shipzen.jeneeldumasia.codes/node-type" = "tenant"
+    }
+    taint {
+      key    = "shipzen.jeneeldumasia.codes/dedicated"
+      value  = "tenant"
+      effect = "NO_SCHEDULE"
+    }
+    sandbox_config {
+      sandbox_type = "gvisor"
+    }
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+  depends_on = [google_container_node_pool.platform_nodes]
 }
 
 resource "google_service_account" "node_sa" {
@@ -188,9 +290,30 @@ resource "time_sleep" "wait_for_cluster_auth" {
 resource "google_artifact_registry_repository" "shipzen_builds" {
   location      = var.gcp_region
   repository_id = "shipzen-builds"
-  description   = "Docker repository for ShipZen tenant builds"
+  description   = "Verified tenant images. Only the platform writes here; apps run them by digest."
   format        = "DOCKER"
   depends_on    = [google_project_service.apis]
+}
+
+# Build output lands here first. Builds run untrusted Dockerfiles and can push
+# here and nowhere else; the worker then copies the exact digest each build
+# reported into shipzen-builds (security finding C4). Images only need to live
+# until that copy, so they're deleted after a day.
+resource "google_artifact_registry_repository" "shipzen_staging" {
+  location      = var.gcp_region
+  repository_id = "shipzen-staging"
+  description   = "Untrusted build output, copied by digest to shipzen-builds"
+  format        = "DOCKER"
+
+  cleanup_policy_dry_run = false
+  cleanup_policies {
+    id     = "delete-after-a-day"
+    action = "DELETE"
+    condition {
+      older_than = "86400s"
+    }
+  }
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_artifact_registry_repository" "platform" {
@@ -223,31 +346,22 @@ resource "google_storage_bucket" "build_logs" {
 }
 
 # ── Workload Identity: Builder SA ─────────────────────────────────────────────
-# Used ONLY by build pods in shipzen-build, which run untrusted user Dockerfiles
-# (Kaniko executes RUN steps with this identity, and any RUN step can fetch a
-# token from the metadata server). It may push images to the tenant build
-# repository and nothing else. It previously held project-wide Secret Manager
-# admin, Storage object admin and Artifact Registry writer, and was shared with
-# the API, worker and controller.
+# Push-only identity for builds, which run untrusted user Dockerfiles. Build
+# pods no longer get it through Workload Identity (any RUN step could read it
+# from the metadata server, and build pods can't reach that server any more):
+# the worker mints a 1-hour token for it per build and hands Kaniko only that.
+# It can push to shipzen-staging and do nothing else.
 resource "google_service_account" "builder_sa" {
   account_id   = "shipzen-builder-sa"
-  display_name = "ShipZen Builder Service Account (push to shipzen-builds only)"
+  display_name = "ShipZen Builder (push to shipzen-staging only)"
 }
 
 resource "google_artifact_registry_repository_iam_member" "builder_push" {
   project    = var.gcp_project
-  location   = google_artifact_registry_repository.shipzen_builds.location
-  repository = google_artifact_registry_repository.shipzen_builds.name
+  location   = google_artifact_registry_repository.shipzen_staging.location
+  repository = google_artifact_registry_repository.shipzen_staging.name
   role       = "roles/artifactregistry.writer"
   member     = "serviceAccount:${google_service_account.builder_sa.email}"
-}
-
-resource "google_service_account_iam_binding" "builder_workload_identity" {
-  service_account_id = google_service_account.builder_sa.name
-  role               = "roles/iam.workloadIdentityUser"
-  members = [
-    "serviceAccount:${var.gcp_project}.svc.id.goog[shipzen-build/shipzen-builder-sa]",
-  ]
 }
 
 # ── Workload Identity: Platform SA ────────────────────────────────────────────
@@ -260,16 +374,45 @@ resource "google_service_account" "platform_sa" {
   display_name = "ShipZen Platform Services (API, worker, controller)"
 }
 
+data "google_project" "this" {
+  project_id = var.gcp_project
+}
+
+# Only per-project secrets (security finding C6). The API and controller
+# create, read and delete shipzen-project-* secrets and nothing else; the
+# platform's own secrets reach them through ESO as Kubernetes Secrets.
+# Creating a secret is checked against the project, hence the first clause.
 resource "google_project_iam_member" "platform_secret_manager" {
   project = var.gcp_project
   role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${google_service_account.platform_sa.email}"
+
+  condition {
+    title      = "shipzen-project secrets only"
+    expression = "resource.type == \"cloudresourcemanager.googleapis.com/Project\" || resource.name.startsWith(\"projects/${data.google_project.this.number}/secrets/shipzen-project-\")"
+  }
 }
 
 resource "google_storage_bucket_iam_member" "platform_build_logs" {
   bucket = google_storage_bucket.build_logs.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+# The worker reads staging to copy verified digests into shipzen-builds, and
+# mints the short-lived builder tokens it gives to each build.
+resource "google_artifact_registry_repository_iam_member" "platform_staging_reader" {
+  project    = var.gcp_project
+  location   = google_artifact_registry_repository.shipzen_staging.location
+  repository = google_artifact_registry_repository.shipzen_staging.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.platform_sa.email}"
+}
+
+resource "google_service_account_iam_member" "platform_mints_builder_tokens" {
+  service_account_id = google_service_account.builder_sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.platform_sa.email}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "platform_builds_admin" {
@@ -304,15 +447,14 @@ resource "kubernetes_namespace" "shipzen_build" {
   }
 }
 
+# The Kubernetes identity build pods run as. Deliberately no Google identity
+# (no Workload Identity annotation) and no Kubernetes API token.
 resource "kubernetes_service_account" "builder_k8s_sa" {
   metadata {
     name      = "shipzen-builder-sa"
     namespace = kubernetes_namespace.shipzen_build.metadata[0].name
-    annotations = {
-      "iam.gke.io/gcp-service-account" = google_service_account.builder_sa.email
-    }
   }
-  automount_service_account_token = true
+  automount_service_account_token = false
 }
 
 resource "kubernetes_service_account" "worker_k8s_sa" {

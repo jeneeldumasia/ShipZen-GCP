@@ -25,7 +25,7 @@ under [Known gaps](#known-gaps), not under controls.
 
 **Builds (untrusted code)**
 - Each build is a single-use Job in its own namespace, `shipzen-build`, deleted afterwards.
-- Builds run as `shipzen-builder-sa`, which can only push to the `shipzen-builds` registry. It cannot read Secret Manager, the build-log bucket or the platform images. The **Security Check** workflow verifies this from inside the cluster.
+- Build pods have **no Google identity** and can't reach the metadata server. The worker mints a 1-hour token for `shipzen-builder-sa`, which can push only to the `shipzen-staging` registry, and gives Kaniko just that. Kaniko reports the digest it pushed; the worker copies exactly that digest into `shipzen-builds` (which only the platform can write), and apps run **by digest**, so no build can swap another project's image. The shared remote layer cache is off, because any build could poison it. Each project's repository is checked against the user's own GitHub access and bound to the project, so nobody can build a private repository they can't read. **Security Check** verifies build pods have no identity.
 - Kaniko builds without a Docker daemon and without privileged mode (`allowPrivilegeEscalation: false`, `RuntimeDefault` seccomp).
 - Registry credentials go to `crane` over stdin, and CI log output is passed through a redaction filter, so tokens don't reach logs or annotations.
 
@@ -46,16 +46,34 @@ under [Known gaps](#known-gaps), not under controls.
 
 | Check | How |
 |---|---|
-| Builder identity is push-only | Run **Security Check** (Actions). Every identity probe must say PASS. |
+| Build pods have no Google identity | Run **Security Check** (Actions). Every identity probe must say PASS. |
 | Network isolation holds | The same run starts a pod in a tenant namespace and one in `shipzen-build`; every connection must be blocked or allowed as expected (`scripts/netpolicy-probe.sh`). |
 | Raw gateway IP is closed | `curl -m 5 http://<gateway IP>/` should time out; the site should still load. |
 | Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". |
 | Images are clean | Look at the latest **Container Security Scan** run. |
 
+## Isolation of untrusted code
+
+- **Separate, sandboxed node pools.** Builds run on `build-nodes` and tenant apps on `tenant-nodes`. Both are tainted, use GKE Sandbox (gVisor), have no public IPs, and scale to zero. Nothing from the platform runs there. If Kaniko ever misbehaves under gVisor, set `BUILD_RUNTIME_CLASS=""` on the worker to keep the separate pool without the sandbox.
+- **Tenant manifests are capped twice:**
+  - the ArgoCD project `tenants` allows only tenant kinds and no cluster-wide objects except the tenant's Namespace;
+  - Kyverno lets a tenant ExternalSecret read only `shipzen-project-<its id>` through the tenant store, and lets a tenant route claim only `*-<its slug>-shipzen.jeneeldumasia.codes`.
+- **Secrets are split:**
+  - the platform service account can manage only `shipzen-project-*` secrets (IAM condition);
+  - tenant ExternalSecrets use their own store and identity, which can read only `shipzen-project-*`;
+  - the platform store serves only `shipzen-system` and `observability`.
+- **Abuse limits:**
+  - at most 3 deployments in progress per user (`MAX_ACTIVE_DEPLOYS_PER_USER`);
+  - 300 deploys per project per month (`MAX_DEPLOYS_PER_PROJECT_PER_MONTH`);
+  - a ResourceQuota on `shipzen-build`;
+  - Nixpacks is a pinned release verified by SHA-256.
+
 ## Known gaps
 
 1. **Network isolation needs a cluster built after this change.** Dataplane V2 can only be chosen when a cluster is created, so a cluster created earlier has the policies but doesn't enforce them. **Security Check** fails until the next rebuild.
-2. **Builds run as root inside the container** (`runAsUser: 0`; Kaniko needs it to unpack images). Nixpacks is installed with `curl | bash` at build time, not from a pinned image.
+2. **Builds run as root inside the container** (`runAsUser: 0`, which Kaniko needs). This is now inside a gVisor sandbox on a build-only node.
 3. **Alerts have a single channel.** Everything goes to one Telegram chat (official Bot API). If Telegram is down, Alertmanager retries, but there is no second channel. The bot token can post to that chat, so keep it secret.
 4. **One allowlisted user.** Fine for a personal platform; there is no self-service sign-up or invite flow.
-5. **Grafana and ArgoCD use admin passwords.** There is no SSO in front of them.
+5. **Grafana and ArgoCD use admin passwords,** unless Cloudflare Access is switched on (runbook). Access adds an email login in front of them.
+6. **The GKE control plane endpoint is public** (IAM-authenticated; nodes are private). Closing it needs the DNS-based endpoint, which needs google provider 6.x.
+7. **Hostname slugs can overlap:** a project with slug `app` can claim `x-evil-app-shipzen…`, which looks like project `evil-app`'s form. This only matters if a manifest injection path reappears, since the controller renders hostnames itself.
