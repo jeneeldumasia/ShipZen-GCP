@@ -92,7 +92,12 @@ export interface Project {
   webhook_secret?: string;
   deployments_count?: number;
   subdomain?: string | null;
+  instance_size?: InstanceSize;
+  min_instances?: number;
+  max_instances?: number;
 }
+
+export type InstanceSize = "small" | "medium" | "large";
 
 export interface Deployment {
   deployment_id: string;
@@ -174,6 +179,8 @@ export const api = {
       request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
     delete: (id: string) =>
       request<{ message: string }>(`/projects/${id}`, { method: "DELETE" }),
+    setScaling: (id: string, body: { instance_size: InstanceSize; min_instances: number; max_instances: number }) =>
+      request<Project>(`/projects/${id}/scaling`, { method: "PUT", body: JSON.stringify(body) }),
     setSubdomain: (id: string, subdomain: string | null) =>
       request<Project & { vanity_url: string | null }>(`/projects/${id}/subdomain`, {
         method: "PUT",

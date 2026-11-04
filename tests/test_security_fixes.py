@@ -261,3 +261,45 @@ def test_tenant_namespace_carries_only_a_valid_vanity_label(monkeypatch):
     monkeypatch.chdir(ROOT / "controller")  # the controller loads templates/ relative to its directory
     assert 'vanity: "myapp"' in controller.render_tenant("ns-a", "p1", "My App", "myapp")
     assert 'vanity: ""' in controller.render_tenant("ns-a", "p1", "My App", "bad--name")
+
+
+def _render_scaled(**scaling):
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(ROOT / "controller" / "templates")))
+    text = env.get_template("app-deployment.yaml.j2").render(
+        deployment_name="d1", deployment_id="d1234567", namespace="tenant-a",
+        project_id="p1", project_name="app", image_uri="img:1", port=8080, **scaling)
+    return {d["kind"]: d for d in yaml.safe_load_all(text) if d}
+
+
+def test_autoscaled_release_leaves_replicas_to_the_hpa():
+    docs = _render_scaled(replicas=1, min_instances=1, max_instances=3, autoscale=True,
+                          cpu_request="250m", memory_request="512Mi", cpu_limit="1", memory_limit="1Gi",
+                          scaling_key="medium:1:3")
+    dep = docs["Deployment"]
+    assert "replicas" not in dep["spec"]
+    assert dep["metadata"]["annotations"]["shipzen.jeneeldumasia.codes/scaling"] == "medium:1:3"
+    res = dep["spec"]["template"]["spec"]["containers"][0]["resources"]
+    assert res == {"requests": {"cpu": "250m", "memory": "512Mi"}, "limits": {"cpu": "1", "memory": "1Gi"}}
+    hpa = docs["HorizontalPodAutoscaler"]
+    assert (hpa["spec"]["minReplicas"], hpa["spec"]["maxReplicas"]) == (1, 3)
+
+
+def test_fixed_release_pins_replicas_and_has_no_hpa():
+    docs = _render_scaled(replicas=2, min_instances=2, max_instances=2, autoscale=False, scaling_key="small:2:2")
+    assert docs["Deployment"]["spec"]["replicas"] == 2
+    assert "HorizontalPodAutoscaler" not in docs
+
+
+def test_only_the_live_release_gets_the_project_scaling():
+    from types import SimpleNamespace
+    ctrl = load("controller")
+    project = SimpleNamespace(instance_size="medium", min_instances=2, max_instances=3, live_deployment_id="live")
+    live = ctrl.release_scaling(project, "live", {"state": "Running", "replicas": 1})
+    assert (live["replicas"], live["autoscale"], live["scaling_key"]) == (2, True, "medium:2:3")
+    old = ctrl.release_scaling(project, "old", {"state": "Running", "replicas": 0})
+    assert (old["replicas"], old["autoscale"], old["scaling_key"]) == (0, False, "medium:0:0")
+    new = ctrl.release_scaling(project, "new", {"state": "Deploying", "replicas": 1})
+    assert (new["replicas"], new["autoscale"]) == (1, False)
+    bad = SimpleNamespace(instance_size="huge", min_instances=9, max_instances=1, live_deployment_id="live")
+    assert ctrl.release_scaling(bad, "live", {"state": "Running", "replicas": 1})["scaling_key"] == "small:1:1"
+

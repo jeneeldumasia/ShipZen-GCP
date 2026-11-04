@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 import { EnvVars } from "./EnvVars";
 import { VanityDomain } from "./VanityDomain";
+import { Scaling } from "./Scaling";
 import { Webhooks } from "./Webhooks";
 import { ProjectShortcuts } from "./ProjectShortcuts";
 import { ProjectProvisioningStatus } from "./ProjectProvisioningStatus";
@@ -160,6 +161,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </div>
 
       <VanityDomain projectId={project.id} initial={project.subdomain ?? null} />
+      <Scaling projectId={project.id} initial={{
+        size: project.instance_size ?? "small", min: project.min_instances ?? 1, max: project.max_instances ?? 1,
+      }} />
       <EnvVars projectId={project.id} />
       <Webhooks />
       <ProjectShortcuts projectId={project.id} />
