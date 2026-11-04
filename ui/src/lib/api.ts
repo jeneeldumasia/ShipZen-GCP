@@ -304,5 +304,53 @@ export const api = {
     metrics: () => request<any>("/admin/metrics"),
     restartSystem: () =>
       request<{ status: string }>("/admin/system/restart", { method: "POST" }),
+    setAnnouncement: (message: string, level: AnnouncementLevel) =>
+      request<{ announcement: Announcement | null }>("/admin/platform/announcement", {
+        method: "PUT",
+        body: JSON.stringify({ message, level }),
+      }),
+    setDeployFreeze: (paused: boolean, reason = "") =>
+      request<{ deploys_paused: boolean; pause_reason: string | null }>("/admin/platform/deploy-freeze", {
+        method: "PUT",
+        body: JSON.stringify({ paused, reason }),
+      }),
+    setSuspension: (userId: string, suspended: boolean, reason = "") =>
+      request<{ user_id: string; suspended: boolean; reason: string | null }>(
+        `/admin/users/${encodeURIComponent(userId)}/suspension`,
+        { method: "PUT", body: JSON.stringify({ suspended, reason }) }),
+    cost: () => request<SessionCost>("/admin/cost"),
+  },
+
+  platform: {
+    status: () => request<PlatformStatus>("/platform/status"),
   },
 };
+
+export type AnnouncementLevel = "info" | "warning" | "critical";
+export interface Announcement {
+  message: string;
+  level: AnnouncementLevel;
+  updated_at?: string;
+}
+export interface PlatformStatus {
+  announcement: Announcement | null;
+  deploys_paused: boolean;
+  pause_reason: string | null;
+}
+export interface SessionCost {
+  session_started: string | null;
+  uptime_hours: number;
+  hourly_usd: number;
+  session_usd: number;
+  unpriced_nodes: string[];
+  teardown: { idle_after_hours: number; hard_cap_hours: number; hours_to_hard_cap: number };
+  nodes: {
+    name: string;
+    pool: string | null;
+    machine_type: string | null;
+    spot: boolean;
+    hourly_usd: number | null;
+    hours: number;
+    cost_usd: number | null;
+  }[];
+}

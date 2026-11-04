@@ -1,12 +1,14 @@
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
-import { Activity, Server, Users, Database, Shield, Zap, RefreshCw, Box, Network, Fingerprint } from "lucide-react";
+import { Activity, Server, Users, Box, Network, Fingerprint } from "lucide-react";
+import { PlatformControls } from "./PlatformControls";
+import { SessionCost } from "./SessionCost";
 import { api } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const [projects, deployments, users, auditLogs, metrics] = await Promise.all([
+  const [projects, deployments, users, auditLogs, metrics, platformStatus] = await Promise.all([
     api.projects.list().catch(() => []),
     api.admin.deployments().catch(() => []),
     api.admin.users().catch(() => []),
@@ -17,6 +19,7 @@ export default async function AdminDashboardPage() {
       redis: { hit_rate_pct: 98 },
       argocd: { status: "Unknown" }
     })),
+    api.platform.status().catch(() => ({ announcement: null, deploys_paused: false, pause_reason: null })),
   ]);
 
   return (
@@ -94,41 +97,9 @@ export default async function AdminDashboardPage() {
             </div>
           </div>
 
-          <div className="card p-6 animate-fade-in" style={{ animationDuration: '0.5s' }}>
-            <h2 className="text-lg font-bold text-text-primary mb-6 flex items-center gap-2">
-              <Zap size={18} className="text-brand" />
-              Quick Actions
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
-                <RefreshCw size={20} />
-                <span className="text-xs font-medium text-center">Force Argo Sync</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
-                <Database size={20} />
-                <span className="text-xs font-medium text-center">Trigger DB Backup</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
-                <Shield size={20} />
-                <span className="text-xs font-medium text-center">Rotate Webhooks</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
-                <Server size={20} />
-                <span className="text-xs font-medium text-center">Restart API</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary">
-                <Network size={20} />
-                <span className="text-xs font-medium text-center">Re-provision DNS</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-4 border border-canvas-border rounded-xl hover:border-brand/40 hover:bg-brand/5 transition-all gap-2 text-text-secondary hover:text-text-primary text-danger hover:text-danger hover:border-danger/40 hover:bg-danger/5">
-                <Activity size={20} />
-                <span className="text-xs font-medium text-center">Purge Cache</span>
-              </button>
-            </div>
-            <p className="text-xs text-text-secondary mt-4 text-center">
-              Note: Direct pod manipulation is disabled; ArgoCD handles reconciliation automatically.
-            </p>
-          </div>
+          <SessionCost />
+
+          <PlatformControls initial={platformStatus} />
         </div>
 
         {/* Right Column: Audit Logs / Security */}

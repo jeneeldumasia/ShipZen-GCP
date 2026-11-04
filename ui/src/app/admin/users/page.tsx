@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Shield, ShieldAlert, User as UserIcon } from "lucide-react";
 import { getBaseUrl } from "@/lib/api";
+import { SuspendButton } from "./SuspendButton";
 
 async function getUsers(token: string) {
   const res = await fetch(`${getBaseUrl()}/admin/users`, {
@@ -45,7 +46,7 @@ export default async function AdminUsersPage() {
         </div>
         <div>
           <h1 className="text-3xl font-bold text-text-primary tracking-tight">User Management</h1>
-          <p className="text-text-secondary mt-1">Manage platform access and assign admin roles.</p>
+          <p className="text-text-secondary mt-1">Manage platform access, assign admin roles and suspend accounts.</p>
         </div>
       </div>
 
@@ -57,6 +58,7 @@ export default async function AdminUsersPage() {
               <th className="px-6 py-4">Email</th>
               <th className="px-6 py-4">Joined</th>
               <th className="px-6 py-4">Role</th>
+              <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -74,7 +76,20 @@ export default async function AdminUsersPage() {
                     {u.role}
                   </span>
                 </td>
+                <td className="px-6 py-4">
+                  {u.suspended_at ? (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/15 text-red-600 dark:text-red-400"
+                      title={u.suspended_reason || undefined}>
+                      Suspended {new Date(u.suspended_at).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-text-secondary">Active</span>
+                  )}
+                  {u.suspended_reason && <p className="text-xs text-text-secondary mt-1 max-w-[16rem] truncate">{u.suspended_reason}</p>}
+                </td>
                 <td className="px-6 py-4 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                  <SuspendButton userId={u.id} suspended={!!u.suspended_at} isAdmin={u.role === "admin"} />
                   <form action={promoteUser}>
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="hidden" name="role" value={u.role === "admin" ? "user" : "admin"} />
@@ -82,12 +97,13 @@ export default async function AdminUsersPage() {
                       {u.role === "admin" ? "Demote to User" : "Promote to Admin"}
                     </button>
                   </form>
+                  </div>
                 </td>
               </tr>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center">No users found.</td>
+                <td colSpan={6} className="px-6 py-8 text-center">No users found.</td>
               </tr>
             )}
           </tbody>

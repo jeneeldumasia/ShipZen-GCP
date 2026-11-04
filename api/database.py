@@ -100,7 +100,8 @@ def get_or_create_user(user_id: str, email: str = None, login: str = None) -> di
     with get_connection() as conn:
         try:
             with conn.cursor(cursor_factory=DictCursor) as cur:
-                cur.execute("SELECT id, role, email, admin_source FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT id, role, email, admin_source, suspended_at IS NOT NULL AS suspended "
+                            "FROM users WHERE id = %s", (user_id,))
                 user = cur.fetchone()
 
                 if user:
@@ -123,7 +124,8 @@ def get_or_create_user(user_id: str, email: str = None, login: str = None) -> di
                 role = 'admin' if is_named_admin else 'user'
 
                 cur.execute(
-                    "INSERT INTO users (id, email, role, admin_source) VALUES (%s, %s, %s, %s) RETURNING id, role",
+                    "INSERT INTO users (id, email, role, admin_source) VALUES (%s, %s, %s, %s) "
+                    "RETURNING id, role, FALSE AS suspended",
                     (user_id, email, role, 'env' if is_named_admin else None)
                 )
                 new_user = cur.fetchone()
@@ -133,7 +135,7 @@ def get_or_create_user(user_id: str, email: str = None, login: str = None) -> di
             conn.rollback()
             with conn.cursor(cursor_factory=DictCursor) as cur:
                 cur.execute(
-                    "SELECT id, role FROM users WHERE id = %s", (user_id,))
+                    "SELECT id, role, suspended_at IS NOT NULL AS suspended FROM users WHERE id = %s", (user_id,))
                 return dict(cur.fetchone())
         except Exception as e:
             conn.rollback()
