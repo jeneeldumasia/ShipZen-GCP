@@ -16,6 +16,7 @@ const CONFIG: Record<string, { dot: string; bg: string; text: string }> = {
   Failed:       { dot: "bg-red-400",                    bg: "bg-red-50 dark:bg-red-900/30     border-red-200 dark:border-red-700/50",    text: "text-red-700 dark:text-red-400" },
   Retry:        { dot: "bg-amber-400 animate-pulse",    bg: "bg-amber-50 dark:bg-amber-900/30   border-amber-200 dark:border-amber-700/50",  text: "text-amber-700 dark:text-amber-400" },
   DLQ:          { dot: "bg-red-600",                    bg: "bg-red-100 dark:bg-red-900/50    border-red-300 dark:border-red-700",    text: "text-red-800 dark:text-red-300" },
+  Superseded:   { dot: "bg-slate-300",                  bg: "bg-slate-50 dark:bg-slate-800   border-slate-200 dark:border-slate-600",  text: "text-text-secondary" },
   // Build
   Success:      { dot: "bg-emerald-400",                bg: "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700/50", text: "text-emerald-700 dark:text-emerald-400" },
   "In Progress":{ dot: "bg-blue-400 animate-pulse",     bg: "bg-blue-50 dark:bg-blue-900/30    border-blue-200 dark:border-blue-700/50",   text: "text-blue-700 dark:text-blue-400" },
