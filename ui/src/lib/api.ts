@@ -1,7 +1,10 @@
 /**
- * ShipZen API client
- * All calls go through Next.js API routes (/api/*) which proxy to the
- * backend API server — this keeps the backend URL server-side only.
+ * ShipZen API client.
+ *
+ * Server code (server components) calls the API directly with the user's
+ * GitHub token from auth(). Browser code calls the same paths on
+ * /api/proxy, the UI's own server, which adds the token there: the token never
+ * reaches browser JavaScript (security finding H1).
  */
 
 export function getBaseUrl(): string {
@@ -26,23 +29,28 @@ export function getWsBaseUrl(): string {
   return getBaseUrl().replace(/^http/, "ws");
 }
 
-let BASE = getBaseUrl();
+// Browser calls go through the same-origin proxy route.
+const BASE = typeof window !== "undefined" ? "/api/proxy" : getBaseUrl();
+
+async function serverToken(): Promise<string | undefined> {
+  if (typeof window !== "undefined") return undefined; // the proxy adds it
+  const { auth } = await import("@/auth");
+  const session = await auth();
+  return (session as { accessToken?: string })?.accessToken;
+}
+
+/** One-time ticket a browser sends as its first WebSocket message. */
+export async function wsTicket(): Promise<string> {
+  const res = await fetch("/api/proxy/ws-tickets", { method: "POST" });
+  if (!res.ok) throw new Error(`Could not open a live connection (HTTP ${res.status})`);
+  return (await res.json()).ticket;
+}
 
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  let token: string | undefined;
-  
-  if (typeof window === "undefined") {
-    const { auth } = await import("@/auth");
-    const session = await auth();
-    token = (session as { accessToken?: string })?.accessToken;
-  } else {
-    const { getSession } = await import("next-auth/react");
-    const session = await getSession();
-    token = (session as { accessToken?: string })?.accessToken;
-  }
+  const token = await serverToken();
 
   const headers: Record<string, string> = { 
     "Content-Type": "application/json", 
@@ -173,17 +181,8 @@ export const api = {
         `/projects/${projectId}/deployments/${deploymentId}/builds`
       ),
     logs: async (projectId: string, deploymentId: string, buildId: string): Promise<string> => {
-      // Logs endpoint now streams plain text directly — no presigned URL needed.
-      let token: string | undefined;
-      if (typeof window === "undefined") {
-        const { auth } = await import("@/auth");
-        const session = await auth();
-        token = (session as { accessToken?: string })?.accessToken;
-      } else {
-        const { getSession } = await import("next-auth/react");
-        const session = await getSession();
-        token = (session as { accessToken?: string })?.accessToken;
-      }
+      // Logs endpoint streams plain text directly — no presigned URL needed.
+      const token = await serverToken();
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(

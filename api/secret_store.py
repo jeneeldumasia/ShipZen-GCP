@@ -6,6 +6,7 @@ ExternalSecret syncs it into the project's pods.
 """
 import json
 import logging
+from contextlib import contextmanager
 
 from platform_clients import GCP_PROJECT, _sm_client
 
@@ -91,3 +92,18 @@ def save_env(project_id: str, values: dict) -> None:
             "payload": {"data": json.dumps(values).encode("UTF-8")},
         }
     )
+
+
+@contextmanager
+def env_write_lock(project_id: str):
+    """Serialize read-modify-write of one project's env/secrets (M2).
+
+    A Postgres transaction-level advisory lock, keyed by project: held until the
+    block ends, released automatically if the process dies.
+    """
+    from database import get_connection
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s));", (f"shipzen-env:{project_id}",))
+            yield
+        conn.commit()

@@ -2,14 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Terminal, Wifi, WifiOff } from "lucide-react";
-import { getWsBaseUrl } from "@/lib/api";
+import { getWsBaseUrl, wsTicket } from "@/lib/api";
 
 const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
 interface Props {
   projectId: string;
   deploymentId: string;
-  token?: string;
 }
 
 /**
@@ -17,7 +16,7 @@ interface Props {
  * Connects directly to the WS log endpoint and streams output in real-time.
  * Automatically stops when the server closes the connection (build finished).
  */
-export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
+export function LiveLogPanel({ projectId, deploymentId }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -25,7 +24,6 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    if (!token) return;
 
     const wsUrl = getWsBaseUrl();
 
@@ -34,9 +32,13 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
     );
     wsRef.current = ws;
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
       setConnected(true);
-      ws.send(JSON.stringify({ token }));
+      try {
+        ws.send(JSON.stringify({ ticket: await wsTicket() }));
+      } catch {
+        ws.close();
+      }
     };
 
     ws.onmessage = (e: MessageEvent) => {
@@ -59,7 +61,7 @@ export function LiveLogPanel({ projectId, deploymentId, token }: Props) {
     return () => {
       ws.close();
     };
-  }, [projectId, deploymentId, token]);
+  }, [projectId, deploymentId]);
 
   // Auto-scroll to bottom on new lines
   useEffect(() => {

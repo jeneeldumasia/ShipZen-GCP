@@ -52,6 +52,18 @@ under [Known gaps](#known-gaps), not under controls.
 | Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". |
 | Images are clean | Look at the latest **Container Security Scan** run. |
 
+## Sessions and the API
+
+- **The GitHub token never reaches browser JavaScript.** The browser calls the API through `/api/proxy`, a same-origin route that adds the token on the server and refuses cross-site writes. `/api/auth/session` has the token stripped out. WebSockets authenticate with a one-time, 60-second ticket from `POST /ws-tickets`, not the token.
+- **No `git` in the API pod.** Branch listing and repository analysis use the GitHub API with the user's own token. The analysis download is size-capped and extracted without links or path traversal.
+- **Admins:**
+  - only GitHub-verified emails count;
+  - admins granted through `ADMIN_GITHUB_USERS` / `ADMIN_EMAILS` lose the role at their next sign-in once they're removed from those lists;
+  - admins promoted by another admin keep it.
+- **WebSocket limits:** at most `WS_MAX_PER_USER` (10) open sockets per user per API process, each closed after `WS_MAX_SECONDS` (1 h).
+- **Env vars and secrets:** writes are serialised per project with a Postgres advisory lock, so two edits can't overwrite each other.
+- **Webhook secrets at rest:** per-project webhook secrets are encrypted in Postgres when `SHIPZEN_DATA_KEY` is set (runbook).
+
 ## Isolation of untrusted code
 
 - **Separate, sandboxed node pools.** Builds run on `build-nodes` and tenant apps on `tenant-nodes`. Both are tainted, use GKE Sandbox (gVisor), have no public IPs, and scale to zero. Nothing from the platform runs there. If Kaniko ever misbehaves under gVisor, set `BUILD_RUNTIME_CLASS=""` on the worker to keep the separate pool without the sandbox.

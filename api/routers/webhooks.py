@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from audit import log_audit_event
 from database import get_connection
+from crypto_box import decrypt_value
 from helpers import check_deploy_limits, image_uri_for, queue_deployment
 from ratelimit import limiter
 
@@ -43,7 +44,7 @@ async def github_webhook(request: Request, project_id: str):
                 if not row or not row["webhook_secret"]:
                     raise HTTPException(
                         status_code=404, detail="Webhook secret not found")
-                webhook_secret = row["webhook_secret"]
+                webhook_secret = decrypt_value(row["webhook_secret"])
                 target_branch = row.get("branch") or "main"
                 bound_repo_id = row.get("github_repo_id")
     except HTTPException:

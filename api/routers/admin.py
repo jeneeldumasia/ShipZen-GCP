@@ -72,7 +72,10 @@ def update_user_role(request: Request, user_id: str, body: UpdateRoleRequest, cu
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE users SET role = %s WHERE id = %s RETURNING id;", (body.role, user_id))
+                    # 'manual': granted by an admin, so the env-list check at
+                    # sign-in leaves it alone (see database.get_or_create_user).
+                    "UPDATE users SET role = %s, admin_source = CASE WHEN %s = 'admin' THEN 'manual' END "
+                    "WHERE id = %s RETURNING id;", (body.role, body.role, user_id))
                 if not cur.fetchone():
                     raise HTTPException(
                         status_code=404, detail="User not found")
