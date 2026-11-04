@@ -266,6 +266,48 @@ def set_project_scaling(request: Request, project_id: str, body: ScalingRequest,
     return _serialize(row)
 
 
+def _vanity_route_ready(namespace: str, hostname: str) -> bool:
+    """The project's vanity HTTPRoute exists for this hostname and the gateway accepted it."""
+    from kubernetes import client as k8s
+    from kubernetes.client.rest import ApiException
+    try:
+        route = k8s.CustomObjectsApi().get_namespaced_custom_object(
+            group="gateway.networking.k8s.io", version="v1", namespace=namespace,
+            plural="httproutes", name="vanity-route")
+    except ApiException as e:
+        if e.status == 404:
+            return False
+        raise
+    if hostname not in (route.get("spec") or {}).get("hostnames", []):
+        return False
+    return any(c.get("type") == "Accepted" and c.get("status") == "True"
+               for p in (route.get("status") or {}).get("parents", []) for c in p.get("conditions", []))
+
+
+@router.get("/projects/{project_id}/subdomain/status", tags=["Projects"])
+@limiter.limit("60/minute")
+def vanity_status(request: Request, project_id: str, project: dict = Depends(verify_project_access),
+                  current_user: User = Depends(get_current_user)):
+    """Where the vanity URL is: none | waiting_for_release | pending (being set up) | live."""
+    sub = project.get("subdomain")
+    if not sub:
+        return {"state": "none", "hostname": None}
+    hostname = vanity_hostname(sub)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'production' "
+                        "AND state = 'Running' AND replicas > 0 LIMIT 1;", (project_id,))
+            running = cur.fetchone() is not None
+    if not running:
+        return {"state": "waiting_for_release", "hostname": hostname}
+    try:
+        ready = _vanity_route_ready(project["namespace"], hostname)
+    except Exception as e:
+        logger.warning(f"Vanity status for {project_id}: {type(e).__name__}")
+        ready = False
+    return {"state": "live" if ready else "pending", "hostname": hostname}
+
+
 @router.delete("/projects/{project_id}", status_code=202, tags=["Projects"])
 @limiter.limit("10/minute")
 def delete_project(request: Request, project_id: str, project: dict = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
