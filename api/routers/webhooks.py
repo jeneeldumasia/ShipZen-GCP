@@ -20,6 +20,16 @@ logger = logging.getLogger('api')
 router = APIRouter()
 
 
+def _head_commit(payload: dict) -> tuple:
+    """(sha, message, author, url) of the pushed head commit, as GitHub reports it."""
+    head = payload.get("head_commit") or {}
+    sha = head.get("id") if isinstance(head.get("id"), str) and len(head.get("id")) <= 40 else None
+    message = (head.get("message") or "")[:500] or None
+    author = ((head.get("author") or {}).get("name") or "")[:255] or None
+    url = head.get("url") if str(head.get("url") or "").startswith("https://github.com/") else None
+    return sha, message, author, url
+
+
 # ── Webhooks ──────────────────────────────────────────────────────────────────
 
 
@@ -116,10 +126,11 @@ async def github_webhook(request: Request, project_id: str):
 
                 cur.execute(
                     """
-                    INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
+                    INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
+                                             branch, triggered_by, commit_sha, commit_message, commit_author, commit_url)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, 'push', %s, %s, %s, %s)
                     """,
-                    (deployment_id, project_id, repo_url, image_uri, 1, port)
+                    (deployment_id, project_id, repo_url, image_uri, 1, port, branch, *_head_commit(payload))
                 )
                 # Transactional outbox — atomic with deployment INSERT.
                 outbox_payload = {
@@ -276,10 +287,11 @@ async def github_app_webhook(request: Request):
 
                     cur.execute(
                         """
-                        INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
-                        VALUES (%s, %s, %s, %s, %s, %s, 'Queued')
+                        INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
+                                                 branch, triggered_by, commit_sha, commit_message, commit_author, commit_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, 'push', %s, %s, %s, %s)
                         """,
-                        (deployment_id, project_id, matched_repo_url, image_uri, 1, port)
+                        (deployment_id, project_id, matched_repo_url, image_uri, 1, port, branch, *_head_commit(payload))
                     )
                     # Transactional outbox — atomic with the deployment INSERT.
                     outbox_payload = {

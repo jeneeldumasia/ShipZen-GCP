@@ -12,6 +12,22 @@ export function EnvVars({ projectId }: { projectId: string }) {
   const [newVal, setNewVal] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  // Env changes reach pods when they start: offer to apply them right away.
+  const [pending, setPending] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  async function applyNow() {
+    setApplying(true);
+    try {
+      await api.env.apply(projectId);
+      setPending(false);
+      toast.success("Restarting your app with the new values");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not apply the changes");
+    } finally {
+      setApplying(false);
+    }
+  }
 
   useEffect(() => {
     loadKeys();
@@ -37,6 +53,7 @@ export function EnvVars({ projectId }: { projectId: string }) {
       setNewKey("");
       setNewVal("");
       await loadKeys();
+      setPending(true);
       toast.success("Environment variable saved");
     } catch {
       toast.error("Failed to save environment variable");
@@ -49,6 +66,7 @@ export function EnvVars({ projectId }: { projectId: string }) {
     try {
       await api.env.delete(projectId, key);
       await loadKeys();
+      setPending(true);
       toast.success("Environment variable deleted");
     } catch {
       toast.error("Failed to delete environment variable");
@@ -65,6 +83,15 @@ export function EnvVars({ projectId }: { projectId: string }) {
       </div>
 
       <div className="p-6">
+        {pending && (
+          <div className="flex items-center justify-between gap-4 mb-5 px-4 py-3 rounded border border-amber-300/60 bg-amber-50 dark:bg-amber-900/20 text-sm">
+            <span className="text-text-primary">Changes apply when your app restarts or on the next deploy.</span>
+            <button onClick={applyNow} disabled={applying} className="btn-primary py-1.5 text-xs disabled:opacity-50">
+              {applying ? <RefreshCw size={14} className="animate-spin" /> : null}
+              Apply now
+            </button>
+          </div>
+        )}
         <form onSubmit={handleAdd} className="flex items-end gap-4 mb-6">
           <div className="flex-1">
             <label className="block text-xs font-medium text-text-secondary mb-1">Key</label>

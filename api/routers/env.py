@@ -5,16 +5,19 @@ per project (secret_store.py), synced into the project's pods. /env lists key
 names; /secrets lists keys with masked values. Values are never returned.
 Every change is written to the audit log.
 """
+import datetime
 import functools
 import inspect
 import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 from audit import log_audit_event
 from auth import User, get_current_user
-from database import verify_project_access, verify_project_write_access
+from database import get_connection, verify_project_access, verify_project_write_access
+from platform_clients import apps_v1
 from ratelimit import limiter
 from secret_store import env_write_lock, is_not_found, load_env, save_env
 from validation import _ENV_KEY_RE, _ENV_VALUE_MAX
@@ -179,3 +182,43 @@ def delete_secret(request: Request, project_id: str, key: str, project: dict = D
             raise HTTPException(status_code=404, detail="Secret not found")
         logger.error(f"Failed to delete secret: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete secret")
+
+
+# ── Apply env changes to the running app ─────────────────────────────────────
+
+@router.post("/projects/{project_id}/env/apply", tags=["Environment"])
+@limiter.limit("5/minute")
+def apply_env(request: Request, project_id: str, project: dict = Depends(verify_project_write_access),
+              current_user: User = Depends(get_current_user)):
+    """Make the live release pick up env/secret changes now.
+
+    Env vars reach pods through an ExternalSecret that refreshes hourly and is
+    read when a pod starts, so: force a refresh, then restart the pods.
+    """
+    from kubernetes import client as k8s
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT deployment_id FROM deployments WHERE project_id = %s AND state = 'Running' "
+                "AND replicas > 0 ORDER BY (deployment_id = %s) DESC, created_at DESC LIMIT 1;",
+                (project_id, project.get("live_deployment_id") or ""))
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=409, detail="Nothing is running yet; changes apply to the next deploy.")
+    dep = row[0]
+    ns = project["namespace"]
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        k8s.CustomObjectsApi().patch_namespaced_custom_object(
+            group="external-secrets.io", version="v1beta1", namespace=ns, plural="externalsecrets",
+            name=f"{dep}-secrets", body={"metadata": {"annotations": {"force-sync": now}}})
+        time.sleep(3)  # let ESO rewrite the Kubernetes Secret before pods restart
+        apps_v1.patch_namespaced_deployment(
+            name=dep, namespace=ns,
+            body={"spec": {"template": {"metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": now}}}}})
+    except Exception as e:
+        logger.error(f"Failed to apply env for {project_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to apply the changes; try again or redeploy.")
+    log_audit_event(project_id=project_id, user_id=current_user.user_id, action="APPLY_ENV",
+                    resource_type="deployment", resource_id=dep, details={})
+    return {"message": "Restarting with the new values", "deployment_id": dep}

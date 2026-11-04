@@ -104,6 +104,13 @@ export interface Deployment {
   state: "Queued" | "Building" | "Deploying" | "Verifying" | "Running" | "Failed" | "Retry" | "DLQ" | "Superseded";
   updated_at: string;
   last_error: string | null;
+  created_at?: string;
+  branch?: string | null;
+  commit_sha?: string | null;
+  commit_message?: string | null;
+  commit_author?: string | null;
+  commit_url?: string | null;
+  triggered_by?: string | null;
 }
 
 export interface Build {
@@ -175,6 +182,10 @@ export const api = {
       request<{ status: string }>(`/projects/${projectId}/deployments/${deploymentId}/cancel`, {
         method: "POST",
       }),
+    redeploy: (projectId: string, deploymentId: string) =>
+      request<Deployment>(`/projects/${projectId}/deployments/${deploymentId}/redeploy`, {
+        method: "POST",
+      }),
     restart: (projectId: string, deploymentId: string) =>
       request<{ status: string }>(`/projects/${projectId}/deployments/${deploymentId}/restart`, {
         method: "POST",
@@ -218,6 +229,10 @@ export const api = {
     delete: (projectId: string, key: string) =>
       request<{ message: string }>(`/projects/${projectId}/env/${key}`, {
         method: "DELETE",
+      }),
+    apply: (projectId: string) =>
+      request<{ message: string; deployment_id: string }>(`/projects/${projectId}/env/apply`, {
+        method: "POST",
       }),
   },
 
