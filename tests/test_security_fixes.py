@@ -232,3 +232,31 @@ def test_without_a_key_values_are_stored_as_before():
         assert box.encrypt_value("hmac-secret") == "hmac-secret"
         with pytest.raises(RuntimeError):
             box.decrypt_value("enc:v1:abc")
+
+
+# ── Vanity hostnames ─────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("name,ok", [
+    ("myapp", True), ("acme-store", True), ("a1b", True),
+    ("ab", False), ("1app", False), ("app-", False), ("my--app", False), ("My", False),
+    ("grafana", False), ("argocd", False),
+    ("abcdefgh-store", False),   # release-URL shape: <8 chars>-<slug>
+])
+def test_vanity_names(name, ok):
+    from shipzen_common.hostnames import valid_vanity
+    assert valid_vanity(name) is ok
+
+
+def test_vanity_route_renders_one_route_to_the_live_release():
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(ROOT / "controller" / "templates")))
+    doc = yaml.safe_load(env.get_template("vanity-route.yaml.j2").render(
+        namespace="tenant-a", project_slug="app", hostname="myapp-shipzen.jeneeldumasia.codes",
+        live_deployment="dep-123"))
+    assert doc["kind"] == "HTTPRoute"
+    assert doc["spec"]["hostnames"] == ["myapp-shipzen.jeneeldumasia.codes"]
+    assert doc["spec"]["rules"][0]["backendRefs"][0]["name"] == "dep-123-svc"
+
+
+def test_tenant_namespace_carries_only_a_valid_vanity_label():
+    assert 'vanity: "myapp"' in controller.render_tenant("ns-a", "p1", "My App", "myapp")
+    assert 'vanity: ""' in controller.render_tenant("ns-a", "p1", "My App", "bad--name")

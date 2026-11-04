@@ -36,6 +36,7 @@ EXPECTED_ROUTES = {
     ("GET", "/metrics"), ("GET", "/healthz"),
     ("POST", "/projects"), ("GET", "/projects"), ("GET", "/projects/{project_id}"),
     ("DELETE", "/projects/{project_id}"), ("POST", "/projects/analyze"),
+    ("PUT", "/projects/{project_id}/subdomain"),
     ("GET", "/projects/{project_id}/members"), ("POST", "/projects/{project_id}/members"),
     ("DELETE", "/projects/{project_id}/members/{target_user_id}"),
     ("POST", "/projects/{project_id}/deployments"), ("GET", "/projects/{project_id}/deployments"),
@@ -585,3 +586,37 @@ def test_active_deploys_per_user_limit(env):
     assert env.client.post(f"/projects/{p1}/deployments", json={"repo_url": "https://github.com/o/r"}).status_code == 202
     r = env.client.post(f"/projects/{p2}/deployments", json={"repo_url": "https://github.com/o/r"})
     assert r.status_code == 429 and "in progress" in r.json()["detail"]
+
+
+# ── Vanity subdomains ────────────────────────────────────────────────────────
+
+def test_vanity_subdomain_set_change_remove(env):
+    pid = _make_project(env)
+    env.as_user("editor")
+    r = env.client.put(f"/projects/{pid}/subdomain", json={"subdomain": "MyApp"})
+    assert r.status_code == 200
+    assert r.json()["subdomain"] == "myapp"
+    assert r.json()["vanity_url"] == "https://myapp-shipzen.jeneeldumasia.codes"
+    assert _sql("SELECT action FROM audit_logs WHERE action = 'SET_SUBDOMAIN'") == [("SET_SUBDOMAIN",)]
+    r = env.client.put(f"/projects/{pid}/subdomain", json={"subdomain": None})
+    assert r.status_code == 200 and r.json()["subdomain"] is None and r.json()["vanity_url"] is None
+
+
+def test_vanity_subdomain_rules(env):
+    pid = _make_project(env)
+    env.as_user("viewer")
+    assert env.client.put(f"/projects/{pid}/subdomain", json={"subdomain": "myapp"}).status_code == 403
+    env.as_user("owner")
+    for bad in ("ab", "-app", "app-", "my--app", "my_app", "grafana", "argocd", "abcdefgh-store", "1app"):
+        assert env.client.put(f"/projects/{pid}/subdomain", json={"subdomain": bad}).status_code == 422, bad
+
+
+def test_vanity_subdomain_is_unique_among_live_projects(env):
+    p1 = _make_project(env, name="One")
+    p2 = _make_project(env, name="Two")
+    env.as_user("owner")
+    assert env.client.put(f"/projects/{p1}/subdomain", json={"subdomain": "shop"}).status_code == 200
+    assert env.client.put(f"/projects/{p2}/subdomain", json={"subdomain": "shop"}).status_code == 409
+    # Once the first project is deleted, the name is free again.
+    assert env.client.delete(f"/projects/{p1}").status_code == 202
+    assert env.client.put(f"/projects/{p2}/subdomain", json={"subdomain": "shop"}).status_code == 200

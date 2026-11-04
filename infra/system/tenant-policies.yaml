@@ -53,8 +53,11 @@ spec:
 ---
 # Security finding H4: every hostname shares one Gateway, which accepts routes
 # from all namespaces. A tenant route may only claim hostnames of its own
-# project (<deployment>-<project slug>-shipzen.jeneeldumasia.codes), never the
-# platform's or another project's.
+# project, never the platform's or another project's:
+#   <8-char release id>-<project slug>-shipzen.jeneeldumasia.codes
+#   <its vanity name>-shipzen.jeneeldumasia.codes   (namespace label, set by the controller)
+# Exactly 8 characters before the slug, and vanity names can't have that shape,
+# so one project's pattern can't match another project's hostnames.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -79,10 +82,14 @@ spec:
           apiCall:
             urlPath: "/api/v1/namespaces/{{ request.namespace }}"
             jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/slug" || '''''
+        - name: vanity
+          apiCall:
+            urlPath: "/api/v1/namespaces/{{ request.namespace }}"
+            jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/vanity" || '''''
       validate:
         message: >-
-          Hostnames in this namespace must look like
-          <deployment>-{{ slug }}-shipzen.jeneeldumasia.codes.
+          Hostnames in this namespace must be <8-char release id>-{{ slug }}-shipzen.jeneeldumasia.codes
+          or the project's vanity name.
         deny:
           conditions:
             any:
@@ -92,4 +99,5 @@ spec:
               - key: "{{ request.object.spec.hostnames || `[]` }}"
                 operator: AnyNotIn
                 value:
-                  - "*-{{ slug }}-shipzen.jeneeldumasia.codes"
+                  - "????????-{{ slug }}-shipzen.jeneeldumasia.codes"
+                  - "{{ vanity }}-shipzen.jeneeldumasia.codes"

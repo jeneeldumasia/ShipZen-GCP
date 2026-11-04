@@ -8,6 +8,9 @@ metadata:
     # Route hostnames in this namespace must end in -<slug>-shipzen.jeneeldumasia.codes
     # (Kyverno policy restrict-tenant-hostnames).
     shipzen.jeneeldumasia.codes/slug: "{{ project_slug }}"
+    # The project's free vanity name (<vanity>-shipzen.jeneeldumasia.codes), if
+    # any; the only other hostname its routes may use. Set by the controller.
+    shipzen.jeneeldumasia.codes/vanity: "{{ vanity }}"
     # Basic pod security isolation
     pod-security.kubernetes.io/enforce: restricted
 ---
