@@ -57,6 +57,14 @@ health_check_path: /healthz     # readiness check path
 With the ShipZen GitHub App installed on the repository, a push to the project's
 branch deploys automatically (pushes to other branches are ignored).
 
+**Give it a stable, free URL.** Each release gets its own URL, which changes on
+every deploy. On the project page, under **Vanity URL**, pick a name such as
+`myapp` and the project is reachable at `https://myapp-shipzen.jeneeldumasia.codes`.
+That URL always points at the live release, survives redeploys and rollbacks,
+and costs nothing. Names are 3–40 lowercase letters, digits and hyphens, unique
+across ShipZen. A few names are reserved (`grafana`, `argocd`, `api`, …), and so
+is the release-URL shape: a hyphen as the 9th character.
+
 ## 3. Configure
 
 - **Environment variables and secrets**: project → Environment. Values are

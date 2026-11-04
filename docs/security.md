@@ -88,4 +88,4 @@ under [Known gaps](#known-gaps), not under controls.
 4. **One allowlisted user.** Fine for a personal platform; there is no self-service sign-up or invite flow.
 5. **Grafana and ArgoCD use admin passwords,** unless Cloudflare Access is switched on (runbook). Access adds an email login in front of them.
 6. **The GKE control plane endpoint is public** (IAM-authenticated; nodes are private). Closing it needs the DNS-based endpoint, which needs google provider 6.x.
-7. **Hostname slugs can overlap:** a project with slug `app` can claim `x-evil-app-shipzen…`, which looks like project `evil-app`'s form. This only matters if a manifest injection path reappears, since the controller renders hostnames itself.
+7. ~~Hostname slugs can overlap.~~ Closed: tenant routes must have exactly 8 characters before the project slug (a release ID), and vanity names can't take that shape, so no project's pattern matches another project's hostnames.
