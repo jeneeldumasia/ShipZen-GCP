@@ -43,6 +43,8 @@ EXPECTED_ROUTES = {
     ("GET", "/projects/{project_id}/deployments/{deployment_id}"),
     ("POST", "/projects/{project_id}/deployments/{deployment_id}/cancel"),
     ("POST", "/projects/{project_id}/deployments/{deployment_id}/restart"),
+    ("POST", "/projects/{project_id}/deployments/{deployment_id}/redeploy"),
+    ("POST", "/projects/{project_id}/env/apply"),
     ("POST", "/projects/{project_id}/rollback"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/status"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/logs"),
@@ -643,3 +645,63 @@ def test_rollback_within_grace_period_is_instant(env):
     assert _sql("SELECT count(*) FROM deployments WHERE project_id = %s", (pid,)) == [(2,)]
     assert _sql("SELECT scale_down_after IS NOT NULL FROM deployments WHERE deployment_id = 'new'") == [(True,)]
     assert _sql("SELECT scale_down_after FROM deployments WHERE deployment_id = 'old'") == [(None,)]
+
+
+# ── Commit-aware deploys, redeploy, apply env ────────────────────────────────
+
+def test_manual_deploy_records_branch_and_trigger(env):
+    pid = _make_project(env)
+    env.as_user("editor")
+    dep = env.client.post(f"/projects/{pid}/deployments",
+                          json={"repo_url": "https://github.com/o/r", "branch": "dev"}).json()
+    assert dep["branch"] == "dev" and dep["triggered_by"] == "user:editor"
+    listed = env.client.get(f"/projects/{pid}/deployments").json()[0]
+    for field in ("commit_sha", "commit_message", "commit_author", "commit_url", "branch", "triggered_by", "created_at"):
+        assert field in listed
+
+
+def test_triggered_by_cannot_be_set_by_the_caller(env):
+    pid = _make_project(env)
+    env.as_user("editor")
+    dep = env.client.post(f"/projects/{pid}/deployments?triggered_by=push",
+                          json={"repo_url": "https://github.com/o/r"}).json()
+    assert dep["triggered_by"] == "user:editor"
+
+
+def test_redeploy_builds_the_same_repo_branch_and_port_again(env):
+    pid = _make_project(env)
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state, branch)
+            VALUES ('src', %s, 'https://github.com/o/r', 'img', 1, 3000, 'Running', 'dev')""", (pid,))
+    env.as_user("viewer")
+    assert env.client.post(f"/projects/{pid}/deployments/src/redeploy").status_code == 403
+    env.as_user("editor")
+    r = env.client.post(f"/projects/{pid}/deployments/src/redeploy")
+    assert r.status_code == 202
+    new = r.json()
+    assert (new["repo_url"], new["port"], new["branch"], new["triggered_by"]) == (
+        "https://github.com/o/r", 3000, "dev", "redeploy:editor")
+    assert env.client.post(f"/projects/{pid}/deployments/nope/redeploy").status_code == 404
+
+
+def test_push_webhook_records_the_pushed_commit(env):
+    pid = _make_project(env)
+    (secret,) = _sql("SELECT webhook_secret FROM projects WHERE id = %s", (pid,))[0]
+    body = json.dumps({
+        "ref": "refs/heads/main",
+        "repository": {"id": 1, "clone_url": "https://github.com/o/r.git"},
+        "head_commit": {"id": "a" * 40, "message": "Fix login", "author": {"name": "Jeneel"},
+                        "url": "https://github.com/o/r/commit/" + "a" * 40},
+    }).encode()
+    r = env.client.post(f"/webhooks/github/{pid}", content=body,
+                        headers={"X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)})
+    assert r.status_code == 200
+    assert _sql("SELECT commit_sha, commit_message, commit_author, triggered_by, branch FROM deployments "
+                "WHERE project_id = %s", (pid,)) == [("a" * 40, "Fix login", "Jeneel", "push", "main")]
+
+
+def test_apply_env_needs_a_running_release(env):
+    pid = _make_project(env)
+    env.as_user("viewer")
+    assert env.client.post(f"/projects/{pid}/env/apply").status_code == 403
+    env.as_user("editor")
+    assert env.client.post(f"/projects/{pid}/env/apply").status_code == 409
