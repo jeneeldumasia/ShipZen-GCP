@@ -76,10 +76,21 @@ class User:
     # The user's own GitHub token, used to check which repositories they can
     # read (github_access.py). Never logged or returned (repr=False).
     github_token: Optional[str] = field(default=None, repr=False, compare=False)
+    # Suspended by an admin: every authenticated request is refused.
+    suspended: bool = False
 
     @property
     def is_admin(self) -> bool:
         return self.role == 'admin'
+
+
+def _refuse_suspended(user: User) -> User:
+    if user.suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your ShipZen account is suspended. Contact a platform admin.",
+        )
+    return user
 
 
 async def get_current_user_from_token(token: str) -> User:
@@ -110,12 +121,12 @@ async def get_current_user(
         from database import get_or_create_user
 
         db_user = await asyncio.to_thread(get_or_create_user, "local-dev-user", "local-dev@example.com")
-        user = User(user_id="local-dev-user", role=db_user["role"])
+        user = User(user_id="local-dev-user", role=db_user["role"], suspended=bool(db_user.get("suspended")))
         cache_key = hashlib.sha256(token.encode()).hexdigest()
         with _cache_lock:
             _token_cache[cache_key] = user
             _user_to_cache_keys[user.user_id].add(cache_key)
-        return user
+        return _refuse_suspended(user)
 
     if not GITHUB_ENABLED:
         raise HTTPException(
@@ -129,7 +140,7 @@ async def get_current_user(
     # Check cache
     with _cache_lock:
         if cache_key in _token_cache:
-            return _token_cache[cache_key]
+            return _refuse_suspended(_token_cache[cache_key])
 
     # Verify token with GitHub
     
@@ -229,8 +240,9 @@ async def get_current_user(
 
     from database import get_or_create_user
     db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"], user_info["login"])
-    user = User(user_id=user_info["id"], role=db_user["role"], github_token=token)
+    user = User(user_id=user_info["id"], role=db_user["role"], github_token=token,
+                suspended=bool(db_user.get("suspended")))
     with _cache_lock:
         _token_cache[cache_key] = user
         _user_to_cache_keys[user.user_id].add(cache_key)
-    return user
+    return _refuse_suspended(user)

@@ -71,7 +71,8 @@ def list_users(request: Request, current_user: User = Depends(get_current_user))
         with get_connection() as conn:
             with conn.cursor(cursor_factory=DictCursor) as cur:
                 cur.execute(
-                    "SELECT id, email, role, created_at FROM users ORDER BY created_at DESC;")
+                    "SELECT id, email, role, created_at, suspended_at, suspended_reason "
+                    "FROM users ORDER BY created_at DESC;")
                 return [_serialize(dict(r)) for r in cur.fetchall()]
     except Exception as e:
         logger.error(f"Failed to list users: {e}")
