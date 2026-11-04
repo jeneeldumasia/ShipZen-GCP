@@ -201,6 +201,10 @@ resource "helm_release" "kube_prometheus_stack" {
           repeat_interval = "12h"
           routes = [
             { receiver = "null", matchers = ["alertname =~ \"Watchdog|InfoInhibitor\""] },
+            # Overcommit alerts mean "can't survive losing a node". This cluster is
+            # single-zone, 1-3 nodes and torn down after each session, and each
+            # build reserves ~3 GiB, so they fire on every build and need no action.
+            { receiver = "null", matchers = ["alertname =~ \"KubeMemoryOvercommit|KubeCPUOvercommit\""] },
             { receiver = "telegram", matchers = ["severity =~ \"critical|high|warning\""] },
           ]
         }
