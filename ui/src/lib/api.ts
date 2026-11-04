@@ -100,7 +100,7 @@ export interface Deployment {
   image_uri: string;
   replicas: number;
   port: number;
-  state: "Queued" | "Building" | "Deploying" | "Verifying" | "Running" | "Failed" | "Retry" | "DLQ";
+  state: "Queued" | "Building" | "Deploying" | "Verifying" | "Running" | "Failed" | "Retry" | "DLQ" | "Superseded";
   updated_at: string;
   last_error: string | null;
 }
