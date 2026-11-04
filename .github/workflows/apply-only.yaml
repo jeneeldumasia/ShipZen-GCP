@@ -173,6 +173,11 @@ jobs:
           echo -n "{\"app_id\": \"${{ secrets.SHIPZEN_GITHUB_APP_ID }}\", \"private_key\": \"${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}\"}" | \
             bash scripts/put-secret.sh shipzen-github-app
 
+          # Data encryption key (create-only; never changed once set).
+          if [ -n "${{ secrets.SHIPZEN_DATA_KEY }}" ]; then
+            printf '{"key": "%s"}' "${{ secrets.SHIPZEN_DATA_KEY }}" | bash scripts/put-secret.sh shipzen-data-key --create-only
+          fi
+
           echo "Pushing AUTH_SECRET..."
           echo -n "{\"value\": \"${{ secrets.SHIPZEN_AUTH_SECRET }}\"}" | \
             bash scripts/put-secret.sh shipzen-auth-secret
