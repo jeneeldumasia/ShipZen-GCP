@@ -213,6 +213,10 @@ def cancel_deployment(request: Request, project_id: str, deployment_id: str, pro
     return {"status": "cancelled"}
 
 
+# Must match the controller's RELEASE_GRACE_MINUTES (same env var, same default).
+RELEASE_GRACE_MINUTES = int(os.getenv("RELEASE_GRACE_MINUTES", "10"))
+
+
 @router.post("/projects/{project_id}/rollback", status_code=202, tags=["Deployments"])
 @limiter.limit("5/minute")
 def rollback_deployment(request: Request, project_id: str, project: dict = Depends(verify_project_write_access), current_user: User = Depends(get_current_user)):
@@ -225,20 +229,53 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
             # so "previous good" = newest scaled-down Running release whose image is
             # not the one currently serving traffic. (Picking the newest 'Running' row,
             # as before, just re-deployed the live image.)
+            # The live release: the one the project points at, else the newest
+            # running one. "Previous good" = the newest other Running release
+            # with a different image, whether still in its blue-green grace
+            # period (replicas > 0) or already scaled to 0.
+            cur.execute("""
+                SELECT deployment_id, image_uri FROM deployments
+                WHERE project_id = %s AND state = 'Running' AND replicas > 0
+                ORDER BY (deployment_id = %s) DESC, created_at DESC LIMIT 1;
+            """, (project_id, project.get("live_deployment_id") or ""))
+            live = cur.fetchone()
             cur.execute("""
                 SELECT * FROM deployments
-                WHERE project_id = %s AND state = 'Running' AND replicas = 0
-                  AND image_uri IS DISTINCT FROM (
-                      SELECT image_uri FROM deployments
-                      WHERE project_id = %s AND state = 'Running' AND replicas > 0
-                      ORDER BY created_at DESC LIMIT 1)
+                WHERE project_id = %s AND state = 'Running'
+                  AND deployment_id IS DISTINCT FROM %s
+                  AND image_uri IS DISTINCT FROM %s
                 ORDER BY created_at DESC LIMIT 1;
-            """, (project_id, project_id))
+            """, (project_id, live["deployment_id"] if live else None, live["image_uri"] if live else None))
             last_good = cur.fetchone()
 
             if not last_good:
                 raise HTTPException(
                     status_code=409, detail="No previous successful deployment found to rollback to.")
+
+            if last_good["replicas"] and last_good["replicas"] > 0:
+                # Still running (blue-green grace period): switch back instantly by
+                # making it the live release again. The release we leave gets its
+                # own grace period before the controller scales it down.
+                cur.execute("UPDATE projects SET live_deployment_id = %s WHERE id = %s;",
+                            (last_good["deployment_id"], project_id))
+                cur.execute("UPDATE deployments SET scale_down_after = NULL WHERE deployment_id = %s;",
+                            (last_good["deployment_id"],))
+                if live:
+                    cur.execute(
+                        "UPDATE deployments SET scale_down_after = NOW() + make_interval(mins => %s) "
+                        "WHERE deployment_id = %s;", (RELEASE_GRACE_MINUTES, live["deployment_id"]))
+                conn.commit()
+                log_audit_event(
+                    project_id=project_id, user_id=current_user.user_id, action="ROLLBACK",
+                    resource_type="deployment", resource_id=last_good["deployment_id"],
+                    details={"from_image": last_good["image_uri"], "instant": True})
+                try:
+                    _redis_client.publish("shipzen:events:project_reconcile",
+                                          json.dumps({"project_id": project_id, "event": "rollback"}))
+                except Exception as pub_err:
+                    logger.warning(f"Failed to publish project_reconcile event: {pub_err}")
+                return {"message": "Rolled back instantly", "deployment_id": last_good["deployment_id"],
+                        "status": "Running", "instant": True}
 
             deployment_id = str(uuid.uuid4())
             cur.execute("""

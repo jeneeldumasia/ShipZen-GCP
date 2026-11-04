@@ -179,6 +179,9 @@ if not DATABASE_URL:
 RECONCILIATION_INTERVAL = int(os.getenv("RECONCILIATION_INTERVAL", "15"))
 # Scaled-down releases kept per project for rollback; older ones are cleaned up.
 KEEP_RELEASES = int(os.getenv("KEEP_RELEASES", "3"))
+# Blue-green: after a new release goes live, the previous one keeps running this
+# long (no gap while the route switches; instant rollback meanwhile).
+RELEASE_GRACE_MINUTES = int(os.getenv("RELEASE_GRACE_MINUTES", "10"))
 
 # GCP Artifact Registry hostname — used when rendering the tenant namespace template
 # so each tenant namespace gets an Artifact Registry pull secret via ESO.
@@ -827,9 +830,12 @@ def sync_vanity_route(cur, project) -> None:
     sub = project.subdomain if valid_vanity(project.subdomain) else None
     live = None
     if sub:
+        # The release the project says is live (blue-green switch, instant
+        # rollback), if it's actually up; else the newest running one.
         cur.execute(
             "SELECT deployment_id FROM deployments WHERE project_id = %s AND state = 'Running' "
-            "AND replicas > 0 ORDER BY created_at DESC LIMIT 1;", (project.id,))
+            "AND replicas > 0 ORDER BY (deployment_id = %s) DESC, created_at DESC LIMIT 1;",
+            (project.id, project.live_deployment_id or ""))
         row = cur.fetchone()
         live = row[0] if row else None
     state = (sub, live)
@@ -856,6 +862,14 @@ def sync_vanity_route(cur, project) -> None:
 
 def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_routes, global_ext_secrets):
     """Reconciles Deployments, Services, and HTTPRoutes for a ready project namespace."""
+    # Blue-green: previous releases whose grace period is over scale to 0 now
+    # (never the live one, e.g. after an instant rollback made it live again).
+    cur.execute(
+        "UPDATE deployments SET replicas = 0, scale_down_after = NULL "
+        "WHERE project_id = %s AND scale_down_after <= NOW() "
+        "AND deployment_id IS DISTINCT FROM (SELECT live_deployment_id FROM projects WHERE id = %s);",
+        (project.id, project.id))
+    conn.commit()
     cur.execute("SELECT * FROM deployments WHERE project_id = %s;",
                 (project.id,))
     db_deployments = {str(row['deployment_id']): dict(row)
@@ -969,9 +983,18 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                             "UPDATE deployments SET state = %s, last_error = NULL WHERE deployment_id = %s;",
                             ('Running', d_id)
                         )
+                        # Blue-green switch: this release is now the live one.
+                        # The previous ones keep running for RELEASE_GRACE_MINUTES
+                        # (scaled to 0 afterwards, at the top of a later sweep),
+                        # so the stable URL never points at a release that's
+                        # already gone, and a rollback meanwhile is instant.
+                        cur.execute("UPDATE projects SET live_deployment_id = %s WHERE id = %s;",
+                                    (d_id, project.id))
                         cur.execute(
-                            "UPDATE deployments SET replicas = 0 WHERE project_id = %s AND deployment_id != %s AND state = 'Running' AND replicas > 0;",
-                            (project.id, d_id)
+                            "UPDATE deployments SET scale_down_after = NOW() + make_interval(mins => %s) "
+                            "WHERE project_id = %s AND deployment_id != %s AND state = 'Running' "
+                            "AND replicas > 0 AND scale_down_after IS NULL;",
+                            (RELEASE_GRACE_MINUTES, project.id, d_id)
                         )
                         # Keep the newest KEEP_RELEASES scaled-down releases as
                         # rollback targets; older ones become Superseded, and the
