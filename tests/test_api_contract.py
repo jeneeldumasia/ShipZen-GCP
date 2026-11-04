@@ -49,6 +49,7 @@ EXPECTED_ROUTES = {
     ("GET", "/projects/{project_id}/metrics"),
     ("PUT", "/projects/{project_id}/scaling"),
     ("PUT", "/users/me/notifications"),
+    ("GET", "/projects/{project_id}/subdomain/status"),
     ("POST", "/projects/{project_id}/rollback"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/status"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/logs"),
@@ -1024,3 +1025,22 @@ def test_build_folder_is_validated_kept_on_redeploy_and_copied_to_pushes(env):
         "X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)}).status_code == 200
     assert _sql("SELECT build_context FROM deployments WHERE project_id = %s AND triggered_by = 'push'",
                 (pid,)) == [("apps/web",)]
+
+
+def test_vanity_status_follows_the_route(env):
+    pid = _make_project(env)
+    url = f"/projects/{pid}/subdomain/status"
+    routes = {"ready": False}
+    env.stubs.set("_vanity_route_ready", lambda ns, host: routes["ready"])
+    env.as_user("stranger")
+    assert env.client.get(url).status_code == 403
+    env.as_user("viewer")
+    assert env.client.get(url).json() == {"state": "none", "hostname": None}
+    env.as_user("owner")
+    assert env.client.put(f"/projects/{pid}/subdomain", json={"subdomain": "status-demo"}).status_code == 200
+    assert env.client.get(url).json()["state"] == "waiting_for_release"
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
+            VALUES ('live1', %s, 'https://github.com/o/r', 'img', 1, 8080, 'Running')""", (pid,))
+    assert env.client.get(url).json() == {"state": "pending", "hostname": "status-demo-shipzen.jeneeldumasia.codes"}
+    routes["ready"] = True
+    assert env.client.get(url).json()["state"] == "live"

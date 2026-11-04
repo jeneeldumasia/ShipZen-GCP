@@ -211,6 +211,9 @@ export const api = {
       request<{ message: string }>(`/projects/${id}`, { method: "DELETE" }),
     setScaling: (id: string, body: { instance_size: InstanceSize; min_instances: number; max_instances: number }) =>
       request<Project>(`/projects/${id}/scaling`, { method: "PUT", body: JSON.stringify(body) }),
+    vanityStatus: (id: string) =>
+      request<{ state: "none" | "waiting_for_release" | "pending" | "live"; hostname: string | null }>(
+        `/projects/${id}/subdomain/status`),
     setSubdomain: (id: string, subdomain: string | null) =>
       request<Project & { vanity_url: string | null }>(`/projects/${id}/subdomain`, {
         method: "PUT",
