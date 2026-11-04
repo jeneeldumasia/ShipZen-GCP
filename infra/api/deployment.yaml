@@ -68,6 +68,13 @@ spec:
                   name: shipzen-github
                   key: app_webhook_secret
                   optional: true
+            # Encrypts secrets stored in Postgres (api/crypto_box.py). Optional.
+            - name: SHIPZEN_DATA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-data-key
+                  key: key
+                  optional: true
             - name: GCP_PROJECT
               valueFrom:
                 secretKeyRef:
