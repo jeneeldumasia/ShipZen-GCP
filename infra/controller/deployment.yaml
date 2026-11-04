@@ -77,6 +77,12 @@ spec:
                   name: shipzen-github-app
                   key: private_key
                   optional: true
+            - name: RESEND_API_KEY   # deploy emails (shipzen_common/notify.py); unset = no email
+              valueFrom:
+                secretKeyRef:
+                  name: shipzen-notify
+                  key: resend_api_key
+                  optional: true
           resources:
             requests:
               cpu: "100m"

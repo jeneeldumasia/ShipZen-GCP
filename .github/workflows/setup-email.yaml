@@ -1,0 +1,23 @@
+name: Set Up Email
+
+# One-time (safe to re-run): register jeneeldumasia.codes with Resend and add the
+# DNS records it needs in Cloudflare, so ShipZen can email deploy notifications
+# from notify@jeneeldumasia.codes. Touches no cloud infrastructure and costs nothing.
+# The API key reaches the cluster through the Deploy Secrets workflow.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resend domain and Cloudflare DNS records
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 scripts/setup_email.py | tee -a "$GITHUB_STEP_SUMMARY"
