@@ -28,8 +28,13 @@ metadata:
   labels:
     app: {{ deployment_name }}
     shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+  annotations:
+    # size:min:max this manifest was rendered for (the controller re-renders on change)
+    shipzen.jeneeldumasia.codes/scaling: "{{ scaling_key | default('small:1:1') }}"
 spec:
+{%- if not autoscale %}
   replicas: {{ replicas | default(1) }}
+{%- endif %}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -86,8 +91,11 @@ spec:
               value: "dist"
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: "{{ cpu_request | default('100m') }}"
+              memory: "{{ memory_request | default('128Mi') }}"
+            limits:
+              cpu: "{{ cpu_limit | default('500m') }}"
+              memory: "{{ memory_limit | default('512Mi') }}"
           envFrom:
             - secretRef:
                 name: {{ deployment_name }}-secrets-sync
@@ -174,3 +182,29 @@ spec:
   selector:
     matchLabels:
       app: {{ deployment_name }}
+{%- if autoscale %}
+---
+# Live release with max > min instances: CPU autoscaling. The Deployment above
+# leaves replicas unset so neither ArgoCD nor the controller fights the HPA.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ deployment_name }}-hpa
+  namespace: {{ namespace }}
+  labels:
+    shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ deployment_name }}
+  minReplicas: {{ min_instances }}
+  maxReplicas: {{ max_instances }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+{%- endif %}

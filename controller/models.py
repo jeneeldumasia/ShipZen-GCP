@@ -21,6 +21,9 @@ class ProjectSchema(BaseModel):
     deleted_at: Optional[datetime] = None
     subdomain: Optional[str] = None
     live_deployment_id: Optional[str] = None
+    instance_size: str = "small"
+    min_instances: int = 1
+    max_instances: int = 1
 
     @field_serializer('created_at', 'deleted_at')
     def serialize_dt(self, dt: datetime, _info):
