@@ -50,6 +50,13 @@ jobs:
         continue-on-error: true
         run: bash scripts/db-snapshot.sh backup "${{ secrets.GCP_PROJECT_ID }}"
 
+      - name: Configure kubectl (so the destroy watchdog can clear stuck finalizers)
+        continue-on-error: true
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster \
+            --zone us-central1-c \
+            --project ${{ secrets.GCP_PROJECT_ID }} || echo "No cluster to configure; watchdog will be a no-op."
+
       - name: Terraform Destroy
         working-directory: ./terraform
         env:
@@ -63,7 +70,7 @@ jobs:
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
-        run: terraform destroy -auto-approve
+        run: bash ../scripts/destroy-with-watchdog.sh
 
       - name: Delete disks the cluster left behind
         # The cluster is gone, so its PVC-backed disks (Prometheus, Grafana, Loki,

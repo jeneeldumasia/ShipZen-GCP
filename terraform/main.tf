@@ -435,6 +435,9 @@ resource "google_service_account_iam_binding" "platform_workload_identity" {
 
 resource "kubernetes_namespace" "shipzen_system" {
   depends_on = [time_sleep.wait_for_cluster_auth]
+  timeouts {
+    delete = "15m"
+  }
   metadata {
     name = "shipzen-system"
   }
@@ -442,6 +445,9 @@ resource "kubernetes_namespace" "shipzen_system" {
 
 resource "kubernetes_namespace" "shipzen_build" {
   depends_on = [time_sleep.wait_for_cluster_auth]
+  timeouts {
+    delete = "15m"
+  }
   metadata {
     name = "shipzen-build"
   }

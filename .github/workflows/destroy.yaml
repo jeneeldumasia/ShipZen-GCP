@@ -132,6 +132,20 @@ jobs:
           kubectl delete validatingwebhookconfigurations --all --ignore-not-found 2>/dev/null || true
           kubectl delete mutatingwebhookconfigurations   --all --ignore-not-found 2>/dev/null || true
 
+      - name: Clear ArgoCD finalizers
+        if: steps.check_cluster.outputs.cluster_exists == 'true'
+        run: |
+          # Argo's resource finalizers block namespace deletion once the Argo
+          # controller is being torn down, which timed out terraform destroy.
+          for kind in applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io; do
+            for item in $(kubectl get "$kind" -A --no-headers \
+                -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2>/dev/null \
+                | awk '{print $1"/"$2}'); do
+              kubectl patch "$kind" "${item#*/}" -n "${item%%/*}" --type merge \
+                -p '{"metadata":{"finalizers":null}}' || true
+            done
+          done
+
       - name: Release stuck namespace finalizers
         if: steps.check_cluster.outputs.cluster_exists == 'true'
         run: |
@@ -267,7 +281,7 @@ jobs:
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
-        run: terraform destroy -auto-approve
+        run: bash ../scripts/destroy-with-watchdog.sh
 
       - name: Delete disks the cluster left behind
         # The cluster is gone, so its PVC-backed disks (Prometheus, Grafana, Loki,
