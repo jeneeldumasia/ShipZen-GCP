@@ -470,7 +470,8 @@ def test_audit_log_visibility(env):
 def test_users_me(env):
     env.as_user("admin")
     assert env.client.get("/users/me").json() == {
-        "user_id": "admin", "email": "admin@example.com", "role": "admin", "is_admin": True}
+        "user_id": "admin", "email": "admin@example.com", "role": "admin", "is_admin": True,
+        "email_notifications": True}
 
 
 @pytest.mark.parametrize("method,path", [
