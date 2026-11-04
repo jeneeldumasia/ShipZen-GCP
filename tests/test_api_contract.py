@@ -66,6 +66,9 @@ EXPECTED_ROUTES = {
     ("GET", "/admin/users"), ("PUT", "/admin/users/{user_id}/role"),
     ("GET", "/admin/audit-logs"), ("GET", "/admin/deployments"),
     ("POST", "/admin/system/restart"), ("GET", "/admin/metrics"),
+    ("GET", "/platform/status"), ("PUT", "/admin/platform/announcement"),
+    ("PUT", "/admin/platform/deploy-freeze"), ("PUT", "/admin/users/{user_id}/suspension"),
+    ("GET", "/admin/cost"),
 }
 
 
@@ -196,7 +199,7 @@ def env(postgres_container):
         pytest.skip("Docker daemon is not running")
     _sql("ALTER TABLE audit_logs DISABLE TRIGGER trg_audit_logs_append_only;")
     _sql("TRUNCATE TABLE audit_logs, outbox_events, builds, deployments, project_members, "
-         "projects, users RESTART IDENTITY CASCADE;")
+         "projects, users, platform_settings RESTART IDENTITY CASCADE;")
     _sql("ALTER TABLE audit_logs ENABLE TRIGGER trg_audit_logs_append_only;")
     for uid, role in USERS.items():
         _sql("INSERT INTO users (id, email, role) VALUES (%s, %s, %s)", (uid, f"{uid}@example.com", role))
@@ -492,6 +495,118 @@ def test_admin_role_changes(env):
     assert env.client.put("/admin/users/ghost/role", json={"role": "admin"}).status_code == 404
     assert env.client.put("/admin/users/viewer/role", json={"role": "admin"}).status_code == 200
     assert _sql("SELECT role FROM users WHERE id = 'viewer'") == [("admin",)]
+
+
+# ── Platform operations ──────────────────────────────────────────────────────
+
+def test_announcement_is_set_by_admins_and_seen_by_everyone(env):
+    env.as_user("owner")
+    assert env.client.get("/platform/status").json() == {
+        "announcement": None, "deploys_paused": False, "pause_reason": None}
+    assert env.client.put("/admin/platform/announcement", json={"message": "hi"}).status_code == 403
+
+    env.as_user("admin")
+    r = env.client.put("/admin/platform/announcement", json={"message": " Upgrade at 6pm ", "level": "warning"})
+    assert r.status_code == 200
+    assert env.client.put("/admin/platform/announcement", json={"message": "x", "level": "loud"}).status_code == 422
+    env.as_user("viewer")
+    a = env.client.get("/platform/status").json()["announcement"]
+    assert (a["message"], a["level"]) == ("Upgrade at 6pm", "warning")
+
+    env.as_user("admin")
+    assert env.client.put("/admin/platform/announcement", json={"message": ""}).status_code == 200
+    assert env.client.get("/platform/status").json()["announcement"] is None
+    assert [r[0] for r in _sql("SELECT action FROM audit_logs ORDER BY id")] == [
+        "SET_ANNOUNCEMENT", "CLEAR_ANNOUNCEMENT"]
+
+
+def test_deploy_freeze_blocks_new_deploys(env):
+    pid = _make_project(env)
+    body = {"repo_url": "https://github.com/o/r", "branch": "main", "port": 3000}
+    env.as_user("editor")
+    assert env.client.put("/admin/platform/deploy-freeze", json={"paused": True}).status_code == 403
+
+    env.as_user("admin")
+    r = env.client.put("/admin/platform/deploy-freeze", json={"paused": True, "reason": "DB upgrade"})
+    assert r.json() == {"deploys_paused": True, "pause_reason": "DB upgrade"}
+    env.as_user("editor")
+    assert env.client.get("/platform/status").json()["pause_reason"] == "DB upgrade"
+    r = env.client.post(f"/projects/{pid}/deployments", json=body)
+    assert r.status_code == 423 and "DB upgrade" in r.json()["detail"]
+    assert _sql("SELECT count(*) FROM deployments") == [(0,)]
+
+    env.as_user("admin")
+    env.client.put("/admin/platform/deploy-freeze", json={"paused": False})
+    env.as_user("editor")
+    assert env.client.get("/platform/status").json()["deploys_paused"] is False
+    assert env.client.post(f"/projects/{pid}/deployments", json=body).status_code == 202
+
+
+def test_suspension(env):
+    pid = _make_project(env)
+    body = {"repo_url": "https://github.com/o/r", "branch": "main", "port": 3000}
+    env.as_user("owner")
+    assert env.client.put("/admin/users/viewer/suspension", json={"suspended": True}).status_code == 403
+
+    env.as_user("admin")
+    assert env.client.put("/admin/users/admin/suspension", json={"suspended": True}).status_code == 400
+    assert env.client.put("/admin/users/ghost/suspension", json={"suspended": True}).status_code == 404
+    _sql("UPDATE users SET role = 'admin' WHERE id = 'stranger'")
+    assert env.client.put("/admin/users/stranger/suspension", json={"suspended": True}).status_code == 409
+
+    r = env.client.put("/admin/users/owner/suspension", json={"suspended": True, "reason": "abuse"})
+    assert r.json() == {"user_id": "owner", "suspended": True, "reason": "abuse"}
+    users = {u["id"]: u for u in env.client.get("/admin/users").json()}
+    assert users["owner"]["suspended_reason"] == "abuse" and users["owner"]["suspended_at"]
+    assert users["editor"]["suspended_at"] is None
+
+    # The owner's projects can't deploy, even when an editor asks.
+    env.as_user("editor")
+    assert env.client.post(f"/projects/{pid}/deployments", json=body).status_code == 403
+
+    env.as_user("admin")
+    env.client.put("/admin/users/owner/suspension", json={"suspended": False})
+    assert _sql("SELECT suspended_at, suspended_reason FROM users WHERE id = 'owner'") == [(None, None)]
+    env.as_user("editor")
+    assert env.client.post(f"/projects/{pid}/deployments", json=body).status_code == 202
+    assert [r[0] for r in _sql("SELECT action FROM audit_logs WHERE resource_type = 'user' ORDER BY id")] == [
+        "SUSPEND_USER", "UNSUSPEND_USER"]
+
+
+def test_suspended_users_are_refused_at_sign_in():
+    user_cls, refuse = _find("User"), _find("_refuse_suspended")
+    assert refuse(user_cls(user_id="a")).user_id == "a"
+    with pytest.raises(HTTPException) as e:
+        refuse(user_cls(user_id="a", suspended=True))
+    assert e.value.status_code == 403
+
+
+def _node(name, machine, created, pool="tenant", spot=False):
+    labels = {"node.kubernetes.io/instance-type": machine, "cloud.google.com/gke-nodepool": pool}
+    if spot:
+        labels["cloud.google.com/gke-spot"] = "true"
+    return SimpleNamespace(metadata=SimpleNamespace(name=name, labels=labels, creation_timestamp=created))
+
+
+def test_session_cost(env):
+    import datetime
+    now = datetime.datetime(2026, 11, 4, 12, tzinfo=datetime.timezone.utc)
+    h = datetime.timedelta(hours=1)
+    nodes = [_node("p", "e2-standard-4", now - 3 * h, pool="platform"),
+             _node("t", "e2-standard-2", now - h, spot=True),
+             _node("x", "n9-mystery", now - h)]
+    c = _find("session_cost")(nodes, now)
+    assert c["uptime_hours"] == 3 and c["session_started"] == (now - 3 * h).isoformat()
+    assert c["hourly_usd"] == round(0.1340 + 0.0670, 4)
+    assert c["session_usd"] == round(0.1340 * 3 + 0.0670, 2)
+    assert c["unpriced_nodes"] == ["x"] and c["teardown"]["hours_to_hard_cap"] == 9
+    assert [n["name"] for n in c["nodes"]] == ["p", "t", "x"] and c["nodes"][1]["spot"] is True
+
+    env.stubs.set("_list_nodes", lambda: nodes)
+    env.as_user("owner")
+    assert env.client.get("/admin/cost").status_code == 403
+    env.as_user("admin")
+    assert env.client.get("/admin/cost").json()["nodes"][0]["machine_type"] == "e2-standard-4"
 
 
 # ── Webhooks ─────────────────────────────────────────────────────────────────
