@@ -188,17 +188,19 @@ async def get_current_user(
                      "Accept": "application/vnd.github+json"},
             timeout=5
         )
+        # Only an address GitHub has verified counts (M4): ADMIN_EMAILS grants
+        # admin, and GitHub lets anyone add an unverified address to an account.
         email = None
         if email_resp.status_code == 200:
             for e in email_resp.json():
-                if e.get("primary"):
+                if e.get("primary") and e.get("verified"):
                     email = e.get("email")
                     break
 
         user_info = {
             "id": str(gh_user["id"]),
             "login": gh_user["login"],
-            "email": email or gh_user.get("email")
+            "email": email,
         }
         if (ALLOWED_GITHUB_USERS or not OPEN_SIGNUP) and user_info["login"].lower() not in ALLOWED_GITHUB_USERS:
             logger.warning(f"Rejected sign-in from GitHub user '{user_info['login']}' (not in ALLOWED_GITHUB_USERS)")

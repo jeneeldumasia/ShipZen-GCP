@@ -100,26 +100,31 @@ def get_or_create_user(user_id: str, email: str = None, login: str = None) -> di
     with get_connection() as conn:
         try:
             with conn.cursor(cursor_factory=DictCursor) as cur:
-                cur.execute("SELECT id, role, email FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT id, role, email, admin_source FROM users WHERE id = %s", (user_id,))
                 user = cur.fetchone()
-                
-                check_email = email.lower() if email else None
 
                 if user:
                     user_dict = dict(user)
-                    db_email = user_dict.get('email').lower() if user_dict.get('email') else None
-                    
-                    if user_dict['role'] != 'admin' and (is_named_admin or (db_email and db_email in ADMIN_EMAILS)):
-                        cur.execute("UPDATE users SET role = 'admin' WHERE id = %s", (user_id,))
+                    if user_dict['role'] != 'admin' and is_named_admin:
+                        cur.execute("UPDATE users SET role = 'admin', admin_source = 'env' WHERE id = %s", (user_id,))
                         user_dict['role'] = 'admin'
                         conn.commit()
+                    elif user_dict['role'] == 'admin' and not is_named_admin \
+                            and user_dict.get('admin_source') == 'env':
+                        # Removed from the admin lists: the role they got from
+                        # them goes too (M4). Admins made by another admin stay.
+                        cur.execute("UPDATE users SET role = 'user', admin_source = NULL WHERE id = %s", (user_id,))
+                        user_dict['role'] = 'user'
+                        conn.commit()
+                        logger.warning(f"Removed admin role from {user_id}: no longer in ADMIN_GITHUB_USERS / ADMIN_EMAILS")
+                    user_dict.pop('admin_source', None)
                     return user_dict
 
                 role = 'admin' if is_named_admin else 'user'
 
                 cur.execute(
-                    "INSERT INTO users (id, email, role) VALUES (%s, %s, %s) RETURNING id, role",
-                    (user_id, email, role)
+                    "INSERT INTO users (id, email, role, admin_source) VALUES (%s, %s, %s, %s) RETURNING id, role",
+                    (user_id, email, role, 'env' if is_named_admin else None)
                 )
                 new_user = cur.fetchone()
             conn.commit()

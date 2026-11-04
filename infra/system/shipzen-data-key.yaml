@@ -1,0 +1,23 @@
+# Key that encrypts secrets stored in Postgres (projects.webhook_secret), see
+# api/crypto_box.py. From Secret Manager "shipzen-data-key" ({"key": "..."}),
+# written by Deploy Platform Infra from the SHIPZEN_DATA_KEY repository secret.
+# If that secret doesn't exist yet, this stays unsynced and the API's env var is
+# simply absent (values are then stored unencrypted, as before).
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: shipzen-data-key
+  namespace: shipzen-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: shipzen-data-key
+    creationPolicy: Owner
+  data:
+    - secretKey: key
+      remoteRef:
+        key: shipzen-data-key
+        property: key

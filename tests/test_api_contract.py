@@ -55,7 +55,7 @@ EXPECTED_ROUTES = {
     ("DELETE", "/projects/{project_id}/secrets/{key}"),
     ("GET", "/github/branches"),
     ("POST", "/webhooks/github/{project_id}"), ("POST", "/webhooks/github-app"),
-    ("GET", "/users/me"),
+    ("GET", "/users/me"), ("POST", "/ws-tickets"),
     ("GET", "/admin/users"), ("PUT", "/admin/users/{user_id}/role"),
     ("GET", "/admin/audit-logs"), ("GET", "/admin/deployments"),
     ("POST", "/admin/system/restart"), ("GET", "/admin/metrics"),

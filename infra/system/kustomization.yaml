@@ -24,6 +24,7 @@ resources:
   - shipzen-alerts.yaml
   - github-app-secret.yaml
   - github-secret.yaml
+  - shipzen-data-key.yaml
   - rate-limit.yaml
   - tenant-deny-ingress.yaml
   - build-network-policy.yaml

@@ -1,9 +1,13 @@
 """Deployments: create, cancel, roll back, restart, status and log streams, builds."""
+import asyncio
 import datetime
 import json
 import logging
+import os
+import secrets
 import time
 import uuid
+from collections import defaultdict
 from typing import Optional
 
 from psycopg2.extras import DictCursor
@@ -338,33 +342,105 @@ def get_deployment(request: Request, project_id: str, deployment_id: str, projec
     return _serialize(deployment)
 
 
-@router.websocket("/ws/projects/{project_id}/deployments/{deployment_id}/status")
-async def websocket_deployment_status(websocket: WebSocket, project_id: str, deployment_id: str):
-    await websocket.accept()
-    
-    # HIGH-16 Fix: Accept token via the first WS message instead of query string
-    try:
-        auth_data = await websocket.receive_json()
-        token = auth_data.get("token")
-        if not token:
-            await websocket.close(code=1008)
-            return
-        from auth import get_current_user_from_token
-        user = await get_current_user_from_token(token)
-    except Exception:
-        await websocket.close(code=1008)
-        return
+# ── WebSockets: one-time tickets, connection caps, lifetime ──────────────────
+# Browsers no longer hold the user's GitHub token (security finding H1), so a
+# socket authenticates with a ticket: the UI's server asks POST /ws-tickets
+# (with the token) for a random value that is valid once, for 60 seconds. Each
+# user may hold WS_MAX_PER_USER sockets per API process, each for at most
+# WS_MAX_SECONDS (M5).
 
-    # Verify the deployment belongs to this project
+WS_TICKET_TTL = 60
+WS_MAX_PER_USER = int(os.getenv("WS_MAX_PER_USER", "10"))
+WS_MAX_SECONDS = int(os.getenv("WS_MAX_SECONDS", "3600"))
+_ws_open = defaultdict(int)
+
+
+@router.post("/ws-tickets", tags=["Deployments"])
+@limiter.limit("60/minute")
+async def create_ws_ticket(request: Request, current_user: User = Depends(get_current_user)):
+    """A single-use, 60-second ticket the browser sends as its first WebSocket message."""
+    ticket = secrets.token_urlsafe(32)
+    await _aioredis_client.set(
+        f"shipzen:wsticket:{ticket}",
+        json.dumps({"user_id": current_user.user_id, "role": current_user.role}),
+        ex=WS_TICKET_TTL)
+    return {"ticket": ticket, "expires_in": WS_TICKET_TTL}
+
+
+async def _ws_user(websocket: WebSocket):
+    """The user behind a socket's first message: {"ticket": ...}, or {"token": ...} from older clients."""
     try:
-        import asyncio
+        data = json.loads(await websocket.receive_text())
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("ticket"):
+        raw = await _aioredis_client.getdel(f"shipzen:wsticket:{data['ticket']}")
+        if not raw:
+            return None
+        info = json.loads(raw)
+        return User(user_id=info["user_id"], role=info["role"])
+    if data.get("token"):
+        from auth import get_current_user_from_token
+        try:
+            return await get_current_user_from_token(data["token"])
+        except Exception:
+            return None
+    return None
+
+
+async def _ws_open_for(websocket: WebSocket, project_id: str, deployment_id: str):
+    """Authenticate, authorize and reserve a connection slot; None (socket closed) if refused."""
+    await websocket.accept()
+    user = await _ws_user(websocket)
+    if user is None:
+        await websocket.close(code=1008)
+        return None
+    try:
         await asyncio.to_thread(verify_project_access, project_id, user)
         await asyncio.to_thread(_get_deployment_or_404, project_id, deployment_id)
     except HTTPException:
         await websocket.close(code=1008)
+        return None
+    if _ws_open[user.user_id] >= WS_MAX_PER_USER:
+        await websocket.close(code=1013)  # try again later
+        return None
+    _ws_open[user.user_id] += 1
+    return user
+
+
+def _ws_release(user) -> None:
+    _ws_open[user.user_id] -= 1
+    if _ws_open[user.user_id] <= 0:
+        _ws_open.pop(user.user_id, None)
+
+
+def _keepalive(websocket: WebSocket, send_ping):
+    """Ping every 30 s; end the socket when the client is gone or WS_MAX_SECONDS have passed."""
+    main_task = asyncio.current_task()
+    lifetime = asyncio.get_running_loop().call_later(WS_MAX_SECONDS, main_task.cancel)
+
+    async def ping():
+        try:
+            while True:
+                await asyncio.sleep(30)
+                try:
+                    await send_ping()
+                except Exception:
+                    main_task.cancel()
+                    break
+        except asyncio.CancelledError:
+            pass
+    return asyncio.create_task(ping()), lifetime
+
+
+@router.websocket("/ws/projects/{project_id}/deployments/{deployment_id}/status")
+async def websocket_deployment_status(websocket: WebSocket, project_id: str, deployment_id: str):
+    user = await _ws_open_for(websocket, project_id, deployment_id)
+    if user is None:
         return
 
-    import asyncio
     pubsub = _aioredis_client.pubsub()
     await pubsub.subscribe(f"shipzen:status:{deployment_id}")
 
@@ -377,25 +453,13 @@ async def websocket_deployment_status(websocket: WebSocket, project_id: str, dep
                 )
                 return cur.fetchone()
 
+    ping_task = lifetime = None
     try:
         row = await asyncio.to_thread(fetch_initial)
         if row:
             await websocket.send_json({"state": row['state'], "last_error": row['last_error']})
 
-        main_task = asyncio.current_task()
-
-        async def ping():
-            try:
-                while True:
-                    await asyncio.sleep(30)
-                    try:
-                        await websocket.send_json({"type": "ping"})
-                    except Exception:
-                        main_task.cancel()
-                        break
-            except asyncio.CancelledError:
-                pass
-        ping_task = asyncio.create_task(ping())
+        ping_task, lifetime = _keepalive(websocket, lambda: websocket.send_json({"type": "ping"}))
 
         async for message in pubsub.listen():
             if message["type"] == "message":
@@ -408,8 +472,11 @@ async def websocket_deployment_status(websocket: WebSocket, project_id: str, dep
     except Exception as e:
         logger.error(f"WS error: {e}")
     finally:
-        if 'ping_task' in locals():
+        if ping_task:
             ping_task.cancel()
+        if lifetime:
+            lifetime.cancel()
+        _ws_release(user)
         await pubsub.unsubscribe()
         await pubsub.close()
 
@@ -453,51 +520,16 @@ async def websocket_deployment_logs(
     Subscribes to the Redis Pub/Sub channel `shipzen:logs:{deployment_id}`
     and forwards each line to the connected client as plain text.
     """
-    await websocket.accept()
-    
-    # HIGH-16 Fix: Accept token via the first WS message instead of query string
-    try:
-        import json
-        auth_data_str = await websocket.receive_text()
-        auth_data = json.loads(auth_data_str)
-        token = auth_data.get("token")
-        if not token:
-            await websocket.close(code=1008)
-            return
-        from auth import get_current_user_from_token
-        user = await get_current_user_from_token(token)
-    except Exception:
-        await websocket.close(code=1008)
-        return
-
-    # Verify the deployment belongs to this project
-    try:
-        import asyncio
-        await asyncio.to_thread(verify_project_access, project_id, user)
-        await asyncio.to_thread(_get_deployment_or_404, project_id, deployment_id)
-    except HTTPException:
-        await websocket.close(code=1008)
+    user = await _ws_open_for(websocket, project_id, deployment_id)
+    if user is None:
         return
 
     pubsub = _aioredis_client.pubsub()
     await pubsub.subscribe(f"shipzen:logs:{deployment_id}")
 
+    ping_task = lifetime = None
     try:
-        main_task = asyncio.current_task()
-
-        async def ping():
-            try:
-                while True:
-                    await asyncio.sleep(30)
-                    try:
-                        await websocket.send_text("ping")
-                    except Exception:
-                        main_task.cancel()
-                        break
-            except asyncio.CancelledError:
-                pass
-        ping_task = asyncio.create_task(ping())
-
+        ping_task, lifetime = _keepalive(websocket, lambda: websocket.send_text("ping"))
         async for message in pubsub.listen():
             if message["type"] == "message":
                 await websocket.send_text(message["data"])
@@ -506,8 +538,11 @@ async def websocket_deployment_logs(
     except Exception as e:
         logger.error(f"Log WS error for {deployment_id}: {e}")
     finally:
-        if 'ping_task' in locals():
+        if ping_task:
             ping_task.cancel()
+        if lifetime:
+            lifetime.cancel()
+        _ws_release(user)
         await pubsub.unsubscribe()
         await pubsub.close()
 

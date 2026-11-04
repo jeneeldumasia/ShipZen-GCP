@@ -2,19 +2,18 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getWsBaseUrl } from "@/lib/api";
+import { getWsBaseUrl, wsTicket } from "@/lib/api";
 
 /**
  * Connects to the WebSocket status endpoint for live updates.
  * Calls router.refresh() when the backend emits a state transition.
  * Automatically reconnects if the connection drops during long builds.
  */
-export function AutoRefresh({ projectId, deploymentId, token }: { projectId: string; deploymentId: string; token?: string }) {
+export function AutoRefresh({ projectId, deploymentId }: { projectId: string; deploymentId: string }) {
   const router = useRouter();
   const lastState = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
     
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;
@@ -30,8 +29,12 @@ export function AutoRefresh({ projectId, deploymentId, token }: { projectId: str
       const wsUrl = getWsBaseUrl();
       ws = new WebSocket(`${wsUrl}/ws/projects/${projectId}/deployments/${deploymentId}/status`);
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ token }));
+      ws.onopen = async () => {
+        try {
+          ws.send(JSON.stringify({ ticket: await wsTicket() }));
+        } catch {
+          ws.close();
+        }
       };
 
       ws.onmessage = (event) => {
@@ -73,7 +76,7 @@ export function AutoRefresh({ projectId, deploymentId, token }: { projectId: str
       clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [router, projectId, deploymentId, token]);
+  }, [router, projectId, deploymentId]);
 
   return null;
 }

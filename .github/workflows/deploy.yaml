@@ -164,6 +164,12 @@ jobs:
           # Telegram alert destination: placeholder only if missing (Deploy Secrets fills it).
           echo -n '{"bot_token": "", "chat_id": ""}' | bash scripts/put-secret.sh shipzen-telegram --create-only
 
+          # Key that encrypts secrets stored in Postgres. Set once, never
+          # overwritten: changing it would make stored values unreadable.
+          if [ -n "${{ secrets.SHIPZEN_DATA_KEY }}" ]; then
+            echo -n "{\"key\": \"${{ secrets.SHIPZEN_DATA_KEY }}\"}" | bash scripts/put-secret.sh shipzen-data-key --create-only
+          fi
+
           echo "Pushing GitHub OAuth Secret..."
           echo -n "{\"client_id\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.SHIPZEN_OAUTH_CLIENT_SECRET }}\", \"app_webhook_secret\": \"${{ secrets.SHIPZEN_GITHUB_APP_WEBHOOK_SECRET }}\"}" | bash scripts/put-secret.sh shipzen-github
 

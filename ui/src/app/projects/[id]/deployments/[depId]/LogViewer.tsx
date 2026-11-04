@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal, X, Wifi, WifiOff, Loader2 } from "lucide-react";
-import { api, getWsBaseUrl } from "@/lib/api";
+import { api, getWsBaseUrl, wsTicket } from "@/lib/api";
 
 const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 const LIVE_STATES = new Set(["Queued", "Building"]);
@@ -13,10 +13,9 @@ interface Props {
   /** undefined when the build hasn't recorded yet (live-only mode) */
   buildId?: string;
   deploymentState: string;
-  token?: string;
 }
 
-export function LogViewer({ projectId, deploymentId, buildId, deploymentState, token }: Props) {
+export function LogViewer({ projectId, deploymentId, buildId, deploymentState }: Props) {
   const [open, setOpen] = useState(false);
   // lines is an array so we can append cheaply without re-scanning the full string
   const [lines, setLines] = useState<string[]>([]);
@@ -39,20 +38,24 @@ export function LogViewer({ projectId, deploymentId, buildId, deploymentState, t
   }, []);
 
   const startLiveStream = useCallback(() => {
-    if (!token) {
-      setLines(["[error] No auth token available for live log stream."]);
-      setStatus("error");
-      return;
-    }
-
     setStatus("live");
     setLines([]);
 
     const wsUrl = getWsBaseUrl();
     const ws = new WebSocket(
-      `${wsUrl}/ws/projects/${projectId}/deployments/${deploymentId}/logs?token=${token}`
+      `${wsUrl}/ws/projects/${projectId}/deployments/${deploymentId}/logs`
     );
     wsRef.current = ws;
+
+    // Authenticate with a one-time ticket, never the token in the URL (H1).
+    ws.onopen = async () => {
+      try {
+        ws.send(JSON.stringify({ ticket: await wsTicket() }));
+      } catch {
+        setStatus("error");
+        ws.close();
+      }
+    };
 
     ws.onmessage = (e) => {
       const line = e.data.replace(ANSI_RE, "");
@@ -68,7 +71,7 @@ export function LogViewer({ projectId, deploymentId, buildId, deploymentState, t
       // Build finished — transition to done so we know the stream ended
       setStatus((s) => (s === "live" ? "done" : s));
     };
-  }, [projectId, deploymentId, token]);
+  }, [projectId, deploymentId]);
 
   const loadStaticLogs = useCallback(() => {
     if (!buildId) {
