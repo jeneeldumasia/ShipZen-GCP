@@ -127,10 +127,12 @@ async def github_webhook(request: Request, project_id: str):
                 cur.execute(
                     """
                     INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
-                                             branch, triggered_by, commit_sha, commit_message, commit_author, commit_url)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, 'push', %s, %s, %s, %s)
+                                             branch, triggered_by, commit_sha, commit_message, commit_author, commit_url,
+                                             build_context)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, 'push', %s, %s, %s, %s,
+                            (SELECT build_context FROM deployments WHERE project_id = %s AND kind = 'production' AND build_context IS NOT NULL ORDER BY created_at DESC LIMIT 1))
                     """,
-                    (deployment_id, project_id, repo_url, image_uri, 1, port, branch, *_head_commit(payload))
+                    (deployment_id, project_id, repo_url, image_uri, 1, port, branch, *_head_commit(payload), project_id)
                 )
                 # Transactional outbox — atomic with deployment INSERT.
                 outbox_payload = {
@@ -292,10 +294,13 @@ async def github_app_webhook(request: Request):
                     cur.execute(
                         """
                         INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
-                                                 branch, triggered_by, commit_sha, commit_message, commit_author, commit_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, 'push', %s, %s, %s, %s)
+                                                 branch, triggered_by, commit_sha, commit_message, commit_author, commit_url,
+                                                 build_context)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'Queued', %s, 'push', %s, %s, %s, %s,
+                                (SELECT build_context FROM deployments WHERE project_id = %s AND kind = 'production' AND build_context IS NOT NULL ORDER BY created_at DESC LIMIT 1))
                         """,
-                        (deployment_id, project_id, matched_repo_url, image_uri, 1, port, branch, *_head_commit(payload))
+                        (deployment_id, project_id, matched_repo_url, image_uri, 1, port, branch, *_head_commit(payload),
+                         project_id)
                     )
                     # Transactional outbox — atomic with the deployment INSERT.
                     outbox_payload = {
@@ -412,11 +417,12 @@ def _handle_pull_request(payload: dict) -> dict:
                         """
                         INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
                                                  branch, triggered_by, commit_sha, commit_message, commit_author,
-                                                 commit_url, kind, pr_number)
-                        VALUES (%s, %s, %s, %s, 1, %s, 'Queued', %s, 'preview', %s, %s, %s, %s, 'preview', %s)
+                                                 commit_url, kind, pr_number, build_context)
+                        VALUES (%s, %s, %s, %s, 1, %s, 'Queued', %s, 'preview', %s, %s, %s, %s, 'preview', %s,
+                                (SELECT build_context FROM deployments WHERE project_id = %s AND kind = 'production' AND build_context IS NOT NULL ORDER BY created_at DESC LIMIT 1))
                         """,
                         (deployment_id, project_id, project["repo_url"], image_uri, port, ref,
-                         sha, title, author, pr_url, number))
+                         sha, title, author, pr_url, number, project_id))
                     queue_deployment(cur, {
                         "deployment_id": deployment_id, "project_id": project_id,
                         "repo_url": project["repo_url"], "branch": ref, "image_name": image_uri,
