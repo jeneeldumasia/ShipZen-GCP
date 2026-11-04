@@ -251,6 +251,10 @@ fi
         context_dir = overrides.get("buildContext", "").strip("/")
         build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
         nixpacks_args = ["build", build_path, "--out", "/workspace"]
+        # Build settings from an automatic retry (worker/failure_rules.py:
+        # fixed values defined there, never from the repo or the log).
+        for key, value in sorted((overrides.get("build_env") or {}).items()):
+            nixpacks_args += ["--env", f"{key}={value}"]
 
         # A pinned Nixpacks release, checked against its SHA-256 before it runs
         # (it used to be `curl https://nixpacks.com/install.sh | bash` on every

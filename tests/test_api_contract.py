@@ -884,3 +884,28 @@ def test_previews_cannot_be_redeployed_to_production(env):
             VALUES ('pv', %s, 'https://github.com/o/r', 'img', 1, 8080, 'Running', 'preview', 5, 'feature')""", (pid,))
     env.as_user("editor")
     assert env.client.post(f"/projects/{pid}/deployments/pv/redeploy").status_code == 409
+
+
+# ── Build folder (repo intelligence) ─────────────────────────────────────────
+
+def test_build_folder_is_validated_kept_on_redeploy_and_copied_to_pushes(env):
+    pid = _make_project(env)
+    env.as_user("editor")
+    url = f"/projects/{pid}/deployments"
+    for bad in ("../etc", "/abs", "a b", "x;y"):
+        assert env.client.post(url, json={"repo_url": "https://github.com/o/r", "build_context": bad}).status_code == 422
+    r = env.client.post(url, json={"repo_url": "https://github.com/o/r", "build_context": "apps/web/"})
+    assert r.status_code == 202 and r.json()["build_context"] == "apps/web"
+    dep = r.json()["deployment_id"]
+    _sql("UPDATE deployments SET state = 'Running' WHERE deployment_id = %s", (dep,))
+    redo = env.client.post(f"/projects/{pid}/deployments/{dep}/redeploy")
+    assert redo.status_code == 202 and redo.json()["build_context"] == "apps/web"
+    _sql("UPDATE deployments SET state = 'Running' WHERE project_id = %s", (pid,))
+
+    (secret,) = _sql("SELECT webhook_secret FROM projects WHERE id = %s", (pid,))[0]
+    body = json.dumps({"ref": "refs/heads/main",
+                       "repository": {"id": 1, "clone_url": "https://github.com/o/r.git"}}).encode()
+    assert env.client.post(f"/webhooks/github/{pid}", content=body, headers={
+        "X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)}).status_code == 200
+    assert _sql("SELECT build_context FROM deployments WHERE project_id = %s AND triggered_by = 'push'",
+                (pid,)) == [("apps/web",)]

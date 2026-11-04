@@ -21,6 +21,7 @@ from config import config
 from queue_client import QueueClient
 from state_machine import StateMachine, DeploymentState
 from builder import DockerfileBuilder, NixpacksBuilder
+from failure_rules import classify, readable_error
 from metrics import (
     start_metrics_server,
     shipzen_build_duration_seconds,
@@ -247,6 +248,29 @@ def bound_repo_mismatch(project_id: str, repo_url: str):
     return bound if named.lower() != bound.lower() else None
 
 
+def add_note(deployment_id: str, note: dict) -> None:
+    """Append a note (diagnosis, automatic fix) shown on the deployment page."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE deployments SET notes = COALESCE(notes, '[]'::jsonb) || %s::jsonb "
+                            "WHERE deployment_id = %s;", (json.dumps([note]), deployment_id))
+    except Exception as e:
+        logger.warning(f"Could not add a note to {deployment_id}: {type(e).__name__}")
+
+
+def create_build_job(manifest: dict) -> None:
+    job_name = manifest["metadata"]["name"]
+    try:
+        batch_v1.create_namespaced_job(namespace="shipzen-build", body=manifest)
+        logger.info(f"Created Job {job_name}")
+    except ApiException as e:
+        if e.status == 409:
+            logger.info(f"Job {job_name} already exists (XAUTOCLAIM redelivery). Continuing to monitor.")
+        else:
+            raise Exception(f"Kubernetes Job creation failed (HTTP {e.status}): {e.reason}. Body: {e.body}")
+
+
 def record_build(deployment_id: str, gcs_key: str, status: str):
     build_id = str(uuid.uuid4())
     if not GCS_LOG_BUCKET:
@@ -294,7 +318,7 @@ def _publish_line(r, deployment_id: str, line: str):
         pass
 
 
-def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machine: StateMachine, builder_type: str = "unknown", project_id: str = "unknown", queue: QueueClient = None, message_id: str = None, trace_id: str = "unknown"):
+def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machine: StateMachine, builder_type: str = "unknown", project_id: str = "unknown", queue: QueueClient = None, message_id: str = None, trace_id: str = "unknown", allow_retry: bool = False):
     """Monitors the Kubernetes Job, streams logs to Redis, and finalizes the deployment.
 
     This implementation avoids long-lived HTTP watch/follow streams that get killed
@@ -443,17 +467,17 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
             record_build(deployment_id, gcs_log_key, "Failed")
             shipzen_deployment_failure_total.inc()
             shipzen_deployments_total.labels(state="Failed", project_id=project_id).inc()
-            error_msg = "Build step failed."
-            if stdout_bytes:
-                # Convert to string and split lines
-                log_str = stdout_bytes.decode('utf-8', errors='replace')
-                lines = [line.strip() for line in log_str.splitlines() if line.strip()]
-                if lines:
-                    # Take the last 5 lines for context
-                    error_msg = f"Build failed: {' | '.join(lines[-5:])}"[:1000]
-            
+            log_str = stdout_bytes.decode('utf-8', errors='replace') if stdout_bytes else ""
+            lines = [line.strip() for line in log_str.splitlines() if line.strip()]
+            tail = " | ".join(lines[-5:])[:600]
+            diagnosis = classify(log_str)
+            if diagnosis:
+                add_note(deployment_id, {"type": "diagnosis", "code": diagnosis.code,
+                                         "message": diagnosis.reason, "suggestion": diagnosis.suggestion})
+            if allow_retry and diagnosis and diagnosis.retry_env:
+                return diagnosis
             state_machine.update_state(
-                deployment_id, "Failed", error_msg)
+                deployment_id, "Failed", readable_error(diagnosis, tail)[:1500])
 
     except Exception as e:
         logger.error(f"Error monitoring job {job_name}: {e}")
@@ -580,8 +604,20 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
                                     cur.execute(
                                         "UPDATE deployments SET health_check_path = %s WHERE deployment_id = %s;", (new_health, deployment_id))
 
+        # Build folder picked on the deploy page (copied to push/preview deploys);
+        # the repo's own shipzen.yaml wins.
+        chosen_context = (deployment or {}).get("build_context") or data.get("build_context")
+        if chosen_context and not overrides.get("buildContext"):
+            overrides.update(parse_repo_config({"buildContext": chosen_context}))
+        context_dir = overrides.get("buildContext", "")
+        if context_dir:
+            # The sparse clone only has root files; fetch the build folder's
+            # Dockerfile / package.json so builder detection sees them.
+            subprocess.run(["git", "sparse-checkout", "add", f"{context_dir}/Dockerfile",
+                            f"{context_dir}/package.json"], cwd=workspace, check=False, timeout=60, env=git_env)
+
         # SPA detection
-        package_json_path = os.path.join(workspace, "package.json")
+        package_json_path = os.path.join(workspace, context_dir, "package.json")
         if os.path.exists(package_json_path):
             if os.path.getsize(package_json_path) > 1024 * 1024:
                 logger.warning(f"package.json too large to parse for {deployment_id}")
@@ -627,23 +663,28 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
             deployment_id, repo_url, branch, staging_uri_for(image_name), overrides)
         job_name = manifest["metadata"]["name"]
 
-        # Create Job
-        try:
-            batch_v1.create_namespaced_job(
-                namespace="shipzen-build", body=manifest)
-            logger.info(f"Created Job {job_name} for deployment {deployment_id} [trace_id={trace_id}]")
-        except ApiException as e:
-            if e.status == 409:
-                logger.info(f"Job {job_name} already exists (XAUTOCLAIM redelivery). Continuing to monitor.")
-            else:
-                raise Exception(f"Kubernetes Job creation failed (HTTP {e.status}): {e.reason}. Body: {e.body}")
+        create_build_job(manifest)
 
         # Call monitor_job synchronously in this thread
         builder_type = selected_builder.name if hasattr(
             selected_builder, 'name') else type(selected_builder).__name__
         project_id_db = deployment.get(
             "project_id", "unknown") if deployment else "unknown"
-        monitor_job(job_name, deployment_id, image_name, state_machine, builder_type, project_id_db, queue, message_id, trace_id=trace_id)
+        retry = monitor_job(job_name, deployment_id, image_name, state_machine, builder_type, project_id_db,
+                            queue, message_id, trace_id=trace_id,
+                            allow_retry=isinstance(selected_builder, NixpacksBuilder))
+        if retry:
+            # A known failure with a safe fix: build once more with it.
+            logger.info(f"Retrying {deployment_id} once with an automatic fix: {retry.code}")
+            add_note(deployment_id, {"type": "auto_fix", "code": retry.code,
+                                     "message": f"Automatic fix: {retry.retry_note}."})
+            overrides["build_env"] = {**overrides.get("build_env", {}), **retry.retry_env}
+            manifest = selected_builder.generate_job_manifest(
+                deployment_id, repo_url, branch, staging_uri_for(image_name), overrides)
+            manifest["metadata"]["name"] = f"{job_name}-fix"
+            create_build_job(manifest)
+            monitor_job(manifest["metadata"]["name"], deployment_id, image_name, state_machine, builder_type,
+                        project_id_db, queue, message_id, trace_id=trace_id)
         queue.ack_message(message_id)
 
     except Exception as e:

@@ -118,6 +118,22 @@ export interface Deployment {
   triggered_by?: string | null;
   kind?: "production" | "preview";
   pr_number?: number | null;
+  build_context?: string | null;
+  notes?: { type: "diagnosis" | "auto_fix"; code: string; message: string; suggestion?: string }[];
+}
+
+export interface DetectedService {
+  name: string;
+  path: string;
+  type: string;
+  confidence: number;
+  framework?: string | null;
+  port?: number | null;
+  package_manager?: string | null;
+  runtime_version?: string | null;
+  start_command?: string | null;
+  health_check_path?: string | null;
+  reasons?: string[] | null;
 }
 
 export interface Build {
@@ -157,6 +173,11 @@ export interface MetricsResponse {
 }
 
 export const api = {
+  analyze: (repo_url: string, branch: string) =>
+    request<{ services: DetectedService[] }>("/projects/analyze", {
+      method: "POST",
+      body: JSON.stringify({ repo_url, branch }),
+    }),
   users: {
     setNotifications: (email: boolean) =>
       request<{ email_notifications: boolean }>("/users/me/notifications", {
@@ -204,7 +225,7 @@ export const api = {
       request<Deployment>(`/projects/${projectId}/deployments/${deploymentId}`),
     create: (
       projectId: string,
-      body: { repo_url: string; port?: number; branch?: string }
+      body: { repo_url: string; port?: number; branch?: string; build_context?: string }
     ) =>
       request<Deployment>(`/projects/${projectId}/deployments`, {
         method: "POST",

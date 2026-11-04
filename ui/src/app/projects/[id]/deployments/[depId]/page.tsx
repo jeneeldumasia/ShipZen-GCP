@@ -111,6 +111,18 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
         </div>
       )}
 
+      {/* What ShipZen worked out about this build (diagnosis, automatic fixes) */}
+      {deployment.notes && deployment.notes.length > 0 && (
+        <div className="max-w-2xl mx-auto mt-8 space-y-2">
+          {deployment.notes.map((n, i) => (
+            <div key={i} className={`p-4 border text-sm ${n.type === "auto_fix" ? "border-brand/30 bg-brand/5" : "border-amber-500/30 bg-amber-500/10"}`}>
+              <div className="font-semibold text-text-primary">{n.message}</div>
+              {n.suggestion && <div className="text-text-secondary mt-1">Fix: {n.suggestion}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* The running app: what it prints, and how it's doing */}
       {(deployment.state === "Running" || deployment.state === "Failed") && (
         <RuntimeLogs projectId={params.id} deploymentId={params.depId} />
