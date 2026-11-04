@@ -20,6 +20,7 @@ class DeploymentState:
 
 
 from database import get_db_connection
+from shipzen_common.notify import notify_deployment
 from shipzen_common.redact import redact
 
 class StateMachine:
@@ -64,6 +65,9 @@ class StateMachine:
 
             logger.info(
                 f"Deployment {deployment_id} transition -> {new_state}")
+            if new_state == "Failed":
+                with get_db_connection() as conn:
+                    notify_deployment(conn, self._get_redis(), deployment_id, "failed", error_msg)
         except psycopg2.OperationalError as e:
             logger.warning(f"DB connection dropped during update_state: {e}")
             raise

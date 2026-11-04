@@ -197,6 +197,7 @@ GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 from shipzen_common.github_app import get_github_app_token
 from shipzen_common.hostnames import valid_vanity, vanity_hostname
 from shipzen_common.repo_config import valid_health_check_path, valid_image_digest, valid_port
+from shipzen_common.notify import notify_deployment
 from shipzen_common.sizes import scaling_problem, size_spec
 
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
@@ -984,6 +985,8 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                                 ('Failed', 'Kubernetes Deployment Failed/CrashLoopBackOff', d_id)
                             )
                             conn.commit()
+                            notify_deployment(conn, _redis_client, d_id, "down",
+                                              "The app's instances keep crashing. Check the logs on the deployment page.")
                             try:
                                 _redis_client.publish(f"shipzen:status:{d_id}", json.dumps(
                                     {"state": "Failed", "last_error": "Kubernetes Deployment Failed/CrashLoopBackOff"}))
@@ -1002,6 +1005,9 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                                 ('Failed', 'Deployment timed out / CrashLoopBackOff', d_id)
                             )
                             conn.commit()
+                            notify_deployment(conn, _redis_client, d_id, "failed",
+                                              "The new release didn't become ready within 5 minutes "
+                                              "(it crashed or never answered its health check).")
                             try:
                                 _redis_client.publish(f"shipzen:status:{d_id}", json.dumps(
                                     {"state": "Failed", "last_error": "Deployment timed out / CrashLoopBackOff"}))
@@ -1042,6 +1048,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         )
                         conn.commit()
                         shipzen_deployment_success_total.inc()
+                        notify_deployment(conn, _redis_client, d_id, "live")
                         try:
                             _redis_client.publish(f"shipzen:status:{d_id}", json.dumps(
                                 {"state": "Running", "last_error": None}))

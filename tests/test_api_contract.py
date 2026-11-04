@@ -48,6 +48,7 @@ EXPECTED_ROUTES = {
     ("GET", "/projects/{project_id}/deployments/{deployment_id}/runtime-logs"),
     ("GET", "/projects/{project_id}/metrics"),
     ("PUT", "/projects/{project_id}/scaling"),
+    ("PUT", "/users/me/notifications"),
     ("POST", "/projects/{project_id}/rollback"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/status"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/logs"),
@@ -772,4 +773,50 @@ def test_scaling_is_validated_and_saved(env):
     assert r.status_code == 200
     assert (r.json()["instance_size"], r.json()["min_instances"], r.json()["max_instances"]) == ("medium", 1, 3)
     assert env.client.get(f"/projects/{pid}").json()["max_instances"] == 3
+
+
+# ── Email notifications ──────────────────────────────────────────────────────
+
+def test_users_can_turn_deploy_emails_off(env):
+    env.as_user("editor")
+    assert env.client.get("/users/me").json()["email_notifications"] is True
+    assert env.client.put("/users/me/notifications", json={"email": False}).json() == {"email_notifications": False}
+    assert env.client.get("/users/me").json()["email_notifications"] is False
+    env.as_user("owner")
+    assert env.client.get("/users/me").json()["email_notifications"] is True
+
+
+def test_deploy_emails_go_to_owners_and_editors_who_want_them(env, monkeypatch):
+    from shipzen_common import notify
+    pid = _make_project(env)
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state,
+                                     commit_sha, commit_message, branch)
+            VALUES ('d1', %s, 'https://github.com/o/r', 'img', 1, 8080, 'Failed', %s, 'Fix login', 'main')""",
+         (pid, "a" * 40))
+    _sql("UPDATE users SET email_notifications = FALSE WHERE id = 'editor'")
+    sent = []
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(notify, "send_email", lambda to, subject, text, html: sent.append((to, subject, text)))
+    monkeypatch.setattr(notify, "_in_background", lambda fn, *args: fn(*args))
+    redis = MagicMock()
+    redis.set.side_effect = [True, None]   # second call: already sent
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        notify.notify_deployment(conn, redis, "d1", "failed", "token ghp_abcdefghijklmnopqrstuvwxyz0123456789 bad")
+        notify.notify_deployment(conn, redis, "d1", "failed", "again")
+    finally:
+        conn.close()
+    assert len(sent) == 1
+    to, subject, text = sent[0]
+    assert to == ["owner@example.com"]          # viewer never, editor opted out
+    assert subject == "Demo failed to deploy"
+    assert "aaaaaaa: Fix login" in text and "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in text
+
+
+def test_no_resend_key_means_no_email(monkeypatch):
+    from shipzen_common import notify
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    conn = MagicMock()
+    notify.notify_deployment(conn, MagicMock(), "d1", "live")
+    conn.cursor.assert_not_called()
 

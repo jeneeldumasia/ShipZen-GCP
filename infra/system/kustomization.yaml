@@ -23,6 +23,7 @@ resources:
   - gateway-metrics.yaml
   - shipzen-alerts.yaml
   - github-app-secret.yaml
+  - notify-secret.yaml
   - github-secret.yaml
   - shipzen-data-key.yaml
   - rate-limit.yaml

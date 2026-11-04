@@ -155,6 +155,13 @@ export interface MetricsResponse {
 }
 
 export const api = {
+  users: {
+    setNotifications: (email: boolean) =>
+      request<{ email_notifications: boolean }>("/users/me/notifications", {
+        method: "PUT",
+        body: JSON.stringify({ email }),
+      }),
+  },
   github: {
     branches: (repoUrl: string) =>
       request<{ branches: string[]; total: number }>(
