@@ -26,7 +26,7 @@ from database import get_connection, init_db
 from platform_clients import _aioredis_client, _redis_client
 from ratelimit import limiter
 from secret_store import ensure_project_secret
-from routers import admin, audit, deployments, env, github, projects, webhooks
+from routers import admin, audit, deployments, env, github, observability, projects, webhooks
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -157,7 +157,7 @@ def healthz(request: Request):
 # Order matters only where paths overlap; it is the order the endpoints had
 # when they were all in this file.
 for _router in (projects.router, deployments.router, audit.router, env.router,
-                github.router, webhooks.router, admin.router):
+                github.router, webhooks.router, admin.router, observability.router):
     app.include_router(_router)
 
 

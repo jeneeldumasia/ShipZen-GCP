@@ -20,6 +20,11 @@ spec:
             size: 10Gi
         promtail:
           enabled: true
+          # Run on every node, including the tainted tenant and build pools,
+          # so user apps' output reaches Loki (it's read from the node's
+          # /var/log/pods; promtail itself is not sandboxed and only reads).
+          tolerations:
+            - operator: Exists
           config:
             clients:
               - url: http://loki-stack:3100/loki/api/v1/push

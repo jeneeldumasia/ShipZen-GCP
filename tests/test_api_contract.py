@@ -45,6 +45,8 @@ EXPECTED_ROUTES = {
     ("POST", "/projects/{project_id}/deployments/{deployment_id}/restart"),
     ("POST", "/projects/{project_id}/deployments/{deployment_id}/redeploy"),
     ("POST", "/projects/{project_id}/env/apply"),
+    ("GET", "/projects/{project_id}/deployments/{deployment_id}/runtime-logs"),
+    ("GET", "/projects/{project_id}/metrics"),
     ("POST", "/projects/{project_id}/rollback"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/status"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/logs"),
@@ -705,3 +707,51 @@ def test_apply_env_needs_a_running_release(env):
     assert env.client.post(f"/projects/{pid}/env/apply").status_code == 403
     env.as_user("editor")
     assert env.client.post(f"/projects/{pid}/env/apply").status_code == 409
+
+
+# ── Runtime logs and metrics ─────────────────────────────────────────────────
+
+def test_runtime_logs_are_scoped_to_the_project_and_redacted(env):
+    pid = _make_project(env, namespace="demo-logs")
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state)
+            VALUES ('d1', %s, 'https://github.com/o/r', 'img', 1, 8080, 'Running')""", (pid,))
+    calls = []
+
+    def fake_logs(namespace, deployment_id, since_ns=None, limit=500, search=None):
+        calls.append((namespace, deployment_id, since_ns, limit, search))
+        return [{"ts": 5, "pod": "d1-x", "line": "Authorization: Bearer abcdefghijklmnop"}]
+    env.stubs.set("runtime_logs", fake_logs)
+
+    env.as_user("stranger")
+    assert env.client.get(f"/projects/{pid}/deployments/d1/runtime-logs").status_code == 403
+    env.as_user("viewer")
+    r = env.client.get(f"/projects/{pid}/deployments/d1/runtime-logs?since=3&q=err")
+    assert r.status_code == 200
+    assert r.json()["last"] == 5
+    assert "abcdefghijklmnop" not in r.json()["lines"][0]["line"]
+    assert calls == [("demo-logs", "d1", 3, 500, "err")]
+    assert env.client.get(f"/projects/{pid}/deployments/other/runtime-logs").status_code == 404
+    assert env.client.get(f"/projects/{pid}/deployments/d1/runtime-logs?limit=5000").status_code == 422
+
+
+def test_metrics_need_read_access_and_a_known_range(env):
+    pid = _make_project(env, namespace="demo-metrics")
+    env.stubs.set("project_metrics", lambda ns, r: {"range": r, "series": {"cpu_cores": [[1, 0.1]]}, "ns": ns})
+    env.as_user("stranger")
+    assert env.client.get(f"/projects/{pid}/metrics").status_code == 403
+    env.as_user("viewer")
+    r = env.client.get(f"/projects/{pid}/metrics?range=24h")
+    assert r.status_code == 200 and r.json()["ns"] == "demo-metrics"
+    assert env.client.get(f"/projects/{pid}/metrics?range=7d").status_code == 422
+
+
+def test_observability_queries_only_use_checked_names():
+    import observability_client as oc
+    assert oc.log_query("demo", "d1", 'x"} or {a=~".+') == '{namespace="demo", pod=~"d1-.*"} |= `x"} or {a=~".+`'
+    assert "`" not in oc.log_query("demo", "d1", "a`b").split("|=")[1].strip()[1:-1]
+    for bad in ('demo"}', "Demo", "a b", ""):
+        with pytest.raises(ValueError):
+            oc.log_selector(bad, "d1")
+        with pytest.raises(ValueError):
+            oc.metric_queries(bad)
+
