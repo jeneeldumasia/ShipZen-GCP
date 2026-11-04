@@ -47,6 +47,7 @@ EXPECTED_ROUTES = {
     ("POST", "/projects/{project_id}/env/apply"),
     ("GET", "/projects/{project_id}/deployments/{deployment_id}/runtime-logs"),
     ("GET", "/projects/{project_id}/metrics"),
+    ("PUT", "/projects/{project_id}/scaling"),
     ("POST", "/projects/{project_id}/rollback"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/status"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/logs"),
@@ -754,4 +755,21 @@ def test_observability_queries_only_use_checked_names():
             oc.log_selector(bad, "d1")
         with pytest.raises(ValueError):
             oc.metric_queries(bad)
+
+
+# ── Scaling ──────────────────────────────────────────────────────────────────
+
+def test_scaling_is_validated_and_saved(env):
+    pid = _make_project(env)
+    url = f"/projects/{pid}/scaling"
+    env.as_user("viewer")
+    assert env.client.put(url, json={"instance_size": "medium", "min_instances": 1, "max_instances": 3}).status_code == 403
+    env.as_user("editor")
+    for bad in ({"instance_size": "huge"}, {"min_instances": 0}, {"min_instances": 3, "max_instances": 2},
+                {"instance_size": "large", "max_instances": 3}, {"max_instances": 6}):
+        assert env.client.put(url, json=bad).status_code == 422, bad
+    r = env.client.put(url, json={"instance_size": "medium", "min_instances": 1, "max_instances": 3})
+    assert r.status_code == 200
+    assert (r.json()["instance_size"], r.json()["min_instances"], r.json()["max_instances"]) == ("medium", 1, 3)
+    assert env.client.get(f"/projects/{pid}").json()["max_instances"] == 3
 

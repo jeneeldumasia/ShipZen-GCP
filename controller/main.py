@@ -197,6 +197,7 @@ GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
 from shipzen_common.github_app import get_github_app_token
 from shipzen_common.hostnames import valid_vanity, vanity_hostname
 from shipzen_common.repo_config import valid_health_check_path, valid_image_digest, valid_port
+from shipzen_common.sizes import scaling_problem, size_spec
 
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
     token = get_github_app_token(TENANT_REPO_URL, write=True)
@@ -860,6 +861,34 @@ def sync_vanity_route(cur, project) -> None:
         logger.warning(f"Vanity route sync failed for {project.namespace}: {e}")
 
 
+SCALING_ANNOTATION = "shipzen.jeneeldumasia.codes/scaling"
+
+
+def release_scaling(project, d_id: str, db_dep: dict) -> dict:
+    """Size and instance count for one release.
+
+    The live release runs the project's size and min..max instances (HPA when
+    max > min); other releases (new ones before promotion, previous ones in
+    their grace period or scaled to 0) keep the replicas the database says.
+    """
+    size_name = project.instance_size if size_spec(project.instance_size) is not None else "small"
+    mn, mx = project.min_instances or 1, project.max_instances or 1
+    if scaling_problem(size_name, mn, mx):
+        size_name, mn, mx = "small", 1, 1
+    spec = size_spec(size_name)
+    db_replicas = db_dep.get('replicas', 1)
+    is_live = (db_dep.get('state') == 'Running' and (db_replicas or 0) > 0
+               and project.live_deployment_id in (None, d_id))
+    if not is_live:
+        mn = mx = db_replicas if db_replicas is not None else 1
+    return {
+        "replicas": mn, "min_instances": mn, "max_instances": mx, "autoscale": is_live and mx > mn,
+        "cpu_request": spec["cpu"], "memory_request": spec["memory"],
+        "cpu_limit": spec["cpu_limit"], "memory_limit": spec["memory_limit"],
+        "scaling_key": f"{size_name}:{mn}:{mx}",
+    }
+
+
 def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_routes, global_ext_secrets):
     """Reconciles Deployments, Services, and HTTPRoutes for a ready project namespace."""
     # Blue-green: previous releases whose grace period is over scale to 0 now
@@ -888,12 +917,15 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                 k8s_dep = k8s_dep_names.get(d_id)
                 drifted = False
                 
+                scaling = release_scaling(project, d_id, db_dep)
                 if k8s_dep:
                     # Check for deep configuration drift
                     k8s_replicas = k8s_dep.spec.replicas if k8s_dep.spec.replicas is not None else 1
-                    db_replicas = db_dep.get('replicas', 1)
                     k8s_image = k8s_dep.spec.template.spec.containers[0].image if k8s_dep.spec.template.spec.containers else None
-                    if k8s_replicas != db_replicas or k8s_image != pinned_image(db_dep):
+                    k8s_scaling = (k8s_dep.metadata.annotations or {}).get(SCALING_ANNOTATION)
+                    # With an HPA the replica count is the HPA's to set.
+                    replicas_off = not scaling["autoscale"] and k8s_replicas != scaling["replicas"]
+                    if replicas_off or k8s_scaling != scaling["scaling_key"] or k8s_image != pinned_image(db_dep):
                         drifted = True
                 
                 # Handle deployments without a Kubernetes Deployment
@@ -923,8 +955,8 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         project_name=_k8s_slug(project.name),
                         image_uri=pinned_image(db_dep),
                         port=_safe_port(db_dep.get('port')),
-                        replicas=db_dep.get('replicas', 1),
-                        health_check_path=_safe_health_path(db_dep.get('health_check_path'))
+                        health_check_path=_safe_health_path(db_dep.get('health_check_path')),
+                        **scaling,
                     )
                     commit_manifests_to_git(project.namespace, f"{d_id}.yaml", manifests)
                     

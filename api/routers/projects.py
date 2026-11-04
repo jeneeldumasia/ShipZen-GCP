@@ -21,6 +21,7 @@ from platform_clients import _redis_client
 from ratelimit import limiter
 from secret_store import delete_project_secret, ensure_project_secret
 from shipzen_common.hostnames import vanity_hostname, vanity_problem
+from shipzen_common.sizes import scaling_problem
 from validation import (_NAMESPACE_RE, _PROJECT_NAME_RE, _REPO_URL_RE, _RESERVED_NS_EXACT, _RESERVED_NS_PREFIXES)
 
 logger = logging.getLogger('api')
@@ -227,6 +228,42 @@ def set_project_subdomain(request: Request, project_id: str, body: SetSubdomainR
     out = _serialize(row)
     out["vanity_url"] = f"https://{vanity_hostname(sub)}" if sub else None
     return out
+
+
+class ScalingRequest(BaseModel):
+    instance_size: str = "small"
+    min_instances: int = 1
+    max_instances: int = 1
+
+
+@router.put("/projects/{project_id}/scaling", tags=["Projects"])
+@limiter.limit("10/minute")
+def set_project_scaling(request: Request, project_id: str, body: ScalingRequest,
+                        project: dict = Depends(verify_project_write_access),
+                        current_user: User = Depends(get_current_user)):
+    """Instance size and how many instances the live release runs (autoscaled on CPU when max > min)."""
+    problem = scaling_problem(body.instance_size, body.min_instances, body.max_instances)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute("UPDATE projects SET instance_size = %s, min_instances = %s, max_instances = %s "
+                        "WHERE id = %s RETURNING *;",
+                        (body.instance_size, body.min_instances, body.max_instances, project_id))
+            row = dict(cur.fetchone())
+        conn.commit()
+    log_audit_event(
+        project_id=project_id, user_id=current_user.user_id, action="SET_SCALING",
+        resource_type="project", resource_id=project_id,
+        details={"instance_size": body.instance_size, "min_instances": body.min_instances,
+                 "max_instances": body.max_instances},
+    )
+    try:
+        _redis_client.publish("shipzen:events:project_reconcile",
+                              json.dumps({"project_id": project_id, "event": "scaling_changed"}))
+    except Exception as pub_err:
+        logger.warning(f"Failed to publish project_reconcile event: {pub_err}")
+    return _serialize(row)
 
 
 @router.delete("/projects/{project_id}", status_code=202, tags=["Projects"])
