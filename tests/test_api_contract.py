@@ -49,6 +49,7 @@ EXPECTED_ROUTES = {
     ("GET", "/projects/{project_id}/metrics"),
     ("PUT", "/projects/{project_id}/scaling"),
     ("PUT", "/users/me/notifications"),
+    ("GET", "/admin/playground"), ("POST", "/admin/chaos"),
     ("POST", "/projects/{project_id}/rollback"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/status"),
     ("WS", "/ws/projects/{project_id}/deployments/{deployment_id}/logs"),
@@ -909,3 +910,46 @@ def test_build_folder_is_validated_kept_on_redeploy_and_copied_to_pushes(env):
         "X-GitHub-Event": "push", "x-hub-signature-256": _signed(secret, body)}).status_code == 200
     assert _sql("SELECT build_context FROM deployments WHERE project_id = %s AND triggered_by = 'push'",
                 (pid,)) == [("apps/web",)]
+
+
+# ── Admin playground ─────────────────────────────────────────────────────────
+
+def test_playground_is_admin_only_and_reports_records(env):
+    env.stubs.set("platform_status", lambda: [{"name": "shipzen-api", "desired": 2, "ready": 2}])
+    env.stubs.set("session_meter", lambda: {"uptime_hours": 1.5, "hourly_usd": 0.2})
+    pid = _make_project(env, name="Fame")
+    _sql("""INSERT INTO deployments (deployment_id, project_id, repo_url, image_uri, replicas, port, state, created_at)
+            VALUES ('f1', %s, 'https://github.com/o/r', 'img', 1, 8080, 'Running', NOW() - INTERVAL '90 seconds'),
+                   ('f2', %s, 'https://github.com/o/r', 'img', 0, 8080, 'Failed', NOW())""", (pid, pid))
+    _sql("INSERT INTO builds (build_id, deployment_id, status, started_at) VALUES ('b1', 'f1', 'Success', NOW())")
+    env.as_user("owner")
+    assert env.client.get("/admin/playground").status_code == 403
+    env.as_user("admin")
+    r = env.client.get("/admin/playground").json()
+    assert r["platform"][0]["name"] == "shipzen-api"
+    rec = r["records"]
+    assert rec["fastest_build"]["project"] == "Fame" and 85 <= rec["fastest_build"]["seconds"] <= 95
+    assert rec["success_rate_7d"] == 50 and rec["deploys_today"] >= 2
+    assert rec["top_projects_month"][0] == {"project": "Fame", "deploys": 2}
+
+
+def test_chaos_monkey_only_touches_components_with_a_spare_replica(env):
+    from unittest.mock import MagicMock
+    env.stubs.set("platform_status", lambda: [{"name": "shipzen-api", "desired": 2, "ready": 2},
+                                              {"name": "shipzen-worker", "desired": 2, "ready": 1}])
+    core = MagicMock()
+    pod = MagicMock()
+    pod.metadata.name, pod.metadata.deletion_timestamp, pod.status.phase = "shipzen-api-abc", None, "Running"
+    core.list_namespaced_pod.return_value.items = [pod]
+    env.stubs.set("_core", lambda: core)
+    env.as_user("editor")
+    assert env.client.post("/admin/chaos", json={}).status_code == 403
+    env.as_user("admin")
+    assert env.client.post("/admin/chaos", json={"target": "shipzen-worker"}).status_code == 409
+    assert env.client.post("/admin/chaos", json={"target": "tenant-app"}).status_code == 422
+    r = env.client.post("/admin/chaos", json={"target": "random"})
+    assert r.status_code == 200 and r.json()["pod"] == "shipzen-api-abc"
+    core.delete_namespaced_pod.assert_called_once_with("shipzen-api-abc", "shipzen-system")
+    core.list_namespaced_pod.assert_called_once_with("shipzen-system", label_selector="app=shipzen-api")
+    assert _sql("SELECT action, resource_id FROM audit_logs WHERE action = 'CHAOS_MONKEY'") == [
+        ("CHAOS_MONKEY", "shipzen-api-abc")]

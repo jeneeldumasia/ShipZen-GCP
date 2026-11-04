@@ -35,3 +35,29 @@ subjects:
   - kind: ServiceAccount
     name: shipzen-api-sa
     namespace: shipzen-system
+---
+# Admin playground Chaos Monkey: delete one platform pod (shipzen-system only,
+# never tenant namespaces). The API refuses unless the component has 2+ ready replicas.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shipzen-api-chaos
+  namespace: shipzen-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shipzen-api-chaos
+  namespace: shipzen-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: shipzen-api-chaos
+subjects:
+  - kind: ServiceAccount
+    name: shipzen-api-sa
+    namespace: shipzen-system

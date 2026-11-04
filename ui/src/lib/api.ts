@@ -172,6 +172,26 @@ export interface MetricsResponse {
   series: Record<string, [number, number | null][]>;
 }
 
+export interface PlaygroundData {
+  platform: { name: string; desired: number; ready: number }[];
+  session: {
+    cluster_started_at: string;
+    uptime_hours: number;
+    nodes: { name: string; pool: string | null; machine: string; hourly_usd: number }[];
+    hourly_usd: number;
+    session_usd_estimate: number;
+    soft_limit_hours: number;
+    hard_cap_hours: number;
+    hours_to_hard_cap: number;
+  } | null;
+  records: {
+    fastest_build: { project: string; seconds: number } | null;
+    deploys_today: number;
+    success_rate_7d: number | null;
+    top_projects_month: { project: string; deploys: number }[];
+  };
+}
+
 export const api = {
   analyze: (repo_url: string, branch: string) =>
     request<{ services: DetectedService[] }>("/projects/analyze", {
@@ -302,6 +322,12 @@ export const api = {
     deployments: () => request<any[]>("/admin/deployments"),
     auditLogs: () => request<AuditLog[]>("/admin/audit-logs"),
     metrics: () => request<any>("/admin/metrics"),
+    playground: () => request<PlaygroundData>("/admin/playground"),
+    chaos: (target: string) =>
+      request<{ deployment: string; pod: string; killed_at: string }>("/admin/chaos", {
+        method: "POST",
+        body: JSON.stringify({ target }),
+      }),
     restartSystem: () =>
       request<{ status: string }>("/admin/system/restart", { method: "POST" }),
   },
