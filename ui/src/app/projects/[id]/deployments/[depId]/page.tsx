@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, RefreshCw, Activity, Terminal } from "lucide-react";
+import { ArrowLeft, Terminal } from "lucide-react";
 import { api, Build } from "@/lib/api";
 import { AutoRefresh } from "./AutoRefresh";
 import { RedeployButton } from "./RedeployButton";
@@ -9,6 +9,8 @@ import { CancelDeployButton } from "./CancelDeployButton";
 import { ProgressBar } from "./ProgressBar";
 import { LiveLogPanel } from "./LiveLogPanel";
 import { CopyErrorButton } from "./CopyErrorButton";
+import { RuntimeLogs } from "./RuntimeLogs";
+import { AppMetrics } from "./AppMetrics";
 
 export const dynamic = "force-dynamic";
 
@@ -78,15 +80,6 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
         </Link>
 
         <div className="flex items-center gap-4">
-          <a
-            href={`https://grafana-shipzen.jeneeldumasia.codes/d/pod-health?orgId=1&var-namespace=${project.namespace}&var-deployment=${params.depId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-ghost"
-          >
-            <Activity size={16} /> Metrics
-          </a>
-          
           {isActive ? (
             <CancelDeployButton projectId={params.id} deploymentId={params.depId} />
           ) : (
@@ -117,6 +110,12 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
           <div className="whitespace-pre-wrap">{deployment.last_error}</div>
         </div>
       )}
+
+      {/* The running app: what it prints, and how it's doing */}
+      {(deployment.state === "Running" || deployment.state === "Failed") && (
+        <RuntimeLogs projectId={params.id} deploymentId={params.depId} />
+      )}
+      {deployment.state === "Running" && <AppMetrics projectId={params.id} />}
 
       {/* Live Cinematic Logs */}
       {isActive && (

@@ -135,6 +135,20 @@ export interface AuditLog {
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
+export interface RuntimeLogLine {
+  ts: number; // nanoseconds
+  pod: string;
+  line: string;
+}
+
+export interface MetricsResponse {
+  range: string;
+  step: number;
+  start: number;
+  end: number;
+  series: Record<string, [number, number | null][]>;
+}
+
 export const api = {
   github: {
     branches: (repoUrl: string) =>
@@ -154,6 +168,8 @@ export const api = {
   projects: {
     list: () => request<Project[]>("/projects"),
     get: (id: string) => request<Project>(`/projects/${id}`),
+    metrics: (id: string, range: "1h" | "6h" | "24h" = "1h") =>
+      request<MetricsResponse>(`/projects/${id}/metrics?range=${range}`),
     create: (body: { name: string; namespace: string }) =>
       request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
     delete: (id: string) =>
@@ -186,6 +202,14 @@ export const api = {
       request<Deployment>(`/projects/${projectId}/deployments/${deploymentId}/redeploy`, {
         method: "POST",
       }),
+    runtimeLogs: (projectId: string, deploymentId: string, opts: { since?: number; q?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (opts.since != null) qs.set("since", String(opts.since));
+      if (opts.q) qs.set("q", opts.q);
+      const tail = qs.toString() ? `?${qs}` : "";
+      return request<{ lines: RuntimeLogLine[]; last: number | null }>(
+        `/projects/${projectId}/deployments/${deploymentId}/runtime-logs${tail}`);
+    },
     restart: (projectId: string, deploymentId: string) =>
       request<{ status: string }>(`/projects/${projectId}/deployments/${deploymentId}/restart`, {
         method: "POST",
