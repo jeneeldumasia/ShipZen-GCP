@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Globe, RefreshCw, ExternalLink, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Globe, RefreshCw, ExternalLink, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -16,6 +16,28 @@ export function VanityDomain({ projectId, initial }: { projectId: string; initia
   const [current, setCurrent] = useState<string | null>(initial);
   const [draft, setDraft] = useState(initial ?? "");
   const [saving, setSaving] = useState(false);
+  // Is the URL actually reachable yet? Saving takes effect within a minute or so
+  // (controller, GitOps, gateway); until then the hostname would answer 404.
+  const [status, setStatus] = useState<"none" | "waiting_for_release" | "pending" | "live" | null>(null);
+
+  useEffect(() => {
+    if (!current) { setStatus("none"); return; }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
+      try {
+        const s = await api.projects.vanityStatus(projectId);
+        if (cancelled) return;
+        setStatus(s.state);
+        if (s.state !== "live") timer = setTimeout(check, 5000);
+      } catch {
+        if (!cancelled) timer = setTimeout(check, 10000);
+      }
+    };
+    setStatus("pending");
+    check();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [projectId, current]);
 
   async function save(value: string | null) {
     setSaving(true);
@@ -23,7 +45,7 @@ export function VanityDomain({ projectId, initial }: { projectId: string; initia
       const res = await api.projects.setSubdomain(projectId, value);
       setCurrent(res.subdomain ?? null);
       setDraft(res.subdomain ?? "");
-      toast.success(value ? "Vanity URL saved. It goes live within a minute or two." : "Vanity URL removed");
+      toast.success(value ? "Vanity URL saved. Setting it up…" : "Vanity URL removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save the vanity URL");
     } finally {
@@ -44,11 +66,28 @@ export function VanityDomain({ projectId, initial }: { projectId: string; initia
       <div className="p-6">
         {url && (
           <div className="flex items-center gap-3 mb-5">
-            <a href={url} target="_blank" rel="noopener noreferrer"
-               className="inline-flex items-center gap-1.5 font-mono text-sm text-brand hover:underline">
-              {url.replace("https://", "")}
-              <ExternalLink size={13} />
-            </a>
+            {status === "live" ? (
+              <a href={url} target="_blank" rel="noopener noreferrer"
+                 className="inline-flex items-center gap-1.5 font-mono text-sm text-brand hover:underline">
+                {url.replace("https://", "")}
+                <ExternalLink size={13} />
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 font-mono text-sm text-text-secondary">
+                {url.replace("https://", "")}
+              </span>
+            )}
+            {status === "live" && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">Live</span>
+            )}
+            {(status === "pending" || status === null) && (
+              <span className="inline-flex items-center gap-1 text-xs text-text-secondary">
+                <Loader2 size={12} className="animate-spin" /> Setting up… usually under a minute
+              </span>
+            )}
+            {status === "waiting_for_release" && (
+              <span className="text-xs text-text-secondary">Goes live with your next successful deploy</span>
+            )}
             <button onClick={() => save(null)} disabled={saving}
                     className="inline-flex items-center gap-1 text-xs text-text-secondary hover:text-red-500 disabled:opacity-50">
               <X size={13} /> Remove
