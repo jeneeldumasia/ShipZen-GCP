@@ -4,6 +4,7 @@ import { getBaseUrl } from "@/lib/api";
 import { Terminal, LayoutDashboard, Settings, LogOut, UserRound } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NavLinks } from "@/components/NavLinks";
+import { EmailToggle } from "@/components/EmailToggle";
 
 export async function Navigation() {
   const session = await auth();
@@ -11,6 +12,7 @@ export async function Navigation() {
 
   const token = (session as any).accessToken;
   let isAdmin = false;
+  let emailsOn = true;
   try {
     const res = await fetch(`${getBaseUrl()}/users/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -19,6 +21,7 @@ export async function Navigation() {
     if (res.ok) {
       const data = await res.json();
       isAdmin = !!data.is_admin;
+      emailsOn = data.email_notifications !== false;
     }
   } catch (e) {}
 
@@ -63,6 +66,7 @@ export async function Navigation() {
 
         {/* User avatar + logout */}
         <div className="flex items-center gap-1">
+          <EmailToggle initial={emailsOn} />
           <div
             className="w-7 h-7 rounded-full bg-brand/10 dark:bg-brand/30 border border-brand/40 dark:border-brand/50 flex items-center justify-center text-[11px] font-bold text-brand"
             title={user?.email ?? "Signed in"}
