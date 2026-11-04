@@ -93,7 +93,7 @@ export default async function DeploymentPage(props: { params: Promise<{ id: stri
             <RestartAppButton projectId={params.id} deploymentId={params.depId} />
           )}
           
-          <RedeployButton projectId={params.id} repoUrl={deployment.repo_url} port={deployment.port} />
+          <RedeployButton projectId={params.id} deploymentId={params.depId} />
         </div>
       </div>
 

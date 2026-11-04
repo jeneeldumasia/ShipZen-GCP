@@ -205,6 +205,28 @@ def promote_image(staging_uri: str, digest: str, image_name: str, crane_env: dic
         raise RuntimeError(f"Copying the built image failed (exit {cp.returncode}): {cp.stderr.strip()[:300]}")
 
 
+def record_commit(deployment_id: str, workspace: str, repo_url: str) -> None:
+    """Store which commit this deployment builds (unless a push payload already did)."""
+    try:
+        out = subprocess.run(["git", "log", "-1", "--format=%H%x00%an%x00%s"], cwd=workspace,
+                             capture_output=True, text=True, timeout=15)
+        sha, author, subject = (out.stdout.strip().split("\x00") + ["", "", ""])[:3]
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            return
+        url = None
+        if repo_url.startswith("https://github.com/"):
+            url = f"{repo_url.rstrip('/').removesuffix('.git')}/commit/{sha}"
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE deployments SET commit_sha = COALESCE(commit_sha, %s), "
+                    "commit_message = COALESCE(commit_message, %s), commit_author = COALESCE(commit_author, %s), "
+                    "commit_url = COALESCE(commit_url, %s) WHERE deployment_id = %s;",
+                    (sha, redact(subject[:500]), author[:255], url, deployment_id))
+    except Exception as e:
+        logger.warning(f"Could not record the commit for {deployment_id}: {type(e).__name__}")
+
+
 def bound_repo_mismatch(project_id: str, repo_url: str):
     """The project's linked GitHub repository if repo_url is a different one, else None.
 
@@ -529,6 +551,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         os.makedirs(workspace, exist_ok=True)
         subprocess.run(["git", "clone", "--depth=1", "--filter=blob:none", "--sparse", "--branch",
                        branch, repo_url, workspace], check=True, timeout=120, env=git_env)
+        record_commit(deployment_id, workspace, repo_url)
         subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "shipzen.yaml", "deployhub.yml", "Dockerfile", "Cargo.toml", "bun.lockb", "package.json"], cwd=workspace, check=True)
 
         # Check overrides
