@@ -177,6 +177,8 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set")
 
 RECONCILIATION_INTERVAL = int(os.getenv("RECONCILIATION_INTERVAL", "15"))
+# Scaled-down releases kept per project for rollback; older ones are cleaned up.
+KEEP_RELEASES = int(os.getenv("KEEP_RELEASES", "3"))
 
 # GCP Artifact Registry hostname — used when rendering the tenant namespace template
 # so each tenant namespace gets an Artifact Registry pull secret via ESO.
@@ -927,6 +929,18 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                         cur.execute(
                             "UPDATE deployments SET replicas = 0 WHERE project_id = %s AND deployment_id != %s AND state = 'Running' AND replicas > 0;",
                             (project.id, d_id)
+                        )
+                        # Keep the newest KEEP_RELEASES scaled-down releases as
+                        # rollback targets; older ones become Superseded, and the
+                        # orphan cleanup below removes their Deployment, Service,
+                        # HTTPRoute, ExternalSecret and GitOps file (task 22).
+                        cur.execute(
+                            """UPDATE deployments SET state = 'Superseded'
+                               WHERE deployment_id IN (
+                                   SELECT deployment_id FROM deployments
+                                   WHERE project_id = %s AND state = 'Running' AND replicas = 0
+                                   ORDER BY created_at DESC OFFSET %s);""",
+                            (project.id, KEEP_RELEASES)
                         )
                         conn.commit()
                         shipzen_deployment_success_total.inc()
