@@ -4,6 +4,20 @@ Problems ShipZen has hit and what fixed them, newest first. Use it to recognise 
 problem you have seen before. Entries from the AWS era (before the move to GCP)
 are kept where the lesson still applies.
 
+## November 2026
+
+| Problem | Cause | Fix |
+|---|---|---|
+| **Set Up Email** reported success while Resend refused the request | `python … \| tee` hid the script's exit code | `set -o pipefail` in the workflow (#54) |
+| Preview deploys failed to insert | The unique index allowed one active deployment per project, so a preview collided with production | Index limited to production; previews get one active build per PR (migration 0013, #55) |
+| App page logs empty for every tenant app | Promtail didn't tolerate the sandboxed tenant/build node taints, so it never ran there | Promtail tolerates every taint (#51) |
+| Vanity URL returned 404 right after it was set | DNS and the route were still propagating; nothing was broken | The Vanity URL card shows **Setting up…** until the route is accepted (#57) |
+| Every ArgoCD sync of `infra/` failed with 401 after rotating the GitHub App key | ArgoCD's App credentials were only set when the cluster was created | They're re-applied whenever the key's hash changes (#44) |
+| Setting `SHIPZEN_DATA_KEY` on a running platform did nothing | Only **Deploy Platform Infra** copied it to Secret Manager | **Deploy Secrets** and **Apply Infrastructure Changes** copy it too, create-only (#45) |
+| Telegram alerts on every build: KubeMemoryOvercommit / KubeCPUOvercommit | A 1–3 node single-zone cluster can never absorb a node loss, and builds book ~3 GiB | Routed to the null receiver (#46) |
+| Old releases piled up forever | Scaled-down releases were never removed | Releases beyond the newest 3 become `Superseded` and are cleaned up (#43) |
+| A new Secret Manager secret for the Resend key would have added idle cost | 6 secret versions are free and ShipZen already uses more secrets than that | The key is stored inside `shipzen-telegram` (#53) |
+
 ## October 2026
 
 | Problem | Cause | Fix |

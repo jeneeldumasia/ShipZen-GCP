@@ -39,11 +39,15 @@ ArgoCD makes the cluster match Git.
 |---|---|---|---|
 | UI | `ui/` (Next.js 16, NextAuth v5, Tailwind) | `shipzen-ui` Deployment ×2 | GitHub login, project and deployment screens, live logs. Calls the API with the user's GitHub token. |
 | API | `api/` (FastAPI) | `shipzen-api` Deployment ×2 | REST + WebSocket/SSE endpoints. Validates the GitHub token on every request, enforces project roles, writes to Postgres. Enqueues deploys through a transactional outbox. |
-| Worker | `worker/` | `shipzen-worker` Deployment ×2 | Consumes `deploy_stream` with a consumer group. Clones the repo, starts a build Job, streams its logs, records the image, moves the deployment through its states. Retries, then dead-letters. |
+| Worker | `worker/` | `shipzen-worker` Deployment ×2 | Consumes `deploy_stream` with a consumer group. Clones the repo, records the commit, starts a build Job, streams its logs, records the image, moves the deployment through its states. On failure, explains the log (`worker/failure_rules.py`) and retries once with a fixed fix for known cases. Retries, then dead-letters. |
 | Builder | `worker/builder.py` | single-use Jobs in `shipzen-build` | Kaniko when the repo has a `Dockerfile`, otherwise Nixpacks generates one and Kaniko builds it. Pushes to `shipzen-builds`. |
-| Controller | `controller/` | `shipzen-controller` Deployment ×2, one leader (Lease) | Every 60 s: renders each project's manifests from `controller/templates/`, commits changes to `shipzen-tenants`, marks deployments Running once their pods are ready, repairs drift, removes folders no project owns. |
+| Controller | `controller/` | `shipzen-controller` Deployment ×2, one leader (Lease) | Every 60 s: renders each project's manifests from `controller/templates/` (with the project's size and an HPA when it scales), commits changes to `shipzen-tenants`, marks deployments Running once their pods are ready, promotes production releases to live, announces previews (PR comment + email), sends deploy emails, repairs drift, removes folders no project owns. |
 | ArgoCD | Terraform `argocd.tf`, `infra/system/applicationset.yaml` | `argocd` namespace | `shipzen-platform` app syncs `infra/` (the platform itself); an ApplicationSet creates one app per `namespaces/<ns>/` folder in `shipzen-tenants`. Auto-sync, prune, self-heal. |
 | Gateway | `infra/system/gateway.yaml` | Envoy Gateway in `envoy-gateway-system` | One GCP load balancer for every hostname. Its source ranges allow only Cloudflare. |
+
+Outside the cluster: **Resend** sends deploy emails from `notify@jeneeldumasia.codes`
+(`shipzen_common/notify.py`, free tier), and the **GitHub App** delivers push and
+pull-request webhooks and posts preview comments.
 
 Supporting services: Redis (Bitnami chart, AOF on), Cloud SQL Postgres 15
 (`db-f1-micro`), External Secrets Operator, Kyverno, KEDA, ExternalDNS
@@ -63,10 +67,11 @@ sequenceDiagram
     participant C as Controller
     participant G as shipzen-tenants
     participant K as ArgoCD
-    U->>A: POST /projects/{id}/deployments
+    U->>A: POST /projects/{id}/deployments (or a push / PR webhook)
     A->>P: insert deployment (Queued) + outbox row, one transaction
     A->>R: outbox relay XADD deploy_stream
     R->>W: XREADGROUP
+    W->>W: sparse clone, record commit SHA / message / author
     W->>B: create Job (Kaniko or Nixpacks + Kaniko)
     B-->>W: logs (streamed live to the UI)
     B->>B: push image to Artifact Registry
@@ -75,7 +80,8 @@ sequenceDiagram
     C->>G: commit namespaces/<ns>/<deployment>.yaml
     G->>K: ApplicationSet syncs the folder
     K->>K: Deployment, Service, HTTPRoute, ExternalSecret
-    C->>P: pods ready → Running, previous release scaled to 0
+    C->>P: pods ready → Running, made live; previous release scaled to 0 after the grace period
+    C-->>U: email (and a PR comment for previews)
 ```
 
 Deployment states: `Queued → Building → Deploying → Verifying → Running`, with
@@ -100,13 +106,46 @@ to 0. That means no gap while the route switches.
 - **After the grace period:** it redeploys the newest earlier Running release with
   a different image, without rebuilding.
 
-**Restart** rolls the Deployment's pods. **Cancel** stops a queued or building
-deployment.
+**Restart** rolls the Deployment's pods. **Redeploy** builds the same branch again
+with the same settings. **Cancel** stops a queued or building deployment. **Apply
+now** (env vars) force-syncs the release's ExternalSecret and restarts the live
+release. Releases beyond the newest `KEEP_RELEASES` (3) scaled-down ones become
+`Superseded` and are cleaned up.
+
+**Deployment kinds.** `deployments.kind` is `production` or `preview`:
+- Previews come from pull requests on the bound repository; forks are ignored.
+- A project has at most 3 PRs with previews, and each PR builds one commit at a time.
+- Previews always run small × 1 and never become live, so every live-release
+  query filters on `production`.
+- Closing the PR marks its previews `Superseded`.
+
+**Scaling.** A project has an instance size (small / medium / large, from
+`shipzen_common/sizes.py`) and min/max instances. The live release gets those
+requests and limits. When max > min it also gets an `autoscaling/v2` HPA at 70% CPU,
+and the controller leaves its replica count to the HPA.
+
+**Repo intelligence.** `POST /projects/analyze` (`api/analyzer.py`) downloads the
+repository through the GitHub API and reports the services it finds:
+- for each one, the build method, framework, package manager, runtime version,
+  start command, port and health path;
+- the reasons for each guess.
+
+The chosen build folder is stored as `deployments.build_context`. Push deploys
+copy it from the last production deploy.
+
+**Platform operations** (admins, `api/routers/operations.py`):
+- an announcement banner shown to every user;
+- a deploy freeze, checked in `check_deploy_limits`, which every deploy path calls;
+- user suspension;
+- the session cost: node prices against the auto-destroy limits.
 
 ## Data
 
-Postgres tables: `users`, `projects`, `project_members` (owner / editor / viewer),
-`deployments`, `builds`, `audit_logs` (append-only), and `outbox_events`, which
+Postgres tables: `users` (with email preference and suspension), `projects` (with
+vanity name, live release and scaling), `project_members` (owner / editor / viewer),
+`deployments` (with commit, trigger, kind, PR number, build folder and build notes),
+`builds`, `audit_logs` (append-only), `platform_settings` (announcement, deploy
+freeze), and `outbox_events`, which
 the API relays to Redis so a deploy is never queued without being recorded (or
 the reverse). The schema lives in numbered migrations, `api/migrations/NNNN_*.sql`,
 which the API applies at startup (`api/migrate.py`, recorded in `schema_migrations`,
@@ -120,7 +159,7 @@ Not in Postgres:
 | App environment variables and secrets | Secret Manager, one secret per project (`shipzen-project-<project id>`, JSON). An ExternalSecret in the tenant namespace syncs it into the pods. |
 | Build logs | GCS bucket `shipzen-build-logs-*` (live lines also go over Redis pub/sub to the UI) |
 | Images | Artifact Registry: `shipzen-platform` for ShipZen itself, `shipzen-builds` for user apps |
-| App runtime logs | Loki, shown on the Grafana "Your app" page |
+| App runtime logs and metrics | Loki and Prometheus; the API queries them for the app page (`api/observability_client.py`), and Grafana shows them to admins |
 | Tenant manifests | `jeneeldumasia/shipzen-tenants`, written by the controller through a GitHub App |
 
 ## Tenancy and isolation
@@ -166,7 +205,10 @@ All of it is Terraform in `terraform/` (state in HCP Terraform, org
 GitHub Actions:
 
 - VPC `shipzen-vpc` with Cloud NAT and private services access for Cloud SQL
-- GKE `shipzen-cluster` (zonal, in `us-central1-c`, so the control plane is in GKE's free tier; Dataplane V2), node pool `platform-nodes`: `e2-standard-4`, autoscaling 1–3
+- GKE `shipzen-cluster` (zonal, in `us-central1-c`, so the control plane is in GKE's free tier; Dataplane V2) with three node pools:
+  - `platform-nodes`: `e2-standard-4`, autoscaling 1–3, for ShipZen itself
+  - `build-nodes`: Spot, gVisor, tainted, 0–2, for build Jobs only
+  - `tenant-nodes`: `e2-standard-2`, gVisor, tainted, 0–3, for user apps only
 - Cloud SQL `shipzen-postgres` (private IP)
 - Artifact Registry, GCS buckets, Secret Manager, service accounts and IAM
 - Helm releases for every operator above, then ArgoCD, which takes over `infra/`
@@ -185,7 +227,8 @@ See [operations/runbook.md](operations/runbook.md).
 | Path | What |
 |---|---|
 | `api/`, `worker/`, `controller/`, `ui/` | The four services, each with its own Dockerfile |
-| `api/routers/` | API endpoints, one module per area (projects, deployments, env, webhooks, admin, audit, github); `api/main.py` only assembles the app |
+| `api/routers/` | API endpoints, one module per area (projects, deployments, env, webhooks, admin, operations, observability, audit, github); `api/main.py` only assembles the app |
+| `shipzen_common/` | Code shared by the services: instance sizes, `shipzen.yaml` rules, GitHub App tokens and PR comments, email notifications, redaction |
 | `controller/templates/` | Jinja templates for tenant namespaces and app deployments |
 | `infra/` | Kustomize tree ArgoCD syncs: platform Deployments, gateway, routes, dashboards, alerts |
 | `terraform/` | The cluster and everything around it |
@@ -203,10 +246,12 @@ See [operations/runbook.md](operations/runbook.md).
 | Module | Holds |
 |---|---|
 | `database.py` | Connection pool and the permission checks every router uses: `verify_project_access`, `verify_project_write_access`, `assert_project_owner` |
-| `auth.py` | GitHub-token sign-in, allowlist and admin rules |
+| `auth.py` | GitHub-token sign-in, allowlist, admin rules, suspension |
 | `platform_clients.py` | Redis, Secret Manager, GCS and Kubernetes clients, created once per process |
 | `secret_store.py` | Per-project env vars and secrets (one Secret Manager secret behind both `/env` and `/secrets`) |
-| `helpers.py` | Image naming and queuing a deploy through the outbox |
+| `helpers.py` | Image naming, deploy limits (freeze, suspended owner, quotas), queuing a deploy through the outbox |
+| `analyzer.py` | Repository analysis behind **Analyze** |
+| `observability_client.py` | Loki and Prometheus queries for the app page's logs and metrics |
 | `background.py` | Outbox relay and cache-eviction listener |
 | `ratelimit.py`, `validation.py` | Rate limiter; input rules shared by request models |
 

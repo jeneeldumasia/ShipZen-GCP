@@ -99,9 +99,12 @@ code are reviewable and tested against the metrics that actually exist.
 **Cost.** Dashboard edits made in the Grafana UI don't stick.
 
 ## 12. Single zone, small nodes
-**Decision.** Regional control plane, nodes only in `us-central1-c`, one
-`e2-standard-4` node scaling to three.
-**Why.** Cost: three zones roughly tripled the node bill.
+**Decision.** A zonal cluster in `us-central1-c` (the control plane is then in
+GKE's free tier). One `e2-standard-4` platform node scales to three. Separate
+build and tenant pools scale from zero. (A regional control plane was used until
+November 2026.)
+**Why.** Cost: three zones roughly tripled the node bill, and a regional control
+plane is billed.
 **Cost.** A zone outage takes the platform down. Fine for a personal platform,
 not for paying customers.
 
@@ -112,9 +115,10 @@ accepts only itself, the gateway and monitoring. (October 2026)
 **Why.** The policies existed but nothing enforced them. The Security Check probe
 showed a tenant pod could reach the API, Redis, Grafana, Cloud SQL and the
 metadata server.
-**Cost.** Dataplane V2 is chosen at cluster creation, so it arrives with the next
-rebuild. Any new platform-to-tenant or tenant-to-platform path needs a policy
-change first.
+**Cost.** Dataplane V2 is chosen at cluster creation. Every cluster since has it,
+since each session rebuilds the cluster. Any new platform-to-tenant or
+tenant-to-platform path needs a policy change first. The API's access to Loki and
+Prometheus for the app page was one such change.
 
 ## 14. Alerts go to Telegram through a webhook relay
 **Decision.** Alertmanager's webhook calls a ~100-line relay in the cluster,
@@ -127,3 +131,70 @@ CallMeBot, a free third-party service that stopped accepting new users.)
 **Cost.** One more bot token to keep secret. If Telegram is down, Alertmanager
 retries.
 
+## 15. Deploy emails through Resend, not our own mail server
+**Decision.** Deploy notifications (live, failed, app down, preview ready) go out
+through Resend's HTTP API from `notify@jeneeldumasia.codes`, to each owner's and
+editor's GitHub-verified address, deduplicated in Redis. Users can turn them off.
+(November 2026)
+**Why.**
+- Resend's free tier (3,000 emails a month) covers a personal platform.
+- Self-hosted SMTP is out: GCP blocks port 25, and the cluster has no fixed IP
+  across teardowns, so mail from it would land in spam.
+- The domain's DNS records live in Cloudflare and survive teardowns.
+
+**Cost.**
+- One more API key, stored inside the existing `shipzen-telegram` secret, since a
+  new secret would push Secret Manager past its free versions.
+- Sending never blocks or fails a deploy, so a Resend outage means missing emails,
+  not failed deploys.
+
+## 16. Preview deploys: same repository only, never live
+**Decision.** Pull requests on a project's bound repository get a preview
+release with its own URL, a PR comment and an email. Rules:
+- Fork PRs are ignored.
+- At most 3 PRs per project have previews, and each PR builds one commit at a time.
+- Previews never become the live release and always run small × 1.
+- Closing the PR supersedes its previews.
+
+(November 2026)
+
+**Why.**
+- Building a fork's code would let anyone run code on the cluster by opening a PR.
+- Keeping previews out of every "live release" query means production can't be
+  replaced by a branch.
+
+**Cost.**
+- Contributors from forks get no preview.
+- The GitHub App needs write access to pull requests, only for the comment.
+
+## 17. Repo intelligence is rule-based
+**Decision.** Repository analysis and build-failure diagnosis are plain rules:
+- `api/analyzer.py` reads lockfiles, version files and framework defaults to work
+  out the build, and gives its reasons.
+- `worker/failure_rules.py` matches known error text. For a few failures with a
+  safe fix it retries once with fixed values.
+
+There is no LLM. (November 2026)
+
+**Why.**
+- Free, fast and predictable.
+- The automatic fixes can only ever set values written in the repository's code,
+  never anything taken from the log.
+
+**Cost.** Unknown failures fall back to the raw log tail, and new failure types
+need a new rule.
+
+## 18. Platform switches live in Postgres
+**Decision.**
+- The announcement banner and the deploy freeze are rows in `platform_settings`.
+- The freeze is checked in `check_deploy_limits`, which every deploy path already calls.
+- Suspension is a column on `users`, checked at sign-in, and the cached tokens
+  are evicted on every replica through Redis. (November 2026)
+
+**Why.**
+- Admins change these from the UI in seconds, without a redeploy or a workflow.
+- They're audited like everything else.
+
+**Cost.**
+- A query on each deploy and on each page load (the banner).
+- Suspension doesn't stop apps that are already running.
