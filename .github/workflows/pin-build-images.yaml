@@ -1,0 +1,68 @@
+name: Pin build images
+
+# Resolves the current digest of each build-pod image (git clone, Nixpacks
+# runner, Kaniko) and opens a pull request that pins worker/builder.py's
+# defaults to "image:tag@sha256:...". A moved or re-pushed tag then can't
+# change what runs inside builds without a reviewed commit.
+#
+# Run it by hand; re-run it to pick up a new tag after bumping one in builder.py.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve digests and rewrite defaults
+        id: pin
+        run: |
+          set -euo pipefail
+          changed=""
+          for var in GIT_CLONE_IMAGE NIXPACKS_RUNNER_IMAGE KANIKO_IMAGE; do
+            current=$(sed -n "s/^${var} = os.environ.get(\"${var}\", \"\([^\"]*\)\")$/\1/p" worker/builder.py)
+            if [ -z "$current" ]; then echo "::error::couldn't find the ${var} default"; exit 1; fi
+            ref="${current%@*}"                       # drop any existing @sha256:...
+            digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+            case "$digest" in sha256:*) ;; *) echo "::error::no digest for $ref"; exit 1;; esac
+            pinned="${ref}@${digest}"
+            echo "${var}: ${pinned}"
+            if [ "$pinned" != "$current" ]; then
+              sed -i "s|^${var} = os.environ.get(\"${var}\", \"${current}\")$|${var} = os.environ.get(\"${var}\", \"${pinned}\")|" worker/builder.py
+              changed="${changed}- \`${var}\`: \`${pinned}\`"$'\n'
+            fi
+          done
+          {
+            echo "changed<<EOF"
+            printf '%s' "$changed"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request
+        if: steps.pin.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ steps.pin.outputs.changed }}
+        run: |
+          set -euo pipefail
+          branch="chore/pin-build-images-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "chore(builds): pin build images to their digests"
+          git push -u origin "$branch"
+          body=$(printf 'Pins the build-pod images to the digests their tags point to today:\n\n%s\nOpened by the **Pin build images** workflow.' "$CHANGED")
+          gh pr create --title "chore(builds): pin build images to their digests" --body "$body" --base main --head "$branch" \
+            || echo "::warning::Couldn't open the PR (Settings → Actions → 'Allow GitHub Actions to create pull requests'). The branch $branch is pushed; open it from there."
+
+      - name: Nothing to do
+        if: steps.pin.outputs.changed == ''
+        run: echo "All build images are already pinned to their current digests."

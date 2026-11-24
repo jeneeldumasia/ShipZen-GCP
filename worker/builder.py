@@ -15,7 +15,35 @@ NIXPACKS_VERSION = "v1.41.0"
 NIXPACKS_URL = (f"https://github.com/railwayapp/nixpacks/releases/download/{NIXPACKS_VERSION}/"
                 f"nixpacks-{NIXPACKS_VERSION}-x86_64-unknown-linux-musl.tar.gz")
 NIXPACKS_SHA256 = "0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6"
-NIXPACKS_RUNNER_IMAGE = "alpine:3.20.3"
+# Images for the build pods. Each can be overridden (e.g. with a digest-pinned
+# reference, "image:tag@sha256:...") through the worker's environment; the
+# "Pin build images" workflow resolves the current digests and opens a PR that
+# pins these defaults.
+NIXPACKS_RUNNER_IMAGE = os.environ.get("NIXPACKS_RUNNER_IMAGE", "alpine:3.20.3")
+GIT_CLONE_IMAGE = os.environ.get("GIT_CLONE_IMAGE", "alpine/git:2.43.0")
+KANIKO_IMAGE = os.environ.get("KANIKO_IMAGE", "gcr.io/kaniko-project/executor:v1.23.2")
+
+# The clone, setup and Nixpacks containers don't need root, so they don't get
+# it. Kaniko still runs as root: it has to, to unpack base images and run the
+# Dockerfile's RUN steps, which is why builds run under gVisor on their own pool.
+BUILD_UID = 1000
+UNPRIVILEGED = {
+    "runAsUser": BUILD_UID,
+    "runAsGroup": BUILD_UID,
+    "runAsNonRoot": True,
+    "allowPrivilegeEscalation": False,
+    "capabilities": {"drop": ["ALL"]},
+    "seccompProfile": {"type": "RuntimeDefault"},
+}
+# The images have no user 1000: give git and Nixpacks a writable HOME, and git
+# an identity so it never has to look the UID up in /etc/passwd.
+UNPRIVILEGED_ENV = [
+    {"name": "HOME", "value": "/tmp"},
+    {"name": "GIT_COMMITTER_NAME", "value": "shipzen-build"},
+    {"name": "GIT_COMMITTER_EMAIL", "value": "build@shipzen.invalid"},
+    {"name": "GIT_AUTHOR_NAME", "value": "shipzen-build"},
+    {"name": "GIT_AUTHOR_EMAIL", "value": "build@shipzen.invalid"},
+]
 
 
 def harden_build_job(job: dict, overrides: dict) -> dict:
@@ -37,6 +65,9 @@ def harden_build_job(job: dict, overrides: dict) -> dict:
     runtime_class = os.environ.get("BUILD_RUNTIME_CLASS", "gvisor")
     if runtime_class:
         pod["runtimeClassName"] = runtime_class
+    # The emptyDir workspace is group-owned by BUILD_UID, so the unprivileged
+    # init containers and the root Kaniko container can all use it.
+    pod.setdefault("securityContext", {})["fsGroup"] = BUILD_UID
     secret = overrides.get("registry_secret_name")
     if secret:
         pod.setdefault("volumes", []).append({
@@ -119,26 +150,22 @@ class DockerfileBuilder(Builder):
                         "initContainers": [
                             {
                                 "name": "git-clone",
-                                "image": "alpine/git:2.43.0",
+                                "image": GIT_CLONE_IMAGE,
                                 "command": ["sh", "-c"],
                                 "args": [clone_cmd],
-                                "env": git_clone_env,
+                                "env": git_clone_env + UNPRIVILEGED_ENV,
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
                                 "resources": {
                                     "requests": {"cpu": "500m", "memory": "1Gi"},
                                     "limits": {"cpu": "1", "memory": "2Gi"}
                                 },
-                                "securityContext": {
-                                    "runAsUser": 0,
-                                    "allowPrivilegeEscalation": False,
-                                    "seccompProfile": {"type": "RuntimeDefault"}
-                                }
+                                "securityContext": dict(UNPRIVILEGED)
                             }
                         ],
                         "containers": [
                             {
                                 "name": "kaniko",
-                                "image": "gcr.io/kaniko-project/executor:v1.23.2",
+                                "image": KANIKO_IMAGE,
                                 "args": [
                                     f"--context={kaniko_context}",
                                     "--dockerfile=Dockerfile",
@@ -187,13 +214,19 @@ class NixpacksBuilder(Builder):
         git_clone_env += git_auth_env_refs(overrides.get("github_secret_name"))
         clone_cmd = 'git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" /workspace'
 
+        context_dir = overrides.get("buildContext", "").strip("/")
+        build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
+
+        # The build folder reaches the script as $BUILD_DIR, never interpolated.
         setup_script = f"""
 set -e
 {clone_cmd}
-chmod 777 /workspace
-cd /workspace
+cd "$BUILD_DIR"
 """
         if overrides.get("inject_server_js"):
+            # A static site with no start script: serve it with a tiny Node
+            # server. Nixpacks is told to start it (--start-cmd below), so
+            # package.json is left alone and nothing is installed at build time.
             setup_script += """
 cat << 'EOF' > server.cjs
 const http = require('http');
@@ -240,17 +273,11 @@ const server = http.createServer((req, res) => {
 });
 server.listen(PORT, () => console.log(`Static server listening on port ${PORT} serving ${DIR}`));
 EOF
-# Inject start script
-if [ -f package.json ]; then
-  apk add --no-cache python3
-  python3 -c "import json; d=json.load(open('package.json')); d.setdefault('scripts', {})['start'] = 'node server.cjs'; json.dump(d, open('package.json','w'), indent=2)"
-fi
 """
 
-
-        context_dir = overrides.get("buildContext", "").strip("/")
-        build_path = f"/workspace/{context_dir}" if context_dir else "/workspace"
         nixpacks_args = ["build", build_path, "--out", "/workspace"]
+        if overrides.get("inject_server_js"):
+            nixpacks_args += ["--start-cmd", "node server.cjs"]
         # Build settings from an automatic retry (worker/failure_rules.py:
         # fixed values defined there, never from the repo or the log).
         for key, value in sorted((overrides.get("build_env") or {}).items()):
@@ -301,9 +328,10 @@ fi
                         "initContainers": [
                             {
                                 "name": "setup",
-                                "image": "alpine/git:2.43.0",
+                                "image": GIT_CLONE_IMAGE,
                                 "command": ["sh", "-c", setup_script],
-                                "env": git_clone_env,
+                                "env": git_clone_env + UNPRIVILEGED_ENV + [
+                                    {"name": "BUILD_DIR", "value": build_path}],
                                 "volumeMounts": [
                                     {"name": "workspace", "mountPath": "/workspace"}
                                 ],
@@ -311,11 +339,7 @@ fi
                                     "requests": {"cpu": "500m", "memory": "1Gi"},
                                     "limits": {"cpu": "1", "memory": "2Gi"}
                                 },
-                                "securityContext": {
-                                    "runAsUser": 0,
-                                    "allowPrivilegeEscalation": False,
-                                    "seccompProfile": {"type": "RuntimeDefault"}
-                                }
+                                "securityContext": dict(UNPRIVILEGED)
                             },
                             {
                                 "name": "nixpacks-generate",
@@ -326,18 +350,15 @@ fi
                                     "requests": {"cpu": "1", "memory": "2Gi"},
                                     "limits": {"cpu": "2", "memory": "4Gi"}
                                 },
+                                "env": list(UNPRIVILEGED_ENV),
                                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
-                                "securityContext": {
-                                    "runAsUser": 0,
-                                    "allowPrivilegeEscalation": False,
-                                    "seccompProfile": {"type": "RuntimeDefault"}
-                                }
+                                "securityContext": dict(UNPRIVILEGED)
                             },
                         ],
                         "containers": [
                             {
                                 "name": "kaniko",
-                                "image": "gcr.io/kaniko-project/executor:v1.23.2",
+                                "image": KANIKO_IMAGE,
                                 "args": [
                                     "--context=dir:///workspace",
                                     "--dockerfile=.nixpacks/Dockerfile",

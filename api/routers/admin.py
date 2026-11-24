@@ -1,11 +1,13 @@
 """The signed-in user, and platform admin endpoints."""
 import datetime
 import logging
+import re
+import uuid
 from typing import Optional
 
 from psycopg2.extras import DictCursor
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from kubernetes import client as k8s_client
 
 from audit import log_audit_event
@@ -122,6 +124,104 @@ def update_user_role(request: Request, user_id: str, body: UpdateRoleRequest, cu
         details={"new_role": body.role},
     )
     return {"message": f"User {user_id} role updated to {body.role}"}
+
+
+# ── Invitations ──────────────────────────────────────────────────────────────
+
+
+class CreateInvitationRequest(BaseModel):
+    github_login: Optional[str] = Field(default=None, max_length=39)
+    email: Optional[str] = Field(default=None, max_length=255)
+    role: str = "user"
+    # None: never expires. Only pending invitations expire; accepted ones stay.
+    expires_in_days: Optional[int] = Field(default=14, ge=1, le=365)
+
+    @field_validator("role")
+    @classmethod
+    def _role(cls, v: str) -> str:
+        if v not in ("user", "admin"):
+            raise ValueError("role must be 'user' or 'admin'")
+        return v
+
+    @field_validator("github_login")
+    @classmethod
+    def _login(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or not v.strip():
+            return None
+        v = v.strip().lstrip("@")
+        # GitHub logins: letters, digits and single hyphens, not at either end.
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}", v):
+            raise ValueError("not a valid GitHub login")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        if "@" not in v or v.startswith("@") or v.endswith("@") or " " in v:
+            raise ValueError("not a valid email address")
+        return v
+
+
+def _require_admin(user: User):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@router.get("/admin/invitations", tags=["Admin"])
+@limiter.limit("60/minute")
+def list_admin_invitations(request: Request, current_user: User = Depends(get_current_user)):
+    """Pending and accepted invitations, newest first."""
+    _require_admin(current_user)
+    from database import list_invitations
+    return [_serialize(inv) for inv in list_invitations()]
+
+
+@router.post("/admin/invitations", tags=["Admin"], status_code=201)
+@limiter.limit("30/minute")
+def create_admin_invitation(request: Request, body: CreateInvitationRequest,
+                            current_user: User = Depends(get_current_user)):
+    """Invite someone by GitHub login or verified email. Takes effect at once, no redeploy."""
+    _require_admin(current_user)
+    if not body.github_login and not body.email:
+        raise HTTPException(status_code=400, detail="Give a GitHub login or an email address")
+    from database import create_invitation
+    inv = create_invitation(created_by=current_user.user_id, github_login=body.github_login,
+                            email=body.email, role=body.role, expires_in_days=body.expires_in_days)
+    log_audit_event(project_id=None, user_id=current_user.user_id, action="CREATE_INVITATION",
+                    resource_type="invitation", resource_id=str(inv["id"]),
+                    details={"github_login": inv["github_login"], "email": inv["email"], "role": inv["role"]})
+    return _serialize(inv)
+
+
+@router.delete("/admin/invitations/{invitation_id}", tags=["Admin"])
+@limiter.limit("30/minute")
+def delete_admin_invitation(request: Request, invitation_id: str,
+                            current_user: User = Depends(get_current_user)):
+    """Revoke an invitation. If it was accepted, that user loses access immediately."""
+    _require_admin(current_user)
+    try:
+        uuid.UUID(invitation_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    from database import revoke_invitation
+    inv = revoke_invitation(invitation_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    if inv.get("accepted_by"):
+        # Drop their cached sign-in here and on the other API replicas.
+        evict_user_token_cache(inv["accepted_by"])
+        try:
+            _redis_client.publish("shipzen:events:cache_evict", inv["accepted_by"])
+        except Exception as e:
+            logger.warning(f"Failed to publish cache_evict event: {e}")
+    log_audit_event(project_id=None, user_id=current_user.user_id, action="REVOKE_INVITATION",
+                    resource_type="invitation", resource_id=invitation_id,
+                    details={"github_login": inv["github_login"], "email": inv["email"],
+                             "was_accepted": bool(inv.get("accepted_by"))})
+    return {"message": "Invitation revoked"}
 
 
 @router.get("/admin/audit-logs", tags=["Admin"])

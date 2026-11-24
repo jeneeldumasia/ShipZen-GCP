@@ -17,9 +17,10 @@ under [Known gaps](#known-gaps), not under controls.
 ## Controls in place
 
 **Sign-in and roles**
-- GitHub OAuth only. Both the UI (NextAuth `signIn` callback) and the API reject accounts not in `ALLOWED_GITHUB_USERS`.
+- GitHub OAuth only, invite-only. A user gets in if their login is in `ALLOWED_GITHUB_USERS` or an admin has invited them (Admin → Invitations, `POST /admin/invitations`, by GitHub login or verified email). The API decides on every request; the UI's `signIn` callback asks the API about anyone not on the static list, and refuses if the API says no or can't be reached.
+- An invitation is accepted at the first matching sign-in and then stays the user's access until it is revoked; revoking it cuts them off at once (their cached sign-in is evicted on every API replica). Pending invitations expire (14 days by default).
 - The API checks the user's GitHub token with GitHub on every request (cached briefly) and reports GitHub outages and rate limits as such, rather than "invalid token".
-- Platform admins come only from `ADMIN_GITHUB_USERS` / `ADMIN_EMAILS`. The old "first user becomes admin" rule is gone.
+- Platform admins come only from `ADMIN_GITHUB_USERS` / `ADMIN_EMAILS`, an admin invitation, or promotion by another admin. The old "first user becomes admin" rule is gone.
 - Per project: owners and editors can change things; viewers can only read. Write endpoints use `verify_project_write_access`.
 - Every change is written to the append-only `audit_logs` table.
 
@@ -27,6 +28,8 @@ under [Known gaps](#known-gaps), not under controls.
 - Each build is a single-use Job in its own namespace, `shipzen-build`, deleted afterwards.
 - Build pods have **no Google identity** and can't reach the metadata server. The worker mints a 1-hour token for `shipzen-builder-sa`, which can push only to the `shipzen-staging` registry, and gives Kaniko just that. Kaniko reports the digest it pushed; the worker copies exactly that digest into `shipzen-builds` (which only the platform can write), and apps run **by digest**, so no build can swap another project's image. The shared remote layer cache is off, because any build could poison it. Each project's repository is checked against the user's own GitHub access and bound to the project, so nobody can build a private repository they can't read. **Security Check** verifies build pods have no identity.
 - Kaniko builds without a Docker daemon and without privileged mode (`allowPrivilegeEscalation: false`, `RuntimeDefault` seccomp).
+- The clone, setup and Nixpacks containers run as an unprivileged user (UID 1000, all capabilities dropped). Nothing is installed during a build: a static site's start command is passed to Nixpacks (`--start-cmd`) instead of patching `package.json` after `apk add python3`.
+- Build-pod images are set in one place (`worker/builder.py`) and can be pinned by digest: the **Pin build images** workflow resolves each tag's current digest and opens a PR; `GIT_CLONE_IMAGE`, `NIXPACKS_RUNNER_IMAGE` and `KANIKO_IMAGE` on the worker override them.
 - Registry credentials go to `crane` over stdin, and CI log output is passed through a redaction filter, so tokens don't reach logs or annotations.
 
 **Platform**
@@ -38,6 +41,7 @@ under [Known gaps](#known-gaps), not under controls.
 - Tenant namespaces run Pod Security `restricted`, with quotas and no service-account token.
 - **Network isolation** (GKE Dataplane V2, which enforces NetworkPolicies):
   - tenants and build Jobs can reach DNS, their own pods and the public internet only, never other tenants, `shipzen-system`, monitoring, nodes, Cloud SQL or the metadata server;
+  - build Jobs reach the internet on HTTP, HTTPS and SSH only; tenants on any port, or only the TCP ports in the controller's `TENANT_EGRESS_PORTS` (for example `80,443,5432,3306,6379,27017,465,587`) when it is set;
   - `shipzen-system` accepts connections only from itself, the gateway and monitoring;
   - the API may only open DNS, Postgres, Redis, the metadata server and HTTPS.
 - Container images are scanned by Trivy on demand (**Container Security Scan**, run manually; fails on HIGH/CRITICAL).
@@ -47,9 +51,9 @@ under [Known gaps](#known-gaps), not under controls.
 | Check | How |
 |---|---|
 | Build pods have no Google identity | Run **Security Check** (Actions). Every identity probe must say PASS. |
-| Network isolation holds | The same run starts a pod in a tenant namespace and one in `shipzen-build`; every connection must be blocked or allowed as expected (`scripts/netpolicy-probe.sh`). |
+| Network isolation holds | The same run starts a pod in a tenant namespace and one in `shipzen-build`; every connection must be blocked or allowed as expected (`scripts/netpolicy-probe.sh`). It first checks that Dataplane V2 (`anetd`) is running, and that builds can't use an odd port. Terraform also warns on every plan while the cluster lacks Dataplane V2. |
 | Raw gateway IP is closed | `curl -m 5 http://<gateway IP>/` should time out; the site should still load. |
-| Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". |
+| Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". Invite it, sign in again (works), revoke, and the next page load fails. |
 | Images are clean | Look at the latest **Container Security Scan** run. |
 
 ## Sessions and the API
@@ -59,7 +63,8 @@ under [Known gaps](#known-gaps), not under controls.
 - **Admins:**
   - only GitHub-verified emails count;
   - admins granted through `ADMIN_GITHUB_USERS` / `ADMIN_EMAILS` lose the role at their next sign-in once they're removed from those lists;
-  - admins promoted by another admin keep it.
+  - admins promoted by another admin keep it;
+  - admins made by an admin invitation lose the role when the invitation is revoked.
 - **WebSocket limits:** at most `WS_MAX_PER_USER` (10) open sockets per user per API process, each closed after `WS_MAX_SECONDS` (1 h).
 - **Env vars and secrets:** writes are serialised per project with a Postgres advisory lock, so two edits can't overwrite each other.
 - **Webhook secrets at rest:** per-project webhook secrets are encrypted in Postgres when `SHIPZEN_DATA_KEY` is set (runbook).
@@ -83,9 +88,9 @@ under [Known gaps](#known-gaps), not under controls.
 ## Known gaps
 
 1. **Network isolation needs a cluster built after this change.** Dataplane V2 can only be chosen when a cluster is created, so a cluster created earlier has the policies but doesn't enforce them. **Security Check** fails until the next rebuild.
-2. **Builds run as root inside the container** (`runAsUser: 0`, which Kaniko needs). This is now inside a gVisor sandbox on a build-only node.
+2. **Kaniko runs as root inside its container** (`runAsUser: 0`; it has to, to unpack images and run `RUN` steps). It is the only build container that does, inside a gVisor sandbox on a build-only node. Its Linux capabilities are not trimmed yet: that needs a test build per change.
 3. **Alerts have a single channel.** Everything goes to one Telegram chat (official Bot API). If Telegram is down, Alertmanager retries, but there is no second channel. The bot token can post to that chat, so keep it secret.
-4. **One allowlisted user.** Fine for a personal platform; there is no self-service sign-up or invite flow.
-5. **Grafana and ArgoCD use admin passwords,** unless Cloudflare Access is switched on (runbook). Access adds an email login in front of them.
+4. **Build images are tag-pinned until the Pin build images workflow is run** (and re-run after each tag bump). Nixpacks itself is a pinned release checked by SHA-256.
+5. **Grafana and ArgoCD fall back to admin passwords.** GitHub sign-in is built in (`terraform/sso.tf`) but off until their OAuth apps are configured (runbook); the passwords stay as break-glass. Cloudflare Access can add an email login in front of both.
 6. **The GKE control plane endpoint is public** (IAM-authenticated; nodes are private). Closing it needs the DNS-based endpoint, which needs google provider 6.x.
 7. ~~Hostname slugs can overlap.~~ Closed: tenant routes must have exactly 8 characters before the project slug (a release ID), and vanity names can't take that shape, so no project's pattern matches another project's hostnames.

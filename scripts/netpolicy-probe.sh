@@ -8,6 +8,9 @@
 #
 #   scripts/netpolicy-probe.sh [CLOUD_SQL_IP]
 #
+# Set EXPECT_TENANT_PORT_LIMIT=1 when the controller runs with
+# TENANT_EGRESS_PORTS, so tenants are also checked for a blocked odd port.
+#
 # "Blocked" means the connection attempt timed out (curl exit 28): with
 # Dataplane V2 a denied packet is dropped. A refusal, an error reply or a
 # success all mean the packet got through.
@@ -42,8 +45,8 @@ check() {  # check <namespace> <pod> <label> <expect: allow|deny> <url>
   printf '%s | %-11s | %-42s | expected %s, got %s (curl %s)\n' "$mark" "$1" "$3" "$4" "$got" "$code"
 }
 
-probe() {  # probe <namespace> <metadata server: allow|deny>
-  local ns="$1" metadata="$2" pod="netprobe"
+probe() {  # probe <namespace> <metadata server: allow|deny> [odd internet port: deny|skip]
+  local ns="$1" metadata="$2" odd_port="${3:-skip}" pod="netprobe"
   if ! run_pod "$ns" "$pod"; then
     echo "FAIL | $ns | probe pod did not start"; FAIL=1; return
   fi
@@ -54,12 +57,22 @@ probe() {  # probe <namespace> <metadata server: allow|deny>
   [ -n "$SQL_IP" ] && check "$ns" "$pod" "Cloud SQL" deny "http://$SQL_IP:5432/"   # Postgres drops the HTTP request: allowed = error reply, blocked = timeout
   check "$ns" "$pod" "public internet"                allow "https://www.google.com/"
   check "$ns" "$pod" "ShipZen via Cloudflare"         allow "https://shipzen.jeneeldumasia.codes/"
+  # portquiz.net answers on every port, so a timeout here really is the policy.
+  [ "$odd_port" = deny ] && check "$ns" "$pod" "internet on an odd port (6667)" deny "http://portquiz.net:6667/"
   kubectl delete pod "$pod" -n "$ns" --ignore-not-found --wait=false >/dev/null 2>&1
 }
 
+# NetworkPolicies are only enforced by GKE Dataplane V2 (anetd). Without it
+# every "deny" below would fail, so say why up front.
+if ! kubectl get daemonset anetd -n kube-system >/dev/null 2>&1; then
+  echo "FAIL | cluster     | GKE Dataplane V2 (anetd) not found: NetworkPolicies are not enforced"
+  FAIL=1
+fi
+
 # Neither tenants nor builds may reach the metadata server: builds get only a
 # per-build staging push token from the worker (security finding C4).
-if [ -n "$TENANT_NS" ]; then probe "$TENANT_NS" deny; else echo "SKIP | no tenant namespace to probe"; fi
-probe shipzen-build deny
+tenant_odd=skip; [ "${EXPECT_TENANT_PORT_LIMIT:-0}" = 1 ] && tenant_odd=deny
+if [ -n "$TENANT_NS" ]; then probe "$TENANT_NS" deny "$tenant_odd"; else echo "SKIP | no tenant namespace to probe"; fi
+probe shipzen-build deny deny   # builds: HTTP(S) and SSH only
 
 exit "$FAIL"

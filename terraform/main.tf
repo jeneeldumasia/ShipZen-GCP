@@ -132,10 +132,21 @@ resource "google_container_cluster" "primary" {
     # Switching the datapath requires a new cluster. Ignore it on an existing
     # cluster so "Apply Infrastructure Changes" never replaces a live cluster;
     # the next Deploy Platform Infra (after a teardown) creates it with Dataplane V2.
+    # (No prevent_destroy: the teardown workflows must be able to destroy it.)
     ignore_changes = [datapath_provider, private_cluster_config]
   }
 
   depends_on = [google_project_service.apis]
+}
+
+# Warn on every plan/apply while the live cluster lacks Dataplane V2: its
+# NetworkPolicies are accepted but not enforced. A check (not a postcondition)
+# so it never blocks an apply; the Security Check workflow fails on it too.
+check "dataplane_v2_enforces_network_policies" {
+  assert {
+    condition     = google_container_cluster.primary.datapath_provider == "ADVANCED_DATAPATH"
+    error_message = "The GKE cluster runs without Dataplane V2, so NetworkPolicies are NOT enforced. Rebuild it (Destroy, then Deploy Platform Infra) to get ADVANCED_DATAPATH."
+  }
 }
 
 resource "google_container_node_pool" "platform_nodes" {

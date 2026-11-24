@@ -29,6 +29,14 @@ resource "helm_release" "kube_prometheus_stack" {
   namespace        = kubernetes_namespace.observability.metadata[0].name
   create_namespace = false
 
+  dynamic "set_sensitive" {
+    for_each = local.grafana_sso_enabled ? [1] : []
+    content {
+      name  = "grafana.grafana\\.ini.auth\\.github.client_secret"
+      value = var.grafana_github_client_secret
+    }
+  }
+
   # Scan all namespaces for ServiceMonitor resources, not just observability
   set {
     name  = "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues"
@@ -189,7 +197,7 @@ resource "helm_release" "kube_prometheus_stack" {
   # (infra/system/alert-relay.yaml) by webhook, when it fires and when it clears.
   # The inhibit rules are the chart's defaults, repeated because this replaces
   # the whole config.
-  values = [yamlencode({
+  values = concat([yamlencode({
     alertmanager = {
       config = {
         global = { resolve_timeout = "5m" }
@@ -228,7 +236,7 @@ resource "helm_release" "kube_prometheus_stack" {
         templates = ["/etc/alertmanager/config/*.tmpl"]
       }
     }
-  })]
+  })], local.grafana_sso_values) # + GitHub sign-in, when configured (sso.tf)
 
   timeout    = 900
   depends_on = [time_sleep.wait_for_cluster_auth, helm_release.postgresql, helm_release.kyverno_policies]

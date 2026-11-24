@@ -70,6 +70,8 @@ EXPECTED_ROUTES = {
     ("GET", "/platform/status"), ("PUT", "/admin/platform/announcement"),
     ("PUT", "/admin/platform/deploy-freeze"), ("PUT", "/admin/users/{user_id}/suspension"),
     ("GET", "/admin/cost"),
+    ("GET", "/admin/invitations"), ("POST", "/admin/invitations"),
+    ("DELETE", "/admin/invitations/{invitation_id}"),
 }
 
 

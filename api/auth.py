@@ -213,12 +213,8 @@ async def get_current_user(
             "login": gh_user["login"],
             "email": email,
         }
-        if (ALLOWED_GITHUB_USERS or not OPEN_SIGNUP) and user_info["login"].lower() not in ALLOWED_GITHUB_USERS:
-            logger.warning(f"Rejected sign-in from GitHub user '{user_info['login']}' (not in ALLOWED_GITHUB_USERS)")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="This ShipZen instance is invite-only. Your GitHub account is not on the allowlist.",
-            )
+        on_allowlist = not ((ALLOWED_GITHUB_USERS or not OPEN_SIGNUP)
+                            and user_info["login"].lower() not in ALLOWED_GITHUB_USERS)
     except httpx.RequestError as e:
         logger.error(f"GitHub API request failed: {e}")
         # Update circuit breaker state atomically
@@ -238,8 +234,31 @@ async def get_current_user(
         _github_cb_last_failure = 0.0
         _github_cb_open = False
 
+    invitation = None
+    if not on_allowlist:
+        # Not on the static list: an admin may have invited them (0016).
+        from database import find_access_invitation
+        try:
+            invitation = await asyncio.to_thread(
+                find_access_invitation, user_info["id"], user_info["login"], user_info["email"])
+        except Exception as e:
+            logger.error(f"Invitation lookup failed for '{user_info['login']}': {e}")
+            raise HTTPException(status_code=503, detail="Couldn't check your access; try again.")
+        if not invitation:
+            logger.warning(f"Rejected sign-in from GitHub user '{user_info['login']}' "
+                           f"(not in ALLOWED_GITHUB_USERS and no invitation)")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This ShipZen instance is invite-only. Your GitHub account hasn't been invited.",
+            )
     from database import get_or_create_user
     db_user = await asyncio.to_thread(get_or_create_user, user_info["id"], user_info["email"], user_info["login"])
+    if invitation and not invitation.get("accepted_by"):
+        from database import accept_invitation
+        role = await asyncio.to_thread(accept_invitation, invitation["id"], user_info["id"])
+        if role:
+            db_user = {**db_user, "role": role}
+        logger.info(f"GitHub user '{user_info['login']}' accepted invitation {invitation['id']}")
     user = User(user_id=user_info["id"], role=db_user["role"], github_token=token,
                 suspended=bool(db_user.get("suspended")))
     with _cache_lock:

@@ -4,8 +4,8 @@ What's open, most important first. Done items are deleted, not ticked:
 `git log` and [operations/incidents.md](operations/incidents.md) are the history.
 
 ## Security
-1. **Pin the build toolchain.** Build Nixpacks into a pinned builder image instead of `curl | bash` per build; pin Kaniko by digest.
-2. **SSO for Grafana and ArgoCD** (GitHub OAuth) instead of admin passwords.
+1. **Bake Nixpacks into a builder image** pinned by digest, so builds stop downloading it (it is already a pinned, checksummed release).
+2. **Trim Kaniko's capabilities** to what it needs, verified with a test build of each builder type.
 
 ## Reliability
 3. **Second alert channel** (email) in case Telegram or the relay is down.
@@ -15,5 +15,4 @@ What's open, most important first. Done items are deleted, not ticked:
 ## Product
 6. **Custom domains** for user apps.
 7. **Opt-in app metrics.** Scrape `/metrics` only for apps that declare it (for example in `shipzen.yaml`), so apps without it don't raise "can't reach" alarms.
-8. **One shipzen.yaml schema.** The worker accepts `buildContext`, but `/projects/analyze` rejects it as unknown; make them agree.
-9. **Invite flow.** Today access is a fixed allowlist in the deployment manifests.
+8. **Invitation emails.** Invitations work today, but the admin has to tell the person; send them a link.

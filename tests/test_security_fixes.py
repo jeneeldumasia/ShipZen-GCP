@@ -182,6 +182,51 @@ def test_build_job_has_no_identity_and_reports_its_digest(builder_cls):
     assert vol["secret"]["secretName"] == "registry-abcdef12"
 
 
+@pytest.mark.parametrize("builder_cls", ["DockerfileBuilder", "NixpacksBuilder"])
+def test_only_kaniko_runs_as_root(builder_cls):
+    """Clone, setup and Nixpacks containers run unprivileged; nothing installs packages."""
+    job = getattr(worker, builder_cls)().generate_job_manifest(
+        "abcdef12-0000", "https://github.com/o/r", "main", "img:tag", {"inject_server_js": True})
+    pod = job["spec"]["template"]["spec"]
+    assert pod["securityContext"]["fsGroup"] == 1000
+    for ic in pod["initContainers"]:
+        sc = ic["securityContext"]
+        assert sc["runAsNonRoot"] is True and sc["runAsUser"] == 1000
+        assert sc["capabilities"]["drop"] == ["ALL"] and sc["allowPrivilegeEscalation"] is False
+        assert {"name": "HOME", "value": "/tmp"} in ic["env"]
+        script = " ".join(ic.get("command", []) + ic.get("args", []))
+        assert "apk add" not in script and "chmod" not in script
+    kaniko = next(c for c in pod["containers"] if c["name"] == "kaniko")
+    assert kaniko["securityContext"]["allowPrivilegeEscalation"] is False
+
+
+def test_static_site_start_command_goes_through_nixpacks():
+    """The start script used to be patched into package.json after `apk add python3`."""
+    job = worker.NixpacksBuilder().generate_job_manifest(
+        "abcdef12-0000", "https://github.com/o/r", "main", "img:tag",
+        {"inject_server_js": True, "buildContext": "web"})
+    pod = job["spec"]["template"]["spec"]
+    gen = next(c for c in pod["initContainers"] if c["name"] == "nixpacks-generate")
+    assert gen["args"][:2] == ["build", "/workspace/web"]
+    assert gen["args"][-2:] == ["--start-cmd", "node server.cjs"]
+    setup = next(c for c in pod["initContainers"] if c["name"] == "setup")
+    assert {"name": "BUILD_DIR", "value": "/workspace/web"} in setup["env"]
+    assert "web" not in setup["command"][2]  # the folder is passed as $BUILD_DIR, not interpolated
+
+
+def test_build_images_can_be_pinned_from_the_environment(monkeypatch):
+    import importlib.util
+    from _component import ROOT
+    monkeypatch.setenv("KANIKO_IMAGE", "gcr.io/kaniko-project/executor:v1.23.2@sha256:" + "b" * 64)
+    monkeypatch.setenv("GIT_CLONE_IMAGE", "alpine/git:2.43.0@sha256:" + "c" * 64)
+    spec = importlib.util.spec_from_file_location("builder_pinned", ROOT / "worker" / "builder.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    job = mod.DockerfileBuilder().generate_job_manifest("abcdef12-0000", "https://github.com/o/r", "main", "i:t", {})
+    pod = job["spec"]["template"]["spec"]
+    assert pod["containers"][0]["image"].endswith("b" * 64)
+    assert pod["initContainers"][0]["image"].endswith("c" * 64)
+
+
 def test_builds_push_to_staging_not_the_verified_registry():
     img = "us-central1-docker.pkg.dev/p/shipzen-builds/proj:dep"
     assert worker.staging_uri_for(img) == "us-central1-docker.pkg.dev/p/shipzen-staging/proj:dep"

@@ -19,6 +19,10 @@ class ShipzenConfig(BaseModel):
     build_args: Optional[Dict[str, str]] = None
     replicas: Optional[int] = Field(None, ge=1, le=20)
     health_check_path: Optional[str] = None
+    # Same key and rules as the worker (shipzen_common/repo_config.py): build
+    # this folder instead of the repository root. It used to be rejected here
+    # as an unknown field while the worker accepted it.
+    buildContext: Optional[str] = None
 
     @field_validator('health_check_path')
     @classmethod
@@ -26,6 +30,17 @@ class ShipzenConfig(BaseModel):
         if v and not v.startswith('/'):
             raise ValueError("health_check_path must start with /")
         return v
+
+    @field_validator('buildContext')
+    @classmethod
+    def validate_build_context(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        from shipzen_common.repo_config import RepoConfigError, parse_repo_config
+        try:
+            return parse_repo_config({"buildContext": v})["buildContext"]
+        except RepoConfigError as e:
+            raise ValueError(str(e))
 
 
 @dataclass
@@ -175,7 +190,7 @@ class RepoAnalyzer:
                     ) if err["type"] == "extra_forbidden"]
                     if unknown_keys:
                         raise ValueError(f"shipzen.yaml contains unknown fields: {unknown_keys}. "
-                                         f"Allowed fields are: builder, port, build_args, replicas, health_check_path")
+                                         f"Allowed fields are: {', '.join(ShipzenConfig.model_fields)}")
                     raise ValueError(f"shipzen.yaml validation error: {e}")
                 except yaml.YAMLError as e:
                     raise ValueError(f"shipzen.yaml is not valid YAML: {e}")

@@ -46,3 +46,26 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q -ra --maxfail=50
+
+  terraform:
+    # Catches Terraform mistakes (duplicate arguments, undeclared variables,
+    # bad references) on the pull request, before Apply Infrastructure Changes.
+    # No credentials and no state: -backend=false skips HCP Terraform.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [terraform, terraform-devbox]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: terraform validate
+        working-directory: ${{ matrix.dir }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
