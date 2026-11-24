@@ -39,6 +39,7 @@ networking, secrets, observability, cost control) is code in this repository.
 | 🟢 **Blue-green and rollback** | Every deploy is a new release that has to pass readiness checks before traffic switches. Rolling back inside the grace window is instant. |
 | 📬 **Reliable queue** | A transactional outbox feeds Redis Streams consumer groups, with retries and a dead-letter queue, so a deploy is never queued without being recorded. |
 | 🔐 **No long-lived credentials** | CI uses Workload Identity Federation, pods use GKE Workload Identity, Git access goes through a GitHub App, and secrets come from Secret Manager via External Secrets. |
+| 🎟️ **Invite-only access** | GitHub sign-in, limited to an allowlist plus invitations admins create and revoke from the console, with no redeploy. Grafana and ArgoCD can use GitHub sign-in too. |
 | 👀 **Pull-request previews** | PRs can get their own preview deployment, and a push to the tracked branch deploys automatically. |
 | 📊 **Readable monitoring** | Grafana dashboards generated from code, logs per app (Loki), and alerts to Telegram. |
 | 💸 **Costs nothing when idle** | Everything is Terraform. The cluster tears itself down when unused ($0 while down) and rebuilds in about 20 minutes. |

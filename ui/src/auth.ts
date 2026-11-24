@@ -37,6 +37,11 @@ if (githubClientId && githubClientSecret) {
 
 type Token = Record<string, unknown>
 
+// Same resolution as the /api/proxy route: in-cluster service, else API_URL.
+const API_BASE = process.env.KUBERNETES_SERVICE_HOST
+  ? "http://shipzen-api.shipzen-system.svc.cluster.local:80"
+  : (process.env.API_URL ?? "http://localhost:8000")
+
 // Exchange the refresh token for a new access token (GitHub rotates both).
 // On failure the session is marked with an error; middleware then sends the
 // user back to the sign-in page instead of leaving them on a broken dashboard.
@@ -70,24 +75,44 @@ async function refreshGitHubToken(token: Token): Promise<Token> {
   }
 }
 
+// Ask the API whether this GitHub token belongs to someone allowed in
+// (allowlist or invitation). Anything but a 200 means no.
+async function apiAcceptsToken(accessToken?: string): Promise<boolean> {
+  if (!accessToken) return false
+  try {
+    const res = await fetch(`${API_BASE}/users/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    })
+    return res.ok
+  } catch (e) {
+    console.error("Sign-in check against the API failed:", e)
+    return false
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   secret: process.env.AUTH_SECRET || process.env.SHIPZEN_AUTH_SECRET,
   trustHost: true,
   callbacks: {
-    // Invite-only: refuse GitHub sign-in for logins not in ALLOWED_GITHUB_USERS
-    // (comma-separated). The API enforces the same list; this stops strangers
-    // getting a session at all. Fails closed: an empty list lets nobody in,
-    // except in local development or with ALLOW_OPEN_SIGNUP=true.
+    // Invite-only. A login on ALLOWED_GITHUB_USERS (comma-separated, same list
+    // as the API) is let in straight away. Anyone else is let in only if the
+    // API accepts their GitHub token: that's where admin invitations live
+    // (POST /admin/invitations), and the API re-checks on every request anyway.
+    // Fails closed: if the API says no or can't be reached, no session.
     async signIn({ account, profile }) {
       if (account?.provider !== "github") return true
       const allowed = (process.env.ALLOWED_GITHUB_USERS || "")
         .split(",").map((u) => u.trim().toLowerCase()).filter(Boolean)
-      if (allowed.length === 0) {
-        return process.env.NODE_ENV === "development" || process.env.ALLOW_OPEN_SIGNUP === "true"
-      }
       const login = String((profile as { login?: string } | undefined)?.login || "").toLowerCase()
-      return allowed.includes(login)
+      if (login && allowed.includes(login)) return true
+      if (allowed.length === 0 &&
+          (process.env.NODE_ENV === "development" || process.env.ALLOW_OPEN_SIGNUP === "true")) {
+        return true
+      }
+      return apiAcceptsToken(account.access_token)
     },
     async jwt({ token, account }) {
       if (account) {

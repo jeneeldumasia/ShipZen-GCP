@@ -1,4 +1,5 @@
 import threading
+from typing import Optional
 from auth import get_current_user, User
 from fastapi import Depends, HTTPException
 from psycopg2.pool import ThreadedConnectionPool
@@ -250,3 +251,105 @@ def assert_project_owner(project_id: str, current_user: User, detail: str) -> No
             member = cur.fetchone()
     if not member or member[0] != 'owner':
         raise HTTPException(status_code=403, detail=detail)
+
+
+# ── Invitations ───────────────────────────────────────────────────────────────
+# An admin invites a GitHub login or a verified email. The first sign-in that
+# matches accepts it; after that the invitation is the user's standing access,
+# until an admin revokes it. See migrations/0016_user_invitations.sql.
+
+_INVITATION_COLUMNS = ("id, github_login, email, role, created_by, created_at, "
+                       "expires_at, accepted_at, accepted_by")
+
+
+def create_invitation(created_by: str, github_login: Optional[str] = None,
+                      email: Optional[str] = None, role: str = 'user',
+                      expires_in_days: Optional[int] = 14) -> dict:
+    """Create an invitation for a GitHub login or an email address."""
+    login = github_login.strip().lstrip("@").lower() if github_login and github_login.strip() else None
+    mail = email.strip().lower() if email and email.strip() else None
+    if not login and not mail:
+        raise HTTPException(status_code=400, detail="Give a GitHub login or an email address")
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(
+                f"INSERT INTO user_invitations (github_login, email, role, created_by, expires_at) "
+                f"VALUES (%s, %s, %s, %s, CASE WHEN %s::int IS NULL THEN NULL "
+                f"ELSE NOW() + make_interval(days => %s::int) END) "
+                f"RETURNING {_INVITATION_COLUMNS};",
+                (login, mail, role, created_by, expires_in_days, expires_in_days))
+            inv = cur.fetchone()
+        conn.commit()
+    return dict(inv)
+
+
+def list_invitations() -> list:
+    """The 200 most recent invitations, pending and accepted."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"SELECT {_INVITATION_COLUMNS} FROM user_invitations "
+                        f"ORDER BY created_at DESC LIMIT 200;")
+            return [dict(r) for r in cur.fetchall()]
+
+
+def find_access_invitation(user_id: str, login: Optional[str], email: Optional[str]) -> Optional[dict]:
+    """The invitation that lets this user in, if any.
+
+    Either one they already accepted, or a pending, unexpired one for their
+    GitHub login or verified email. Errors propagate: the caller refuses the
+    sign-in rather than guessing.
+    """
+    login = login.lower() if login else None
+    email = email.lower() if email else None
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(
+                f"SELECT {_INVITATION_COLUMNS} FROM user_invitations "
+                f"WHERE accepted_by = %s "
+                f"   OR (accepted_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) "
+                f"       AND ((%s::text IS NOT NULL AND LOWER(github_login) = %s) "
+                f"         OR (%s::text IS NOT NULL AND LOWER(email) = %s))) "
+                f"ORDER BY (accepted_by = %s) DESC NULLS LAST, created_at DESC LIMIT 1;",
+                (user_id, login, login, email, email, user_id))
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def accept_invitation(invitation_id, user_id: str) -> Optional[str]:
+    """Mark a pending invitation accepted by user_id. Returns the user's role.
+
+    An admin invitation makes the user an admin (admin_source 'invite', so
+    revoking the invitation takes the role away again).
+    """
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(
+                "UPDATE user_invitations SET accepted_at = NOW(), accepted_by = %s "
+                "WHERE id = %s AND accepted_at IS NULL RETURNING role;",
+                (user_id, str(invitation_id)))
+            row = cur.fetchone()
+            if row and row["role"] == "admin":
+                cur.execute("UPDATE users SET role = 'admin', admin_source = 'invite' "
+                            "WHERE id = %s AND role <> 'admin';", (user_id,))
+            cur.execute("SELECT role FROM users WHERE id = %s;", (user_id,))
+            user = cur.fetchone()
+        conn.commit()
+    return user["role"] if user else None
+
+
+def revoke_invitation(invitation_id: str) -> Optional[dict]:
+    """Delete an invitation. Returns it (None if there was none).
+
+    If it had been accepted, the user loses access, and an admin role that came
+    from the invitation goes with it.
+    """
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute(f"DELETE FROM user_invitations WHERE id = %s RETURNING {_INVITATION_COLUMNS};",
+                        (invitation_id,))
+            inv = cur.fetchone()
+            if inv and inv["accepted_by"]:
+                cur.execute("UPDATE users SET role = 'user', admin_source = NULL "
+                            "WHERE id = %s AND admin_source = 'invite';", (inv["accepted_by"],))
+        conn.commit()
+    return dict(inv) if inv else None

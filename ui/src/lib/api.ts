@@ -322,12 +322,35 @@ export const api = {
         `/admin/users/${encodeURIComponent(userId)}/suspension`,
         { method: "PUT", body: JSON.stringify({ suspended, reason }) }),
     cost: () => request<SessionCost>("/admin/cost"),
+    invitations: () => request<Invitation[]>("/admin/invitations"),
+    createInvitation: (body: NewInvitation) =>
+      request<Invitation>("/admin/invitations", { method: "POST", body: JSON.stringify(body) }),
+    revokeInvitation: (id: string) =>
+      request<{ message: string }>(`/admin/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
 
   platform: {
     status: () => request<PlatformStatus>("/platform/status"),
   },
 };
+
+export interface Invitation {
+  id: string;
+  github_login: string | null;
+  email: string | null;
+  role: "user" | "admin";
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  accepted_at: string | null;
+  accepted_by: string | null;
+}
+export interface NewInvitation {
+  github_login?: string;
+  email?: string;
+  role: "user" | "admin";
+  expires_in_days: number | null;
+}
 
 export type AnnouncementLevel = "info" | "warning" | "critical";
 export interface Announcement {

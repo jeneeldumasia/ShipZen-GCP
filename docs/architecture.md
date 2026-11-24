@@ -106,7 +106,7 @@ deployment.
 ## Data
 
 Postgres tables: `users`, `projects`, `project_members` (owner / editor / viewer),
-`deployments`, `builds`, `audit_logs` (append-only), and `outbox_events`, which
+`deployments`, `builds`, `audit_logs` (append-only), `user_invitations` (who an admin let in, see [security.md](security.md)), and `outbox_events`, which
 the API relays to Redis so a deploy is never queued without being recorded (or
 the reverse). The schema lives in numbered migrations, `api/migrations/NNNN_*.sql`,
 which the API applies at startup (`api/migrate.py`, recorded in `schema_migrations`,

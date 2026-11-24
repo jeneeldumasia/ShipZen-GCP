@@ -14,6 +14,7 @@ import socket
 import jwt
 import requests
 import base64
+import hashlib
 from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 from jinja2 import Environment, FileSystemLoader
@@ -190,6 +191,25 @@ GAR_REGISTRY = os.getenv("GAR_REGISTRY", "")
 GCP_PROJECT = os.getenv("GCP_PROJECT", "")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 
+
+def _egress_ports(raw: str) -> list:
+    """TENANT_EGRESS_PORTS, e.g. "80,443,5432": the only TCP ports tenant apps
+    may open to the internet. Empty (the default) leaves them unrestricted,
+    as before; DNS and traffic inside the project are always allowed."""
+    ports = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        port = int(part)
+        if not 1 <= port <= 65535:
+            raise ValueError(f"TENANT_EGRESS_PORTS: {port} is not a port")
+        ports.append(port)
+    return sorted(set(ports))
+
+
+TENANT_EGRESS_PORTS = _egress_ports(os.getenv("TENANT_EGRESS_PORTS", ""))
+
 TENANT_REPO_URL = os.environ.get("TENANT_REPO_URL", "https://github.com/jeneeldumasia/shipzen-tenants")
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY")
@@ -200,7 +220,31 @@ from shipzen_common.repo_config import valid_health_check_path, valid_image_dige
 from shipzen_common.notify import notify_deployment
 from shipzen_common.sizes import scaling_problem, size_spec
 
+# What this controller last wrote (or found) at each path in the tenants repo:
+# path -> (blob sha, sha256 of the content, time.monotonic() when cached).
+# The reconcile loop renders every manifest on every pass; when the rendered
+# content matches the cache, the pass skips GitHub entirely instead of a GET per
+# file per pass (rate limits). Entries expire after MANIFEST_CACHE_TTL_SECONDS,
+# so a file changed or deleted in Git by hand is still repaired, just within
+# that window instead of on the next pass. Empty after a restart or failover.
+MANIFEST_CACHE_TTL_SECONDS = int(os.getenv("MANIFEST_CACHE_TTL_SECONDS", "600"))
+_manifest_cache: dict = {}
+
+
+def _cache_fresh(path: str, content_hash: str) -> bool:
+    entry = _manifest_cache.get(path)
+    return bool(entry and entry[1] == content_hash
+                and time.monotonic() - entry[2] < MANIFEST_CACHE_TTL_SECONDS)
+
+
 def commit_manifests_to_git(namespace: str, filename: str, content: str, delete: bool = False):
+    path = f"namespaces/{namespace}/{filename}"
+    content_hash = None
+    if not delete:
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if _cache_fresh(path, content_hash):
+            return
+
     token = get_github_app_token(TENANT_REPO_URL, write=True)
     if not token:
         logger.error("Failed to get GitHub token for GitOps")
@@ -209,11 +253,10 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     owner, repo = parts[-2], parts[-1]
     if repo.endswith(".git"):
         repo = repo[:-4]
-    
-    path = f"namespaces/{namespace}/{filename}"
+
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
-    
+
     sha = None
     existing = None
     resp = requests.get(api_url, headers=headers, timeout=15)
@@ -228,6 +271,7 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
         return
 
     if delete:
+        _manifest_cache.pop(path, None)
         if sha:
             data = {"message": f"Delete {path}", "sha": sha, "branch": "main"}
             requests.delete(api_url, headers=headers, json=data, timeout=15)
@@ -236,6 +280,7 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     # The reconcile loop calls this every pass; without this check each pass
     # pushed an empty commit to the tenants repo (and woke ArgoCD) for nothing.
     if existing is not None and existing == content:
+        _manifest_cache[path] = (sha, content_hash, time.monotonic())
         return
 
     data = {
@@ -245,9 +290,17 @@ def commit_manifests_to_git(namespace: str, filename: str, content: str, delete:
     }
     if sha:
         data["sha"] = sha
-        
+
     res = requests.put(api_url, headers=headers, json=data, timeout=15)
-    if res.status_code not in (200, 201):
+    if res.status_code in (200, 201):
+        try:
+            new_sha = res.json().get("content", {}).get("sha")
+        except Exception:
+            new_sha = None
+        _manifest_cache[path] = (new_sha, content_hash, time.monotonic())
+    else:
+        # Don't trust the cache for this path until a pass succeeds again.
+        _manifest_cache.pop(path, None)
         logger.error(f"Failed to commit to Git: {res.status_code} {res.text}")
 
 
@@ -814,6 +867,7 @@ def render_tenant(namespace: str, project_id: str, name: str, subdomain=None) ->
         vanity=subdomain if valid_vanity(subdomain) else "",
         gar_registry=GAR_REGISTRY,
         gcp_project=GCP_PROJECT,
+        egress_ports=TENANT_EGRESS_PORTS,
     )
 
 

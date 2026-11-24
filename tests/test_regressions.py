@@ -63,8 +63,12 @@ def test_github_allowlist_rejects_unlisted_users():
     client = MagicMock()
     client.get = MagicMock(side_effect=[resp_user, resp_mail])
     from fastapi.security import HTTPAuthorizationCredentials
+    import sys, types
+    no_invites = types.ModuleType("database")
+    no_invites.find_access_invitation = lambda *a: None
     with patch.dict(auth, {"_http_client": client, "GITHUB_ENABLED": True,
-                           "ALLOWED_GITHUB_USERS": {"jeneeldumasia"}}):
+                           "ALLOWED_GITHUB_USERS": {"jeneeldumasia"}}), \
+         patch.dict(sys.modules, {"database": no_invites}):
         async def call():
             fut = asyncio.Future(); fut.set_result(None)
             client.get.side_effect = [_awaitable(resp_user), _awaitable(resp_mail)]
