@@ -13,6 +13,17 @@ resource "helm_release" "argocd" {
   namespace        = "argocd"
   create_namespace = true
 
+  # GitHub sign-in through Dex, when configured (sso.tf). Empty list otherwise.
+  values = local.argocd_sso_values
+
+  dynamic "set_sensitive" {
+    for_each = local.argocd_sso_enabled ? [1] : []
+    content {
+      name  = "configs.secret.extra.dex\\.github\\.clientSecret"
+      value = var.argocd_github_client_secret
+    }
+  }
+
   set {
     name  = "configs.cm.timeout\\.reconciliation"
     value = "15s"

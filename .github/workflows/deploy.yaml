@@ -64,6 +64,10 @@ jobs:
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_grafana_github_client_id: ${{ secrets.GRAFANA_GITHUB_CLIENT_ID }}
+          TF_VAR_grafana_github_client_secret: ${{ secrets.GRAFANA_GITHUB_CLIENT_SECRET }}
+          TF_VAR_argocd_github_client_id: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
+          TF_VAR_argocd_github_client_secret: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
@@ -84,6 +88,10 @@ jobs:
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_grafana_github_client_id: ${{ secrets.GRAFANA_GITHUB_CLIENT_ID }}
+          TF_VAR_grafana_github_client_secret: ${{ secrets.GRAFANA_GITHUB_CLIENT_SECRET }}
+          TF_VAR_argocd_github_client_id: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
+          TF_VAR_argocd_github_client_secret: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
@@ -108,6 +116,10 @@ jobs:
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_grafana_github_client_id: ${{ secrets.GRAFANA_GITHUB_CLIENT_ID }}
+          TF_VAR_grafana_github_client_secret: ${{ secrets.GRAFANA_GITHUB_CLIENT_SECRET }}
+          TF_VAR_argocd_github_client_id: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
+          TF_VAR_argocd_github_client_secret: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}
@@ -147,6 +159,10 @@ jobs:
           TF_VAR_pg_password: ${{ secrets.PG_PASSWORD }}
           TF_VAR_redis_password: ${{ secrets.REDIS_PASSWORD }}
           TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+          TF_VAR_grafana_github_client_id: ${{ secrets.GRAFANA_GITHUB_CLIENT_ID }}
+          TF_VAR_grafana_github_client_secret: ${{ secrets.GRAFANA_GITHUB_CLIENT_SECRET }}
+          TF_VAR_argocd_github_client_id: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
+          TF_VAR_argocd_github_client_secret: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
           TF_VAR_github_app_id: ${{ secrets.SHIPZEN_GITHUB_APP_ID }}
           TF_VAR_github_app_installation_id: ${{ secrets.SHIPZEN_APP_INSTALLATION_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.SHIPZEN_GITHUB_APP_PRIVATE_KEY }}

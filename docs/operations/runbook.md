@@ -90,6 +90,41 @@ Cloudflare login in front of them, letting through only the emails in the
 4. Next **Deploy Platform Infra** (or **Apply Infrastructure Changes**) creates the
    Access applications. Until step 3 is done, nothing changes.
 
+**Let someone in** (no redeploy). Admin console → **Invitations**: enter their
+GitHub login (or the verified primary email on their GitHub account), pick
+User or Admin, and how long they have to accept. They can sign in straight away;
+the first sign-in accepts the invitation and it stays their access. **Revoke**
+removes it, and their access, immediately. Logins in `ALLOWED_GITHUB_USERS`
+(`infra/api/deployment.yaml`, `infra/ui/deployment.yaml`) still work as before.
+
+**Sign in to Grafana and ArgoCD with GitHub** (one-time, optional). Off until
+configured; the admin passwords keep working. Create two GitHub OAuth apps
+(Settings → Developer settings → OAuth Apps), one per tool, because each has a
+single callback URL:
+- Grafana: homepage `https://grafana-shipzen.jeneeldumasia.codes`, callback `https://grafana-shipzen.jeneeldumasia.codes/login/github`
+- ArgoCD: homepage `https://argocd.jeneeldumasia.codes`, callback `https://argocd.jeneeldumasia.codes/api/dex/callback`
+
+Add the repository secrets `GRAFANA_GITHUB_CLIENT_ID`, `GRAFANA_GITHUB_CLIENT_SECRET`,
+`ARGOCD_GITHUB_CLIENT_ID` and `ARGOCD_GITHUB_CLIENT_SECRET`, then run **Apply
+Infrastructure Changes**. Grafana lets in only the logins in
+`sso_admin_github_logins` (`terraform/sso.tf`, default `jeneeldumasia`) as Admin;
+ArgoCD gives `role:admin` only to the emails in `ADMIN_EMAILS` and nothing to
+anyone else.
+
+**Pin the build images** (after any tag bump in `worker/builder.py`). Run
+**Pin build images**: it looks up the digest each image tag points to and opens a
+PR that pins the defaults. If the PR can't be opened (repository setting
+"Allow GitHub Actions to create and approve pull requests" is off), the branch
+is pushed and the run says which.
+
+**Limit tenant apps' outbound ports** (optional). Set `TENANT_EGRESS_PORTS` on
+the controller (`infra/controller/deployment.yaml`), for example
+`80,443,5432,3306,6379,27017,465,587`. The controller rewrites every tenant's
+NetworkPolicy within one GC cycle (about 20 minutes). Apps then can't open other
+ports to the internet (SMTP 25, IRC and the like). To verify, run
+`EXPECT_TENANT_PORT_LIMIT=1 scripts/netpolicy-probe.sh` against the cluster. Empty (the default) leaves
+them unrestricted.
+
 **Encrypt secrets stored in Postgres** (one-time, optional). Per-project webhook
 secrets are encrypted with `SHIPZEN_DATA_KEY` when it's set. Generate a key once:
 `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`

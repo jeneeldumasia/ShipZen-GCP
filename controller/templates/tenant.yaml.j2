@@ -86,7 +86,15 @@ spec:
           port: 53
     - to:
         - podSelector: {}
-    - to:
+    {#- Internet egress. With the controller's TENANT_EGRESS_PORTS set, only those
+        TCP ports (e.g. web and database ports, not SMTP 25 or IRC); otherwise any.
+        A Jinja comment, so the default render is byte-for-byte what it was. #}
+    - {% if egress_ports %}ports:
+{%- for port in egress_ports %}
+        - protocol: TCP
+          port: {{ port }}
+{%- endfor %}
+      {% endif %}to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:

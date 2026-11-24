@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings, FolderGit2, Server, Users, ShieldAlert } from "lucide-react";
+import { Settings, FolderGit2, Server, Users, ShieldAlert, MailPlus } from "lucide-react";
 
 export function AdminSidebar() {
   const pathname = usePathname();
@@ -12,6 +12,7 @@ export function AdminSidebar() {
     { name: "Projects", href: "/admin/projects", icon: FolderGit2 },
     { name: "Deployments", href: "/admin/deployments", icon: Server },
     { name: "Users", href: "/admin/users", icon: Users },
+    { name: "Invitations", href: "/admin/invitations", icon: MailPlus },
     { name: "Audit Logs", href: "/admin/audit", icon: ShieldAlert },
   ];
 
