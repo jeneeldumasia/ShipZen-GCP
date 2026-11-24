@@ -17,6 +17,3 @@ What's open, most important first. Done items are deleted, not ticked:
 7. **Opt-in app metrics.** Scrape `/metrics` only for apps that declare it (for example in `shipzen.yaml`), so apps without it don't raise "can't reach" alarms.
 8. **One shipzen.yaml schema.** The worker accepts `buildContext`, but `/projects/analyze` rejects it as unknown; make them agree.
 9. **Invite flow.** Today access is a fixed allowlist in the deployment manifests.
-
-## Housekeeping
-10. Clear out root-level leftovers: one-off test scripts (`test_k8s_*.py`, `test_db.py`), lint and test output files (`*_results.txt`), `commit_history_parsed.txt`, `dev_commits.txt`, `patch.yaml`, `karpenter-patch.yaml`, `update_aws_to_gcp.py`, and the AWS cleanup script.
