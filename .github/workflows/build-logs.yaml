@@ -1,0 +1,84 @@
+name: Build Logs
+
+# Read-only: prints the build log of one deployment (or the newest one), so a
+# failed build can be diagnosed without signing in to the UI. Changes nothing.
+#
+# The repository is public, so its Actions logs are too: tokens are redacted
+# with the same filter as Cluster Report, and only the last 300 lines are shown.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: "Deployment ID (full UUID). Empty: the newest build."
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Print build log
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+        run: |
+          set -uo pipefail
+          redact() {
+            sed -E -e 's/ya29\.[A-Za-z0-9._-]+/ya29.<redacted>/g' \
+                   -e 's/(gh[pousr]_)[A-Za-z0-9]{20,}/\1<redacted>/g' \
+                   -e 's/(github_pat_)[A-Za-z0-9_]{20,}/\1<redacted>/g' \
+                   -e 's/(x-access-token:)[^@ ]+/\1<redacted>/g' \
+                   -e 's/(AUTHORIZATION: (basic|bearer) )[A-Za-z0-9+\/=._-]+/\1<redacted>/gI' \
+                   -e 's/(^| )(-p|--password|--token|token[=:]) *[^ ]{16,}/\1\2 <redacted>/gI'
+          }
+          if [ -n "$DEPLOYMENT_ID" ] && ! printf '%s' "$DEPLOYMENT_ID" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::deployment_id must be a full UUID"; exit 1
+          fi
+
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c \
+            --project "${{ secrets.GCP_PROJECT_ID }}" >/dev/null 2>&1 || true
+
+          # The bucket name lives in the platform's config Secret; fall back to
+          # the Terraform naming convention when the cluster is down.
+          BUCKET="$(kubectl get secret shipzen-gcs-config -n shipzen-system \
+            -o jsonpath='{.data.bucket_name}' 2>/dev/null | base64 -d)"
+          if [ -z "$BUCKET" ]; then
+            BUCKET="$(gcloud storage buckets list --project "${{ secrets.GCP_PROJECT_ID }}" \
+              --format='value(name)' 2>/dev/null | grep -m1 'build-logs')"
+          fi
+          if [ -z "$BUCKET" ]; then echo "::error::couldn't find the build-logs bucket"; exit 1; fi
+
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            DEPLOYMENT_ID="$(gcloud storage ls -l "gs://$BUCKET/logs/*/build.log" 2>/dev/null \
+              | grep -v '^TOTAL' | sort -k2 | tail -n1 | sed -E 's|.*/logs/([^/]+)/build.log|\1|')"
+          fi
+          if [ -z "$DEPLOYMENT_ID" ]; then echo "::error::no build logs found"; exit 1; fi
+
+          echo "Deployment: $DEPLOYMENT_ID"
+          if ! gcloud storage cat "gs://$BUCKET/logs/$DEPLOYMENT_ID/build.log" > build.log 2>/dev/null; then
+            echo "No stored log yet; showing the live build pod instead."
+            kubectl logs -n shipzen-build -l "shipzen.jeneeldumasia.codes/deployment=$DEPLOYMENT_ID" \
+              --all-containers --prefix --tail=300 > build.log 2>&1 || true
+          fi
+          echo "::group::Build log (last 300 lines, redacted)"
+          tail -n 300 build.log | redact
+          echo "::endgroup::"
+          # The lines that usually explain a failure, as an annotation.
+          grep -iE 'error|fail|denied|not found|exit status' build.log | tail -n 15 | redact \
+            | awk 'BEGIN{ORS="%0A"} {print}' | sed 's/^/::warning title=Likely cause::/' ; echo

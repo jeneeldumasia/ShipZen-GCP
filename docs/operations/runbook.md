@@ -90,6 +90,10 @@ Cloudflare login in front of them, letting through only the emails in the
 4. Next **Deploy Platform Infra** (or **Apply Infrastructure Changes**) creates the
    Access applications. Until step 3 is done, nothing changes.
 
+**Read a build log without the UI.** Run **Build Logs** (Actions) with the
+deployment ID, or leave it empty for the newest build. It prints the stored log
+(redacted) and annotates the lines that usually explain a failure.
+
 **Let someone in** (no redeploy). Admin console → **Invitations**: enter their
 GitHub login (or the verified primary email on their GitHub account), pick
 User or Admin, and how long they have to accept. They can sign in straight away;
