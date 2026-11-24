@@ -65,9 +65,11 @@ def harden_build_job(job: dict, overrides: dict) -> dict:
     runtime_class = os.environ.get("BUILD_RUNTIME_CLASS", "gvisor")
     if runtime_class:
         pod["runtimeClassName"] = runtime_class
-    # The emptyDir workspace is group-owned by BUILD_UID, so the unprivileged
-    # init containers and the root Kaniko container can all use it.
-    pod.setdefault("securityContext", {})["fsGroup"] = BUILD_UID
+    # No pod-level fsGroup: it would add a supplementary group to every
+    # container, Kaniko included, and Nix (run by Nixpacks' Dockerfile inside
+    # Kaniko) fails to start its build processes with one ("reading a line:
+    # Input/output error"). The emptyDir workspace is world-writable (0777)
+    # already, so the unprivileged init containers can write to it without it.
     secret = overrides.get("registry_secret_name")
     if secret:
         pod.setdefault("volumes", []).append({

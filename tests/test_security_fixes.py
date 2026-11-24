@@ -188,7 +188,7 @@ def test_only_kaniko_runs_as_root(builder_cls):
     job = getattr(worker, builder_cls)().generate_job_manifest(
         "abcdef12-0000", "https://github.com/o/r", "main", "img:tag", {"inject_server_js": True})
     pod = job["spec"]["template"]["spec"]
-    assert pod["securityContext"]["fsGroup"] == 1000
+    assert "fsGroup" not in pod.get("securityContext", {})  # breaks Nix inside Kaniko
     for ic in pod["initContainers"]:
         sc = ic["securityContext"]
         assert sc["runAsNonRoot"] is True and sc["runAsUser"] == 1000
