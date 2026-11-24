@@ -47,7 +47,7 @@ UNPRIVILEGED_ENV = [
 
 
 def harden_build_job(job: dict, overrides: dict) -> dict:
-    """Lock down a build Job (security finding C4). Builds run untrusted code.
+    """Lock down a build Job. Builds run untrusted code.
 
     - No Kubernetes API token in the pod.
     - Kaniko's only registry credential is the per-build Docker config the
@@ -57,7 +57,7 @@ def harden_build_job(job: dict, overrides: dict) -> dict:
     """
     pod = job["spec"]["template"]["spec"]
     pod["automountServiceAccountToken"] = False
-    # Own node pool, sandboxed with gVisor (security finding C5): a kernel or
+    # Own node pool, sandboxed with gVisor: a kernel or
     # container escape lands in the sandbox on a build-only node, not next to
     # the platform. BUILD_RUNTIME_CLASS="" turns gVisor off (e.g. if a tool
     # misbehaves under it) while keeping the separate pool.
@@ -112,7 +112,7 @@ class DockerfileBuilder(Builder):
         return os.path.exists(os.path.join(workspace_path, context_dir, "Dockerfile"))
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
-        # CRIT-01 Fix: Use environment variables instead of f-string interpolation
+        # Use environment variables instead of f-string interpolation
         git_clone_env = [
             {"name": "GIT_REPO_URL", "value": repo_url},
             {"name": "GIT_BRANCH", "value": branch},
@@ -172,7 +172,7 @@ class DockerfileBuilder(Builder):
                                     f"--destination={image_uri}",
                                     # No shared remote layer cache: every build could write it, so one
                                     # tenant could poison another's layers. The digest of what was
-                                    # pushed goes to the termination message for the worker (C4).
+                                    # pushed goes to the termination message for the worker.
                                     "--digest-file=/dev/termination-log"
                                 ],
                                 "resources": {
@@ -206,7 +206,7 @@ class NixpacksBuilder(Builder):
         return True  # Fallback for all other repos
 
     def generate_job_manifest(self, deployment_id: str, repo_url: str, branch: str, image_uri: str, overrides: dict) -> Dict[str, Any]:
-        # CRIT-01 Fix: Use environment variables instead of f-string interpolation
+        # Use environment variables instead of f-string interpolation
         git_clone_env = [
             {"name": "GIT_REPO_URL", "value": repo_url},
             {"name": "GIT_BRANCH", "value": branch},
@@ -365,7 +365,7 @@ EOF
                                     f"--destination={image_uri}",
                                     # No shared remote layer cache: every build could write it, so one
                                     # tenant could poison another's layers. The digest of what was
-                                    # pushed goes to the termination message for the worker (C4).
+                                    # pushed goes to the termination message for the worker.
                                     "--digest-file=/dev/termination-log"
                                 ],
                                 "resources": {

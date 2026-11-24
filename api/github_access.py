@@ -1,4 +1,4 @@
-"""Check that the signed-in user can read a GitHub repository (security finding C3).
+"""Check that the signed-in user can read a GitHub repository.
 
 The worker clones private repositories with a ShipZen GitHub App token, and the
 App can read every repository where anyone installed it. So before a project
@@ -79,7 +79,7 @@ def enforce_project_binding(project: dict, repo: Optional[dict]) -> None:
                     "Create a new project to deploy a different repository."))
 
 
-# ── Reading repositories through the GitHub API (security finding H3) ────────
+# ── Reading repositories through the GitHub API ────────
 # The API used to run `git ls-remote` / `git clone` on any URL a user typed,
 # from inside the API pod, which can reach internal addresses. Now it only talks
 # to api.github.com, with the user's own token, so private repositories they

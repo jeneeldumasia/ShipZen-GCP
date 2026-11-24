@@ -87,7 +87,7 @@ def _create_deployment(request: Request, project_id: str, body: CreateDeployment
             detail=f"Project is in status '{project['status']}' and cannot accept deployments"
         )
 
-    # CRIT-03 Fix: Reject if there's already an in-flight deployment for this project
+    # Reject if there's already an in-flight deployment for this project
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -106,7 +106,7 @@ def _create_deployment(request: Request, project_id: str, body: CreateDeployment
         logger.error(f"Failed to check in-flight deployments: {e}")
         raise HTTPException(status_code=500, detail="Failed to check deployment status")
 
-    # C3: only a repository the user can read, and the one this project is bound to.
+    # Only a repository the user can read, and the one this project is bound to.
     repo = check_repo_access(current_user, body.repo_url)
     enforce_project_binding(project, repo)
     check_deploy_limits(project_id, current_user.user_id)
@@ -324,7 +324,7 @@ def rollback_deployment(request: Request, project_id: str, project: dict = Depen
                 RETURNING *;
             """, (
                 deployment_id, project_id, last_good['repo_url'],
-                # Same image, pinned to the same digest (C4).
+                # Same image, pinned to the same digest.
                 last_good['image_uri'], last_good.get('image_digest'),
                 # Old releases were scaled to 0 by the controller; copying that
                 # value made the rollback wait for a ready pod that never came.
@@ -423,11 +423,11 @@ def get_deployment(request: Request, project_id: str, deployment_id: str, projec
 
 
 # ── WebSockets: one-time tickets, connection caps, lifetime ──────────────────
-# Browsers no longer hold the user's GitHub token (security finding H1), so a
+# Browsers no longer hold the user's GitHub token, so a
 # socket authenticates with a ticket: the UI's server asks POST /ws-tickets
 # (with the token) for a random value that is valid once, for 60 seconds. Each
 # user may hold WS_MAX_PER_USER sockets per API process, each for at most
-# WS_MAX_SECONDS (M5).
+# WS_MAX_SECONDS.
 
 WS_TICKET_TTL = 60
 WS_MAX_PER_USER = int(os.getenv("WS_MAX_PER_USER", "10"))
@@ -564,7 +564,7 @@ async def websocket_deployment_status(websocket: WebSocket, project_id: str, dep
 @router.get("/projects/{project_id}/deployments/{deployment_id}/logs/stream", tags=["Deployments"])
 async def stream_logs(project_id: str, deployment_id: str, project: dict = Depends(verify_project_access)):
 
-    # HIGH-05 Fix: Add timeout to SSE Pub/Sub listen to prevent leaked subscriptions
+    # Add timeout to SSE Pub/Sub listen to prevent leaked subscriptions
     import asyncio
 
     async def event_stream():
@@ -693,7 +693,7 @@ def get_build_logs(request: Request, project_id: str, deployment_id: str, build_
                     raise HTTPException(
                         status_code=404, detail="Log file not found in GCS")
 
-                # HIGH-06 Fix: Stream GCS object instead of loading entirely into memory
+                # Stream GCS object instead of loading entirely into memory
                 def stream_gcs_body():
                     with blob.open("rb") as f:
                         while True:

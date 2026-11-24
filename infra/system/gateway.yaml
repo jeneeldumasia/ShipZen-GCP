@@ -66,7 +66,7 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-      # Fix #15: redirect all HTTP traffic to HTTPS.
+      # Redirect all HTTP traffic to HTTPS.
       # Envoy Gateway implements this via an HTTPRoute filter attached to the
       # listener. The HTTPRoute below (shipzen-http-redirect) handles the
       # actual redirect; this listener just needs to accept routes from all
@@ -82,7 +82,7 @@ spec:
         namespaces:
           from: All
 ---
-# Fix #15: catch-all HTTPRoute on port 80 that issues a 301 redirect to HTTPS.
+# Catch-all HTTPRoute on port 80 that issues a 301 redirect to HTTPS.
 # Attach this to the http listener so all tenant traffic is upgraded.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

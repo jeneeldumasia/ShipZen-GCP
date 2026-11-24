@@ -161,7 +161,7 @@ class RepoAnalyzer:
             return services
 
         def walk_path(current_path: Path, _depth: int = 0):
-            # M-4 Fix: Limit recursion depth to prevent runaway traversal of deep repo trees
+            # Limit recursion depth to prevent runaway traversal of deep repo trees
             if _depth > 5:
                 return
 

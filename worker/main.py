@@ -55,12 +55,12 @@ GCS_LOG_BUCKET = os.environ.get("GCS_LOG_BUCKET", "")
 
 # Limit concurrent monitoring threads to prevent unbounded thread exhaustion
 import threading
-# MED-07 Fix: Reduce MAX_WORKERS from 200 to 20 to match DB pool size and prevent OOM
+# Reduce MAX_WORKERS from 200 to 20 to match DB pool size and prevent OOM
 MAX_WORKERS = 20
 _executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 _semaphore = threading.Semaphore(MAX_WORKERS)
 
-# PERF-04 Fix: Shared module-level Redis client
+# Shared module-level Redis client
 _redis_client = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, password=config.REDIS_PASSWORD)
 
 # Health check: tracks when the main loop last successfully iterated.
@@ -120,7 +120,7 @@ def _start_health_server(port: int = 8000):
     logger.info(f"Health+metrics server started on port {port} (/healthz, /metrics)")
 
 
-# ── Build output: staging → verified registry (security finding C4) ───────────
+# ── Build output: staging → verified registry ───────────
 # Builds run untrusted Dockerfiles, so they never get credentials for the
 # registry apps run from. Kaniko pushes to shipzen-staging with a 1-hour token
 # that can do nothing else, and reports the digest of what it pushed in its
@@ -232,7 +232,7 @@ def bound_repo_mismatch(project_id: str, repo_url: str):
     """The project's linked GitHub repository if repo_url is a different one, else None.
 
     The API already refuses repositories the user can't read and checks the
-    project's binding (security finding C3); this is the worker's own check,
+    project's binding; this is the worker's own check,
     so it never fetches a GitHub App token for another repository.
     """
     if not project_id or not repo_url.startswith("https://github.com/"):
@@ -428,7 +428,7 @@ def monitor_job(job_name: str, deployment_id: str, image_name: str, state_machin
             logger.info(
                 f"Build {deployment_id} successful. Reading the image config...")
 
-            # C4: copy exactly what this build reported pushing from staging
+            # Copy exactly what this build reported pushing from staging
             # into shipzen-builds (only the platform can write there), and pin
             # the deployment to that digest. Raises, failing the deployment, if
             # anything doesn't check out.
@@ -505,7 +505,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
         queue.add_to_dlq(message_id, data)
         return
         
-    # CRIT-01 Fix: Additional branch name validation at worker level
+    # Additional branch name validation at worker level
     import re
     if not re.match(r'^[a-zA-Z0-9_.\-/]{1,200}$', branch):
         logger.error(f"Invalid branch name received: {branch}")
@@ -542,7 +542,7 @@ def process_message(queue: QueueClient, state_machine: StateMachine, message_id:
 
     # Fix 8: Workspace directory leaks on clone failure, moved creation inside try and cleanup to finally
     workspace = f"/tmp/workspace_{deployment_id}"
-    # HIGH-11 Fix: Initialize before try block to prevent UnboundLocalError in finally
+    # Initialize before try block to prevent UnboundLocalError in finally
     github_secret_name = None
     registry_secret_name = None
     try:
@@ -732,7 +732,7 @@ def _process_and_release(queue: QueueClient, state_machine: StateMachine, messag
 
 
 def main():
-    # HIGH-10 Fix: Graceful shutdown flag
+    # Graceful shutdown flag
     _shutdown = False
 
     def handle_sigterm(signum, frame):
@@ -750,7 +750,7 @@ def main():
     logger.info(
         f"Worker {config.CONSUMER_NAME} started. Listening on stream {config.STREAM_NAME}")
 
-    # REL-02 Fix: Track backoff state
+    # Track backoff state
     error_backoff = 2
 
     while not _shutdown:

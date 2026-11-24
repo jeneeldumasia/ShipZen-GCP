@@ -96,7 +96,7 @@ def save_env(project_id: str, values: dict) -> None:
 
 @contextmanager
 def env_write_lock(project_id: str):
-    """Serialize read-modify-write of one project's env/secrets (M2).
+    """Serialize read-modify-write of one project's env/secrets.
 
     A Postgres transaction-level advisory lock, keyed by project: held until the
     block ends, released automatically if the process dies.

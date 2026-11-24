@@ -2,14 +2,14 @@
 import re
 
 # Repo URL allowlist — same pattern used in builder/main.py
-# MED-03 Fix: Use \A and \Z anchors to prevent newline injection
+# Use \A and \Z anchors to prevent newline injection
 _REPO_URL_RE = re.compile(
     r'\A(https://[a-zA-Z0-9._/:\-@]+\.git'
     r'|https://[a-zA-Z0-9._/:\-@]+'
     r'|git@[a-zA-Z0-9._\-]+:[a-zA-Z0-9._/\-]+\.git)\Z'
 )
 
-# Branch name validation regex — shared with webhook handler (CRIT-01)
+# Branch name validation regex — shared with webhook handler
 _BRANCH_RE = re.compile(r'^[a-zA-Z0-9_.\-/]{1,200}$')
 
 # Namespace reservation: tenants cannot claim any name used by the platform at

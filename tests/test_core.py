@@ -119,7 +119,7 @@ async def test_webhook_handler_hmac_rejection(postgres_container):
     with pytest.raises(HTTPException) as exc:
         await github_webhook(mock_request, "proj3")
     
-    # CRIT-08 Fix: Wait, actual handler raises 401 for invalid signature, test asserted 403
+    # Wait, actual handler raises 401 for invalid signature, test asserted 403
     assert exc.value.status_code == 401
     assert "Invalid signature" in exc.value.detail
 

@@ -1,7 +1,7 @@
 # Kyverno rules for tenant namespaces (label shipzen.jeneeldumasia.codes/tenant=true).
 # Defence in depth behind the controller's templates and the tenant AppProject.
 
-# Security finding C6: a tenant ExternalSecret may read only its own project's
+# A tenant ExternalSecret may read only its own project's
 # secret, and only through the tenant store (whose Google identity can read
 # shipzen-project-* and nothing else). Without this a tenant manifest could ask
 # the store for another project's secret.
@@ -51,7 +51,7 @@ spec:
                 operator: GreaterThan
                 value: 0
 ---
-# Security finding H4: every hostname shares one Gateway, which accepts routes
+# Every hostname shares one Gateway, which accepts routes
 # from all namespaces. A tenant route may only claim hostnames of its own
 # project, never the platform's or another project's:
 #   <8-char release id>-<project slug>-shipzen.jeneeldumasia.codes

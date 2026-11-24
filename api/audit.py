@@ -5,7 +5,7 @@ from psycopg2.extras import DictCursor
 
 logger = logging.getLogger(__name__)
 
-# Fix #9.3: hard cap on audit log query size to prevent runaway queries
+# Hard cap on audit log query size to prevent runaway queries
 MAX_AUDIT_LIMIT = 500
 
 
@@ -21,7 +21,7 @@ def log_audit_event(
     Appends an event to the audit_logs table.
     This table is logically append-only.
 
-    Fix #3.4: exceptions are caught and logged rather than propagated.
+    Exceptions are caught and logged rather than propagated.
     Audit logging is a side effect — a DB failure here must not crash the
     originating API request.
     """
@@ -49,7 +49,7 @@ def get_audit_logs(project_id: str = None, user_id: str = None, limit: int = 50)
     """
     Queries the append-only audit log by project or user.
 
-    Fix #9.3: limit is capped at MAX_AUDIT_LIMIT (500) to prevent a caller
+    The limit is capped at MAX_AUDIT_LIMIT (500) to prevent a caller
     passing limit=1000000 from issuing a runaway query.
     """
     limit = min(int(limit), MAX_AUDIT_LIMIT)

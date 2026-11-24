@@ -171,7 +171,7 @@ def event_listener_loop(elector):
             logger.warning(f"Redis event listener connection error: {conn_e}, reconnecting in 5s...")
             time.sleep(5)
 
-# Fix #20: raise if env var is missing rather than silently falling back to
+# Raise if env var is missing rather than silently falling back to
 # a hardcoded plaintext credential that will never work in-cluster.
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
@@ -397,8 +397,8 @@ def _safe_health_path(value) -> str:
 
 
 def pinned_image(db_dep: dict) -> str:
-    """The image to run, pinned to its digest when the worker recorded one
-    (security finding C4): a tag can be moved to other content, a digest can't.
+    """The image to run, pinned to its digest when the worker recorded one:
+    a tag can be moved to other content, a digest can't.
     Older deployments without a digest keep their tag."""
     image = db_dep.get('image_uri') or 'nginx:latest'
     digest = db_dep.get('image_digest')
@@ -422,7 +422,7 @@ def _k8s_slug(value: str, max_len: int = 40) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
     return slug[:max_len].strip("-") or "app"
 
-# H-8 Fix: Module-level declaration — avoids lazy globals() check on every reconcile tick.
+# Module-level declaration — avoids lazy globals() check on every reconcile tick.
 # Keys are project IDs; values are consecutive failure counts.
 # Entries for terminated projects are pruned during each full reconcile sweep.
 _project_failures: dict = {}
@@ -684,7 +684,7 @@ def reconcile():
             """)
             conn.commit()
 
-            # HIGH-08 Fix: Filter out terminated projects to prevent loop slowdown
+            # Filter out terminated projects to prevent loop slowdown
             cur.execute("SELECT * FROM projects WHERE status != 'Terminated';")
             projects = [dict(row) for row in cur.fetchall()]
     finally:
@@ -745,7 +745,7 @@ def reconcile():
         return
 
     # Prune _project_failures entries for projects no longer in the active set
-    # to prevent unbounded memory growth over time (H-8 fix).
+    # to prevent unbounded memory growth over time.
     active_ids = {row['id'] for row in projects}
     stale_keys = [k for k in _project_failures if k not in active_ids]
     for k in stale_keys:
@@ -817,7 +817,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                 else:
                     delete_gar_repository(project.id)
                     delete_project_secret(project.id)
-                    # HIGH-08 Fix: Update status to Terminated instead of hard-deleting the row
+                    # Update status to Terminated instead of hard-deleting the row
                     # to preserve audit log foreign keys and history
                     project_cur.execute(
                         "UPDATE projects SET status = 'Terminated' WHERE id = %s;", (project.id,))
@@ -841,7 +841,7 @@ def _reconcile_project(project_data: dict, global_deps: dict, global_svcs: dict,
                     sync_vanity_route(project_cur, project)
 
     except Exception as e:
-        # HIGH-02 Fix: Use project_data['_id'] since 'id' was popped
+        # Use project_data['_id'] since 'id' was popped
         logger.error(f"Error reconciling project {project_data['_id']}: {e}")
         try:
             # Fix 3: Re-use project_conn to set FAILED state and avoid Connection Pool Exhaustion Deadlock
@@ -1036,7 +1036,7 @@ def reconcile_deployments(conn, cur, project, global_deps, global_svcs, global_r
                 if not k8s_dep:
                     if db_dep['state'] in ("Building", "Queued", "Verifying", "Failed"):
                         continue
-                    # HIGH-23 Fix: If state is Deploying or Running but no K8s Deployment exists, drift reconciliation below will create it.
+                    # If state is Deploying or Running but no K8s Deployment exists, drift reconciliation below will create it.
 
                 missing_resources = (
                     not k8s_dep or

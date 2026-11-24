@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
-# CRIT-04 Fix: Create non-root user matching Kubernetes runAsUser: 1000
+# Create non-root user matching Kubernetes runAsUser: 1000
 RUN groupadd -r appgroup && useradd -r -g appgroup -u 1000 appuser
 USER appuser
 

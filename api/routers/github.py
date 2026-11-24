@@ -21,7 +21,7 @@ def get_github_branches(request: Request, repo_url: str, current_user: User = De
     """Branches of a github.com repository the user can read.
 
     Through the GitHub API with the user's own token, never `git ls-remote`
-    from the API pod (security finding H3), so private repositories work and
+    from the API pod, so private repositories work and
     no other host can be reached.
     """
     if not _REPO_URL_RE.match(repo_url):

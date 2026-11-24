@@ -111,7 +111,7 @@ metadata:
   name: tenant-runner
   namespace: {{ namespace }}
 rules:
-  # Task 17 / fix #4.7: removed "secrets" from resources.
+  # Removed "secrets" from resources.
   # Apps receive their secrets as environment variables injected by ESO —
   # they have no legitimate reason to call the Kubernetes secrets API directly.
   # Granting list/get on secrets allowed any tenant pod to enumerate all

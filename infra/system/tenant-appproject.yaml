@@ -1,4 +1,4 @@
-# ArgoCD project for tenant apps (security finding C1, defence in depth).
+# ArgoCD project for tenant apps (defence in depth).
 #
 # Every folder in shipzen-tenants becomes an Application in this project. The
 # controller renders those manifests from templates, but if a value from a

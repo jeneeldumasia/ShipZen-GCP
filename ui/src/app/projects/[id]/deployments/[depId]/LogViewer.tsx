@@ -47,7 +47,7 @@ export function LogViewer({ projectId, deploymentId, buildId, deploymentState }:
     );
     wsRef.current = ws;
 
-    // Authenticate with a one-time ticket, never the token in the URL (H1).
+    // Authenticate with a one-time ticket, never the token in the URL.
     ws.onopen = async () => {
       try {
         ws.send(JSON.stringify({ ticket: await wsTicket() }));
