@@ -1,4 +1,4 @@
-# Task 3 — Cluster Operators
+# Cluster Operators
 # KEDA, External Secrets Operator
 # All depend on GKE being ready.
 
@@ -34,8 +34,7 @@ resource "google_service_account_iam_binding" "eso_workload_identity" {
   ]
 }
 
-# Tenant ExternalSecrets use their own store and identity (security finding
-# C6): it can read shipzen-project-* secrets and nothing else, so even a
+# Tenant ExternalSecrets use their own store and identity: it can read shipzen-project-* secrets and nothing else, so even a
 # tenant manifest naming shipzen-github-app gets nothing. The platform store
 # (gcp-secret-manager, identity eso_sa) only serves platform namespaces.
 resource "google_service_account" "eso_tenant_sa" {

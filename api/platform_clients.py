@@ -32,12 +32,12 @@ STREAM_NAME = os.getenv("STREAM_NAME", "deploy_stream")
 # Users never see or input this value.
 GAR_REGISTRY_URL = os.getenv("GAR_REGISTRY_URL", "")
 
-# PERF-01 Fix: Module-level GCP Secret Manager client singleton
+# Module-level GCP Secret Manager client singleton
 try:
     _sm_client = secretmanager.SecretManagerServiceClient()
 except Exception:
     _sm_client = None
-# H-6 Fix: Module-level GCS client singleton — avoids per-request connection overhead
+# Module-level GCS client singleton — avoids per-request connection overhead
 try:
     _gcs_client = gcs_storage.Client()
 except Exception:

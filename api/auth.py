@@ -34,7 +34,7 @@ ALLOWED_GITHUB_USERS = _csv_env("ALLOWED_GITHUB_USERS")
 OPEN_SIGNUP = os.getenv("ENVIRONMENT", "production") == "development"
 
 
-# M-6 Fix: Reusable httpx.AsyncClient singleton to avoid per-request overhead
+# Reusable httpx.AsyncClient singleton to avoid per-request overhead
 _http_client = httpx.AsyncClient(
     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     timeout=30.0
@@ -42,7 +42,7 @@ _http_client = httpx.AsyncClient(
 
 _bearer = HTTPBearer(auto_error=False)
 
-# HIGH-01 Fix: Reduce token cache TTL from 5 minutes to 60 seconds
+# Reduce token cache TTL from 5 minutes to 60 seconds
 # to minimize the window where revoked access remains valid
 _token_cache = TTLCache(maxsize=1000, ttl=60)
 _user_to_cache_keys = defaultdict(set)
@@ -61,7 +61,7 @@ def evict_user_token_cache(user_id: str):
         logger.info(f"Evicted auth token cache for user {user_id}")
 
 
-# REL-01 Fix: Circuit breaker state for GitHub API
+# Circuit breaker state for GitHub API
 # Protected by _github_cb_lock — async handlers run concurrently and can race.
 _github_cb_lock = threading.Lock()
 _github_cb_failures = 0
@@ -110,7 +110,7 @@ async def get_current_user(
     token = credentials.credentials
 
     # Local Dev Bypass
-    # MED-09 Fix: Explicitly deny local stub auth if ENVIRONMENT == "production"
+    # Explicitly deny local stub auth if ENVIRONMENT == "production"
     if token == "stub-token":
         if os.getenv("ENABLE_LOCAL_STUB_AUTH", "false").lower() != "true" or os.getenv("ENVIRONMENT", "development") == "production":
             raise HTTPException(
@@ -144,7 +144,7 @@ async def get_current_user(
 
     # Verify token with GitHub
     
-    # REL-01 Fix: Circuit breaker logic for GitHub API
+    # Circuit breaker logic for GitHub API
     global _github_cb_failures, _github_cb_last_failure, _github_cb_open
     import time
 
@@ -199,7 +199,7 @@ async def get_current_user(
                      "Accept": "application/vnd.github+json"},
             timeout=5
         )
-        # Only an address GitHub has verified counts (M4): ADMIN_EMAILS grants
+        # Only an address GitHub has verified counts: ADMIN_EMAILS grants
         # admin, and GitHub lets anyone add an unverified address to an account.
         email = None
         if email_resp.status_code == 200:

@@ -124,12 +124,6 @@ pytest    # Docker/Postgres-backed tests skip themselves when Docker isn't avail
 docker compose -f docker-compose.local.yml up
 ```
 
-### Stand up your own instance
-
-First-time GCP, GitHub and HCP Terraform setup is in
-[docs/operations/setup.md](docs/operations/setup.md). After that, everything runs
-from GitHub Actions ([runbook](docs/operations/runbook.md)).
-
 ## How changes reach production
 
 Pull requests to `main` run the test suite and security scans. On merge, images build
@@ -145,11 +139,22 @@ workflows only run when started by hand.
 | [Architecture](docs/architecture.md) | Components, deploy flow, data, tenancy, identities |
 | [Security](docs/security.md) | Threat model, controls, how to verify them, known gaps |
 | [Design decisions](docs/decisions.md) | Why it's built this way |
-| [Setup](docs/operations/setup.md) · [Runbook](docs/operations/runbook.md) | First-time setup; workflows and troubleshooting |
+| [Runbook](docs/operations/runbook.md) | Workflows, common tasks, troubleshooting |
 | [Monitoring](docs/operations/monitoring.md) · [Telegram alerts](docs/operations/telegram-alerts.md) | Dashboards, alerts, phone notifications |
 | [Incidents](docs/operations/incidents.md) | Problems hit so far and how they were fixed |
 | [DevBox](docs/operations/devbox.md) | Optional remote development VM |
-| [Roadmap](docs/roadmap.md) · [History](docs/history.md) · [Pricing model](docs/business/pricing-model.md) | What's next, how it evolved, the business case |
+| [Roadmap](docs/roadmap.md) · [History](docs/history.md) | What's next, and how it got here |
+
+## About this repository
+
+ShipZen is a personal project, run as a single instance at
+[shipzen.jeneeldumasia.codes](https://shipzen.jeneeldumasia.codes). It is
+published to show how the platform is built and operated, not packaged for
+self-hosting: the domain, cloud project and GitHub accounts are specific to that
+instance. The operations docs describe how this instance is run.
+
+No license is granted: the code is visible for reading and review, and all
+rights are reserved.
 
 ## Author
 

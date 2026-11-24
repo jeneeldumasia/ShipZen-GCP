@@ -104,7 +104,7 @@ spec:
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10
-          # HIGH-04 Fix: Add startupProbe to allow slow initialization without failing liveness
+          # Add startupProbe to allow slow initialization without failing liveness
           startupProbe:
             httpGet:
               path: /healthz

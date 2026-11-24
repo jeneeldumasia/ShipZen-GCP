@@ -53,7 +53,7 @@ PutSecretRequest = PutEnvVarRequest
 
 
 def _serialized(endpoint):
-    """Run a write endpoint under the project's env lock (M2).
+    """Run a write endpoint under the project's env lock.
 
     Each write reads the project's whole KEY: value object, changes one key and
     stores a new version. Two at once used to lose one of the changes.

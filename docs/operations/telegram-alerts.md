@@ -36,9 +36,9 @@ https://api.telegram.org/bot<token>/getUpdates
 Look for `"chat":{"id":123456789,...}` and copy the number. That's your
 **chat ID**.
 
-- **Use your phone** (or a home network) for this step. The work network
-  blocks `api.telegram.org`, so the page won't load there. ShipZen itself is
-  unaffected: GitHub's runners and GKE can reach Telegram.
+- If `api.telegram.org` doesn't load on your network, open it on your phone
+  instead. ShipZen itself is unaffected: GitHub's runners and GKE reach Telegram
+  directly.
 - If the result is empty (`"result":[]`), send the bot another message and
   reload.
 

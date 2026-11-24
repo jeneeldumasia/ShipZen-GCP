@@ -76,7 +76,7 @@ def create_project(request: Request, body: CreateProjectRequest, current_user: U
     Create a new project. The controller picks up status=Provisioning
     and creates the tenant namespace + RBAC in Kubernetes.
     """
-    # C3: a project may only name a GitHub repository the user can read.
+    # A project may only name a GitHub repository the user can read.
     repo = check_repo_access(current_user, body.repo_url) if body.repo_url else None
     project_id = str(uuid.uuid4())
     webhook_secret = secrets.token_hex(32)
@@ -157,7 +157,7 @@ def list_projects(
                         """, (limit, offset)
                     )
                 else:
-                    # HIGH-15 Fix: Include projects where user is a member, not just owner
+                    # Include projects where user is a member, not just owner
                     cur.execute(
                         """
                         SELECT DISTINCT p.*, u.email as owner_email,
@@ -490,7 +490,7 @@ async def analyze_repo(request: Request, body: AnalyzeRequest, current_user: Use
     def _clone_and_analyze():
         with tempfile.TemporaryDirectory() as tmpdir:
             # A size-capped snapshot from the GitHub API with the user's token,
-            # not `git clone` of an arbitrary URL from the API pod (H3).
+            # not `git clone` of an arbitrary URL from the API pod.
             download_snapshot(current_user, body.repo_url, body.branch, tmpdir)
             analyzer = RepoAnalyzer(
                 repo_path=tmpdir,

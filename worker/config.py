@@ -7,7 +7,7 @@ class Config:
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 
-    # Fix #20: raise on missing DATABASE_URL rather than silently falling back
+    # Raise on missing DATABASE_URL rather than silently falling back
     # to hardcoded postgres:postgres, which will never connect in-cluster.
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
     if not DATABASE_URL:
@@ -18,7 +18,7 @@ class Config:
     # Unique per pod via downward API
     CONSUMER_NAME = os.getenv("HOSTNAME", "worker-1")
 
-    # Fix #7: builder queue name in one place so worker and builder stay in sync.
+    # Builder queue name in one place so worker and builder stay in sync.
     # Set BUILDER_QUEUE_NAME env var if you rename the stream.
     BUILDER_QUEUE_NAME = os.getenv("BUILDER_QUEUE_NAME", "builder_queue")
 

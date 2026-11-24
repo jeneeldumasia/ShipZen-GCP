@@ -13,7 +13,7 @@ shipzen_reconciliation_duration_seconds = Summary(
     'Time spent in the reconciliation loop'
 )
 
-# Fix #19: Counter resets on restart, but we will use PromQL increase()
+# Counter resets on restart, but we will use PromQL increase()
 # or rate() to measure success rate over time instead of relying on absolute value.
 shipzen_deployment_success_total = Counter(
     'shipzen_deployment_success_total',

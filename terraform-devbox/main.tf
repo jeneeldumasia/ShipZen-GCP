@@ -27,7 +27,7 @@ provider "google" {
   region  = var.gcp_region
 }
 
-# ── Persistent DevBox for Antigravity IDE & Cluster Debugging ───────────────
+# ── Persistent DevBox for development & cluster debugging ───────────────────
 
 resource "google_compute_firewall" "allow_ssh_iap_devbox" {
   name    = "allow-ssh-iap-devbox"

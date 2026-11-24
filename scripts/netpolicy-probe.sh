@@ -70,7 +70,7 @@ if ! kubectl get daemonset anetd -n kube-system >/dev/null 2>&1; then
 fi
 
 # Neither tenants nor builds may reach the metadata server: builds get only a
-# per-build staging push token from the worker (security finding C4).
+# per-build staging push token from the worker.
 tenant_odd=skip; [ "${EXPECT_TENANT_PORT_LIMIT:-0}" = 1 ] && tenant_odd=deny
 if [ -n "$TENANT_NS" ]; then probe "$TENANT_NS" deny "$tenant_odd"; else echo "SKIP | no tenant namespace to probe"; fi
 probe shipzen-build deny deny   # builds: HTTP(S) and SSH only

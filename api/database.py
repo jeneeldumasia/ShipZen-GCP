@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Fix #20: raise immediately on missing env var rather than silently falling
+# Raise immediately on missing env var rather than silently falling
 # back to postgres:postgres which will never connect inside the cluster.
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
@@ -114,7 +114,7 @@ def get_or_create_user(user_id: str, email: str = None, login: str = None) -> di
                     elif user_dict['role'] == 'admin' and not is_named_admin \
                             and user_dict.get('admin_source') == 'env':
                         # Removed from the admin lists: the role they got from
-                        # them goes too (M4). Admins made by another admin stay.
+                        # them goes too. Admins made by another admin stay.
                         cur.execute("UPDATE users SET role = 'user', admin_source = NULL WHERE id = %s", (user_id,))
                         user_dict['role'] = 'user'
                         conn.commit()
@@ -149,9 +149,8 @@ def enforce_retention_policy():
     Retention Policy: delete failed builds older than 30 days,
     successful builds older than 90 days.
 
-    Fix #3.5: was mixing manual conn.commit() with the psycopg2 context
-    manager, leaving no rollback path on failure. Now uses an explicit
-    transaction block with proper commit/rollback.
+    Uses an explicit transaction with commit/rollback, so a failure leaves
+    no half-applied cleanup.
     """
     logger.info("Running retention policy cleanup...")
     conn = get_connection()

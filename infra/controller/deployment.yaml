@@ -103,7 +103,7 @@ spec:
               port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
-          # H-9 Fix: startupProbe allows _wait_for_schema() up to 5 minutes before
+          # startupProbe allows _wait_for_schema() up to 5 minutes before
           # liveness kicks in, preventing crash-loops on fresh cluster installs.
           startupProbe:
             httpGet:

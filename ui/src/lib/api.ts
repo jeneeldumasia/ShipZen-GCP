@@ -4,7 +4,7 @@
  * Server code (server components) calls the API directly with the user's
  * GitHub token from auth(). Browser code calls the same paths on
  * /api/proxy, the UI's own server, which adds the token there: the token never
- * reaches browser JavaScript (security finding H1).
+ * reaches browser JavaScript.
  */
 
 export function getBaseUrl(): string {

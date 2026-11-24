@@ -214,7 +214,7 @@ def env(postgres_container):
     stubs.set("_sm_client", sm)
     stubs.set("GCP_PROJECT", "test-project")
     stubs.set("_redis_client", MagicMock())
-    # GitHub repository access (C3): by default every repository is readable;
+    # GitHub repository access: by default every repository is readable;
     # "id" comes from REPO_IDS so tests can name different repositories.
     access = {"deny": set()}
 
@@ -640,7 +640,7 @@ def test_project_webhook_signature_and_branch(env):
     assert env.client.post(url, content=b"{}", headers=ping).json() == {"message": "event ignored"}
 
 
-# ── C3: repository access and project binding ────────────────────────────────
+# ── Repository access and project binding ────────────────────────────────
 
 def test_project_creation_refuses_a_repo_the_user_cannot_read(env):
     env.access["deny"].add("https://github.com/someone/private")
@@ -690,7 +690,7 @@ def test_project_webhook_ignores_pushes_from_another_repo(env):
     assert r.status_code == 403
 
 
-# ── H7: deploy limits ────────────────────────────────────────────────────────
+# ── Deploy limits ────────────────────────────────────────────────────────
 
 def test_monthly_deploy_limit_per_project(env):
     pid = _make_project(env)
