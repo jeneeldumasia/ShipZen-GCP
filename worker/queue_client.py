@@ -40,7 +40,7 @@ class QueueClient:
         pipe.xadd(self.dlq_stream, data)
         pipe.xack(self.stream, self.group, message_id)
         pipe.execute()
-        # Fix #24: was print(), now uses logger
+        # Was print(), now uses logger
         logger.warning(f"Message {message_id} moved to DLQ")
 
     def recover_pending_messages(self):

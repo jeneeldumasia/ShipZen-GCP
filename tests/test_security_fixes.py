@@ -1,9 +1,9 @@
-"""Tests for the C1/C2 security fixes from the 2026-11 review.
+"""Security regression tests: untrusted repository config, token leaks, build isolation.
 
-C1: a tenant repository's shipzen.yaml could inject Kubernetes objects into the
-    GitOps manifests (health_check_path rendered raw into YAML).
-C2: the GitHub App installation token leaked into deployments.last_error
-    (clone URL in the exception text) and into images (.git/config).
+- A tenant repository's shipzen.yaml could inject Kubernetes objects into the
+  GitOps manifests (health_check_path rendered raw into YAML).
+- The GitHub App installation token leaked into deployments.last_error
+  (clone URL in the exception text) and into images (.git/config).
 """
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +23,7 @@ INJECTION = '/"\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRol
 FAKE_TOKEN = "ghs_" + "A" * 36
 
 
-# ── C1: repository config is validated ───────────────────────────────────────
+# ── Repository config is validated ───────────────────────────────────────
 
 def test_repo_config_keeps_valid_settings():
     cfg = parse_repo_config({"port": 3000, "health_check_path": "/api/health", "buildContext": "apps/web/"})
@@ -85,7 +85,7 @@ def test_controller_falls_back_to_root_for_invalid_stored_paths():
     assert controller._safe_port(3000) == 3000
 
 
-# ── C2: the GitHub token stays out of errors, URLs and images ────────────────
+# ── The GitHub token stays out of errors, URLs and images ────────────────
 
 @pytest.mark.parametrize("text", [
     f"Command '['git', 'clone', 'https://x-access-token:{FAKE_TOKEN}@github.com/o/r', '/tmp/w']' returned non-zero exit status 128.",
@@ -160,7 +160,7 @@ def test_failed_state_stores_redacted_error():
     assert FAKE_TOKEN not in published
 
 
-# ── C4: builds push only to staging; apps run by digest ──────────────────────
+# ── Builds push only to staging; apps run by digest ──────────────────────
 
 DIGEST = "sha256:" + "a" * 64
 
@@ -251,7 +251,7 @@ def test_build_digest_comes_only_from_kaniko_termination_message(message, ok):
                 worker._build_digest("pod")
 
 
-# ── Task 25: secrets stored in Postgres are encrypted when a key is set ───────
+# ── Secrets stored in Postgres are encrypted when a key is set ───────
 
 def _crypto_box():
     import importlib.util

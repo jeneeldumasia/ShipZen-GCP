@@ -1,7 +1,7 @@
 # Runbook
 
 Day-to-day operation of ShipZen. Everything runs from **GitHub Actions**, so you
-rarely need `kubectl`. First-time setup is in [setup.md](setup.md).
+rarely need `kubectl`.
 
 ## Workflows
 
@@ -71,7 +71,7 @@ before running Deploy Platform Infra.
 [telegram-alerts.md](telegram-alerts.md). Short version:
 1. In Telegram, open **@BotFather**, send `/newbot`, pick a name and a username ending in `bot`. It replies with a **bot token** (`123456789:AA...`). Treat it like a password.
 2. Open your new bot and send it any message (a bot can't message you until you do).
-3. Get your **chat ID**: open `https://api.telegram.org/bot<token>/getUpdates` in a browser (on your phone if your work network blocks Telegram) and copy `"chat":{"id": ...}`. It's a number.
+3. Get your **chat ID**: open `https://api.telegram.org/bot<token>/getUpdates` in a browser (on your phone if your network blocks Telegram) and copy `"chat":{"id": ...}`. It's a number.
 4. In GitHub: repository → Settings → Secrets and variables → Actions, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 5. Run **Deploy Secrets to GKE**. It stores both in Secret Manager (`shipzen-telegram`) and sends you a test message. The in-cluster relay picks the change up within about 10 minutes, with no restart. Teardown alerts (failed backup, failed teardown) use the repository secrets directly, so they work from step 4 on, even while the platform is down.
 

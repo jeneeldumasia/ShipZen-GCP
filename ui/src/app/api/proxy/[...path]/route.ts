@@ -1,5 +1,5 @@
 /**
- * Backend-for-frontend proxy (security finding H1).
+ * Backend-for-frontend proxy.
  *
  * Browser code calls /api/proxy/<api path> on the UI's own origin. This route
  * runs on the server, reads the signed-in user's GitHub token from the

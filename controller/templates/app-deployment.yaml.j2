@@ -9,7 +9,7 @@ spec:
   refreshInterval: "1h"
   secretStoreRef:
     # Tenant store: its Google identity can only read shipzen-project-* secrets,
-    # and Kyverno only lets this ExternalSecret read its own project's (C6).
+    # and Kyverno only lets this ExternalSecret read its own project's.
     name: gcp-secret-manager-tenants
     kind: ClusterSecretStore
   target:
@@ -57,7 +57,7 @@ spec:
       runtimeClassName: gvisor
       nodeSelector:
         shipzen.jeneeldumasia.codes/node-type: tenant
-      # Fix #5.4: toleration to schedule on the dedicated tenant NodePool.
+      # Toleration to schedule on the dedicated tenant NodePool.
       # Tenant nodes are tainted shipzen.jeneeldumasia.codes/dedicated=tenant:NoSchedule
       # so builder workloads cannot mix with tenant app pods.
       tolerations:
@@ -174,7 +174,7 @@ metadata:
   labels:
     shipzen.jeneeldumasia.codes/project: "{{ project_name }}"
 spec:
-  # Fix #19: minAvailable: 1 on a single-replica deployment makes the pod
+  # minAvailable: 1 on a single-replica deployment makes the pod
   # permanently un-evictable, blocking cluster-autoscaler scale-down and node drains.
   # Use maxUnavailable: 1 instead — this allows voluntary evictions while
   # still protecting multi-replica deployments from losing all pods at once.

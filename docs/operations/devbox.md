@@ -3,7 +3,7 @@
 An optional remote development VM, created by the **Deploy DevBox** workflow from `terraform-devbox/`.
 Only SSH from Google's IAP range is open; remote desktop and the browser IDE are reached through SSH tunnels.
 
-The **ShipZen DevBox** is a persistent, highly secure VM running Debian 12 in your GCP project's `default` VPC. It is designed to let you safely run the Antigravity IDE / VS Code, manage your GKE cluster, build containers, and debug issues without triggering local security policies.
+The **ShipZen DevBox** is a persistent Debian 12 VM in the project's `default` VPC: a development and debugging machine that sits next to the cluster, with an editor, `kubectl`, `gcloud` and Docker, so cluster work doesn't depend on the laptop it's started from.
 
 ---
 

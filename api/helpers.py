@@ -26,7 +26,7 @@ def image_uri_for(project_id: str, deployment_id: str) -> str:
     return f"local/shipzen-builds/{project_id}:{deployment_id}"
 
 
-# Abuse limits (security finding H7). Builds run arbitrary code on the cluster
+# Abuse limits. Builds run arbitrary code on the cluster
 # for up to 30 minutes each, so cap how many one user can have going and how
 # many a project may start per month.
 MAX_ACTIVE_DEPLOYS_PER_USER = int(os.getenv("MAX_ACTIVE_DEPLOYS_PER_USER", "3"))
@@ -105,7 +105,7 @@ def _get_deployment_or_404(project_id: str, deployment_id: str) -> dict:
     return dict(row)
 
 
-# SEC-06 Fix: Fields to exclude from API responses
+# Fields to exclude from API responses
 _SERIALIZE_EXCLUDE = {'webhook_secret'}
 
 def _serialize(obj: dict) -> dict:

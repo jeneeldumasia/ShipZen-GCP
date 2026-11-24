@@ -1,4 +1,4 @@
-# Task 9 / fix #6.4: ServiceMonitor and headless Service resources so
+# ServiceMonitor and headless Service resources so
 # Prometheus can scrape worker, controller, and API server metrics.
 # Previously no ServiceMonitors existed — none of the custom metrics
 # (queue depth, drift total, reconciliation duration) were ever scraped.

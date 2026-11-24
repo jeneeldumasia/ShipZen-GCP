@@ -76,7 +76,7 @@ async def github_webhook(request: Request, project_id: str):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    # CRIT-01 Fix: Only deploy if the pushed branch matches the project's configured branch
+    # Only deploy if the pushed branch matches the project's configured branch
     ref = payload.get("ref", "")
     if ref != f"refs/heads/{target_branch}":
         return JSONResponse(status_code=200, content={"message": f"Ignored push to {ref}, expecting {target_branch}"})
@@ -88,7 +88,7 @@ async def github_webhook(request: Request, project_id: str):
     if not repo_url:
         raise HTTPException(
             status_code=400, detail="Missing repository clone_url")
-    # C3: a project bound to a repository only deploys pushes from that repository.
+    # A project bound to a repository only deploys pushes from that repository.
     if bound_repo_id and str(payload.get("repository", {}).get("id")) != str(bound_repo_id):
         raise HTTPException(
             status_code=403, detail="Webhook repository does not match project's repository")
@@ -101,7 +101,7 @@ async def github_webhook(request: Request, project_id: str):
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=DictCursor) as cur:
-                # CRIT-02: Guard against duplicate webhook deliveries
+                # Guard against duplicate webhook deliveries
                 cur.execute(
                     "SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'production' AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
                     (project_id,)
@@ -230,7 +230,7 @@ async def github_app_webhook(request: Request):
                 projects_to_deploy = []
                 pushed_repo_id = str(payload.get("repository", {}).get("id"))
                 for p in all_matching_projects:
-                    # C3: a bound project only follows its own repository, even
+                    # A bound project only follows its own repository, even
                     # if another repository later takes over the same URL.
                     if p.get("github_repo_id") and str(p["github_repo_id"]) != pushed_repo_id:
                         continue
@@ -282,7 +282,7 @@ async def github_app_webhook(request: Request):
         try:
             with get_connection() as conn:
                 with conn.cursor() as cur:
-                    # CRIT-02: Guard against in-flight deployments from concurrent webhook deliveries
+                    # Guard against in-flight deployments from concurrent webhook deliveries
                     cur.execute(
                         "SELECT 1 FROM deployments WHERE project_id = %s AND kind = 'production' AND state IN ('Queued', 'Building', 'Deploying', 'Verifying') LIMIT 1;",
                         (project_id,)

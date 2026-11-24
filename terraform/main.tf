@@ -118,7 +118,7 @@ resource "google_container_cluster" "primary" {
   # in every tenant namespace. Without it they are accepted but do nothing.
   datapath_provider = "ADVANCED_DATAPATH"
 
-  # Nodes get no public IPs (security finding H6); they reach the internet
+  # Nodes get no public IPs; they reach the internet
   # through Cloud NAT. The control plane keeps its public, IAM-authenticated
   # endpoint: GitHub-hosted runners have no fixed IPs to allowlist. Closing it
   # needs the DNS-based endpoint (google provider >= 6).
@@ -186,7 +186,7 @@ resource "google_container_node_pool" "platform_nodes" {
   depends_on = [google_project_iam_member.node_sa_roles]
 }
 
-# ── Sandboxed node pools for untrusted code (security finding C5) ────────────
+# ── Sandboxed node pools for untrusted code ────────────
 # Builds run user Dockerfiles and tenant apps run user code. Each gets its own
 # tainted pool with GKE Sandbox (gVisor), so a container or kernel escape stays
 # in a sandbox on a node that holds no platform credentials. Both scale to zero.
@@ -308,7 +308,7 @@ resource "google_artifact_registry_repository" "shipzen_builds" {
 
 # Build output lands here first. Builds run untrusted Dockerfiles and can push
 # here and nowhere else; the worker then copies the exact digest each build
-# reported into shipzen-builds (security finding C4). Images only need to live
+# reported into shipzen-builds. Images only need to live
 # until that copy, so they're deleted after a day.
 resource "google_artifact_registry_repository" "shipzen_staging" {
   location      = var.gcp_region
@@ -389,7 +389,7 @@ data "google_project" "this" {
   project_id = var.gcp_project
 }
 
-# Only per-project secrets (security finding C6). The API and controller
+# Only per-project secrets. The API and controller
 # create, read and delete shipzen-project-* secrets and nothing else; the
 # platform's own secrets reach them through ESO as Kubernetes Secrets.
 # Creating a secret is checked against the project, hence the first clause.

@@ -24,7 +24,7 @@ function withProxy(handler: any) {
  * The browser reads its session from GET /api/auth/session. The session object
  * carries the user's GitHub token for server-side code (auth() in server
  * components and the /api/proxy route), so strip it from this one response:
- * browser JavaScript never sees the token (security finding H1).
+ * browser JavaScript never sees the token.
  */
 function withoutTokenForBrowser(handler: (req: NextRequest) => Promise<Response> | Response) {
   return async (req: NextRequest) => {
