@@ -19,9 +19,9 @@ NIXPACKS_SHA256 = "0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3
 # reference, "image:tag@sha256:...") through the worker's environment; the
 # "Pin build images" workflow resolves the current digests and opens a PR that
 # pins these defaults.
-NIXPACKS_RUNNER_IMAGE = os.environ.get("NIXPACKS_RUNNER_IMAGE", "alpine:3.20.3")
-GIT_CLONE_IMAGE = os.environ.get("GIT_CLONE_IMAGE", "alpine/git:2.43.0")
-KANIKO_IMAGE = os.environ.get("KANIKO_IMAGE", "gcr.io/kaniko-project/executor:v1.23.2")
+NIXPACKS_RUNNER_IMAGE = os.environ.get("NIXPACKS_RUNNER_IMAGE", "alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a")
+GIT_CLONE_IMAGE = os.environ.get("GIT_CLONE_IMAGE", "alpine/git:2.43.0@sha256:76fdb7210689fc26c6ff101c4adacf9d12d3d25a919a7d8ff42ebaef5bedba65")
+KANIKO_IMAGE = os.environ.get("KANIKO_IMAGE", "gcr.io/kaniko-project/executor:v1.23.2@sha256:9e69fd4330ec887829c780f5126dd80edc663df6def362cd22e79bcdf00ac53f")
 
 # The clone, setup and Nixpacks containers don't need root, so they don't get
 # it. Kaniko still runs as root: it has to, to unpack base images and run the
