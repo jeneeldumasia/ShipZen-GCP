@@ -1,0 +1,21 @@
+# Store text files with LF line endings in the repo, whatever the OS.
+# (Windows checkouts can still use CRLF locally via core.autocrlf.)
+* text=auto eol=lf
+
+# Must stay LF everywhere, or they break when run inside Linux containers
+*.sh   text eol=lf
+*.py   text eol=lf
+*.j2   text eol=lf
+Dockerfile text eol=lf
+
+# PowerShell scripts are Windows-only
+*.ps1  text eol=crlf
+
+# Binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.pdf  binary
+*.zip  binary

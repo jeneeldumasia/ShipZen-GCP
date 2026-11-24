@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ShipZen UI
 
-## Getting Started
+The ShipZen dashboard: GitHub sign-in, projects, deployments with live build logs,
+environment variables, scaling, vanity URLs and the admin console.
 
-First, run the development server:
+Built with Next.js 16 (App Router), NextAuth v5 (GitHub OAuth) and Tailwind CSS.
+Pages call the ShipZen API through a server-side proxy (`src/app/api/proxy`) using
+the signed-in user's GitHub token.
+
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without a GitHub OAuth app, set `ENABLE_LOCAL_STUB_AUTH=true` to sign in with a
+local stub user. Running `docker compose -f docker-compose.local.yml up` from the
+repo root starts the API it talks to.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Purpose |
+|---|---|
+| `API_URL` | Where the API is reachable from the UI server |
+| `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` | GitHub OAuth app (`SHIPZEN_`-prefixed names also work) |
+| `AUTH_SECRET` | NextAuth session secret |
+| `AUTH_URL` | Public URL of the UI |
+| `ALLOWED_GITHUB_USERS` | Comma-separated GitHub logins allowed to sign in (fails closed when empty) |
+| `ALLOW_OPEN_SIGNUP` | `true` lets anyone sign in (keep this off in production) |
+| `NEXT_PUBLIC_APP_DOMAIN` | Base domain for app URLs |
+| `NEXT_PUBLIC_GITHUB_APP_SLUG` | GitHub App to install for push-to-deploy |
+| `ENABLE_LOCAL_STUB_AUTH` | `true` for local development without GitHub |
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Command | |
+|---|---|
+| `npm run dev` | Development server with hot reload |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+In production the UI runs as the `shipzen-ui` Deployment (`infra/ui/`). Images are
+built by the **Build and Push Docker Images** workflow and rolled out through ArgoCD.
