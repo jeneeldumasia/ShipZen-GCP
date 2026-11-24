@@ -12,17 +12,17 @@ resources:
   - ui/
 images:
   - name: shipzen-api
-    newTag: sha-b96d5d3
+    newTag: sha-874d027
 
   - name: shipzen-controller
-    newTag: sha-b96d5d3
+    newTag: sha-874d027
 
   - name: shipzen-worker
-    newTag: sha-b96d5d3
+    newTag: sha-874d027
 
   - name: shipzen-builder
     newTag: latest
 
   - name: shipzen-ui
-    newTag: sha-b96d5d3
+    newTag: sha-874d027
 
