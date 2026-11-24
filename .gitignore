@@ -1,8 +1,9 @@
-# Terraform
+# ── Terraform ────────────────────────────────────────────
 .terraform/
 *.tfstate
 *.tfstate.*
 tfplan
+*.tfplan
 crash.log
 crash.*.log
 *.tfvars
@@ -14,48 +15,67 @@ override.tf.json
 .terraformrc
 terraform.rc
 
-# Node
-node_modules/
-dist/
+# ── Secrets & keys (never commit these) ──────────────────
 .env
-.env.local
+.env.*
+!.env.example
 .secrets.env
 *.secrets*
 secrets/
-
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
-.venv/
-venv/
-shipzen_analysis.md
-deployhub_analysis.md
-console.txt
-job_logs.txt
-
-# IDE / Scratch / Temp
-.vscode/
-.kiro/
-scratch/
-generate_docs.py
-rename.py
-update_adrs.py
-update_docs_pg.py
-scratch_deployhub/
-*.zip
-p o l i c y _ u p d a t e . j s o n  
 *-secret.json
- 
-# AI Context
-.ai/
-
-# AWS Nuke Tools
-aws-nuke*
-LICENSE
-nuke-config.yaml
-# Private keys and certificates (e.g. a downloaded GitHub App key). Never commit these.
 *.pem
 *.key
 *.p12
 *.pfx
+
+# ── Node / Next.js ───────────────────────────────────────
+node_modules/
+dist/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# ── Editors & AI-assistant context (kept local) ──────────
+.vscode/
+.idea/
+.kiro/
+.claude/settings.local.json
+.ai/
+.agents/
+.cursorrules
+
+# ── Local scratch, one-off scripts and archives ──────────
+scratch/
+scratch_deployhub/
+generate_docs.py
+rename.py
+update_adrs.py
+update_docs_pg.py
+shipzen_analysis.md
+deployhub_analysis.md
+console.txt
+job_logs.txt
+policy_update.json
+*.zip
+*.pdf
+
+# ── Third-party tools downloaded locally (aws-nuke) ──────
+aws-nuke*
+nuke-config.yaml
+# aws-nuke's own MIT licence sits next to the binary; it is not ShipZen's licence
+LICENSE
+
+# ── OS junk ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
