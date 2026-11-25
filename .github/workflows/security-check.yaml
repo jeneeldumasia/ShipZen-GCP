@@ -88,3 +88,19 @@ jobs:
             echo "::error title=Network isolation is not holding::$body"; exit 1
           fi
           echo "::notice title=Network isolation confirmed::$body"
+
+      - name: Probe tenant admission policies
+        if: always()
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          gcloud container clusters get-credentials shipzen-cluster --zone us-central1-c --project "$PROJECT"
+          set +e
+          RESULT="$(scripts/policy-probe.sh 2>&1)"; rc=$?
+          set -e
+          echo "$RESULT"
+          body="${RESULT//'%'/'%25'}"; body="${body//$'\n'/%0A}"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Tenant policies are not enforced::$body"; exit 1
+          fi
+          echo "::notice title=Tenant policies enforced::$body"

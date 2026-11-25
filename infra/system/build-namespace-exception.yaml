@@ -1,21 +1,18 @@
-apiVersion: kyverno.io/v2
+# Build Jobs run Kaniko as root inside a gVisor sandbox (worker/builder.py).
+# This exempts shipzen-build from the privileged and host-namespace Pod
+# Security policies. A policies.kyverno.io PolicyException applies only in its
+# own namespace. (The old kyverno.io/v2 type stopped working in Kyverno 1.20.)
+apiVersion: policies.kyverno.io/v1
 kind: PolicyException
 metadata:
   name: shipzen-build-exception
   namespace: shipzen-build
 spec:
-  exceptions:
-    - policyName: "*"
-      ruleNames:
-        - "privileged"
-        - "autogen-privileged"
-        - "host-namespaces"
-        - "autogen-host-namespaces"
-  match:
-    any:
-      - resources:
-          kinds:
-            - Pod
-            - Job
-          namespaces:
-            - shipzen-build
+  policyRefs:
+    - name: disallow-privileged-containers
+      kind: ValidatingPolicy
+    - name: disallow-host-namespaces
+      kind: ValidatingPolicy
+  matchConditions:
+    - name: build-pods-and-jobs
+      expression: "object.kind == 'Pod' || object.kind == 'Job'"

@@ -58,6 +58,10 @@ resource "helm_release" "kyverno_policies" {
       # policies.kyverno.io/v1alpha1 ValidatingPolicy resources that this
       # chart now installs. Use PolicyException instead.
       validationFailureAction = "Enforce"
+      # CEL-based ValidatingPolicy instead of the legacy ClusterPolicy, which
+      # Kyverno 1.20 no longer runs (needs Kyverno 1.17+). The exceptions in
+      # infra/system/*exception*.yaml refer to these policies by name.
+      policyType = "ValidatingPolicy"
     })
   ]
 
