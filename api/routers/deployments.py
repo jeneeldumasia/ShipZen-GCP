@@ -562,7 +562,9 @@ async def websocket_deployment_status(websocket: WebSocket, project_id: str, dep
 
 
 @router.get("/projects/{project_id}/deployments/{deployment_id}/logs/stream", tags=["Deployments"])
-async def stream_logs(project_id: str, deployment_id: str, project: dict = Depends(verify_project_access)):
+@limiter.limit("30/minute")
+async def stream_logs(request: Request, project_id: str, deployment_id: str,
+                      project: dict = Depends(verify_project_access)):
 
     # Add timeout to SSE Pub/Sub listen to prevent leaked subscriptions
     import asyncio

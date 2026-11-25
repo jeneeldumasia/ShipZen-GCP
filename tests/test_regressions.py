@@ -48,6 +48,28 @@ def test_rate_limit_key_ignores_spoofable_headers():
     assert a == b == "ip:1.2.3.4"  # rotating tokens or faking XFF no longer changes the bucket
 
 
+def test_rate_limits_are_shared_through_redis(monkeypatch):
+    # In memory, each uvicorn worker in each replica had its own counters, so a
+    # client got (replicas x workers) times every limit.
+    rl = api._user_id_or_ip.__globals__  # the ratelimit module's namespace
+    assert api.app.state.limiter._storage_uri.startswith("redis://")
+    monkeypatch.setenv("REDIS_HOST", "redis-master")
+    monkeypatch.setenv("REDIS_PORT", "6379")
+    monkeypatch.setenv("REDIS_PASSWORD", "p@ss/w:rd")
+    assert rl["_storage_uri"]() == "redis://:p%40ss%2Fw%3Ard@redis-master:6379"
+    monkeypatch.delenv("REDIS_PASSWORD")
+    assert rl["_storage_uri"]() == "redis://redis-master:6379"
+
+
+def test_every_http_route_is_rate_limited():
+    from fastapi.routing import APIRoute
+    limited = set(api.app.state.limiter._route_limits)
+    unlimited = [r.path for r in api.app.routes
+                 if isinstance(r, APIRoute) and r.path != "/metrics"
+                 and f"{r.endpoint.__module__}.{r.endpoint.__name__}" not in limited]
+    assert unlimited == []
+
+
 def test_metrics_endpoint_is_internal_only():
     from fastapi.testclient import TestClient
     client = TestClient(api.app)
@@ -87,7 +109,8 @@ def _awaitable(value):
 @pytest.mark.asyncio
 async def test_sse_log_stream_honours_its_deadline():
     """The 5-minute SSE cap was only checked when a message arrived."""
-    resp = await api.stream_logs("p1", "quiet", project={})
+    # __wrapped__: the function under the rate limiter, which needs a real Request.
+    resp = await api.stream_logs.__wrapped__(None, "p1", "quiet", project={})
     gen = resp.body_iterator
     real, calls = time.time, {"n": 0}
 

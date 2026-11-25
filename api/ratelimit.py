@@ -1,5 +1,7 @@
 """Rate limiting: one limiter shared by every router."""
 import hashlib
+import os
+from urllib.parse import quote
 
 from fastapi import Request
 from slowapi import Limiter
@@ -27,4 +29,26 @@ def _user_id_or_ip(request: Request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
-limiter = Limiter(key_func=_user_id_or_ip)
+def _storage_uri() -> str:
+    """Redis URI for the limit counters.
+
+    In memory, every uvicorn worker in every API replica kept its own counters
+    (2 replicas x 4 workers = 8 buckets), so a client got up to 8x each limit.
+    Redis gives one shared count per client and limit.
+    """
+    host = os.getenv("REDIS_HOST", "redis-master.shipzen-system.svc.cluster.local")
+    port = os.getenv("REDIS_PORT", "6379")
+    password = os.getenv("REDIS_PASSWORD")
+    auth = f":{quote(password, safe='')}@" if password else ""
+    return f"redis://{auth}{host}:{port}"
+
+
+# If Redis is unreachable, limits fall back to per-process memory (and switch
+# back once it returns) instead of failing requests.
+limiter = Limiter(
+    key_func=_user_id_or_ip,
+    storage_uri=_storage_uri(),
+    storage_options={"socket_connect_timeout": 1, "socket_timeout": 1},
+    in_memory_fallback_enabled=True,
+    swallow_errors=True,
+)
