@@ -6,6 +6,11 @@ resource "helm_release" "kyverno" {
   name             = "kyverno"
   repository       = "https://kyverno.github.io/kyverno/"
   chart            = "kyverno"
+  # Pinned: Kyverno 1.20 (12 Nov 2026) no longer runs kyverno.io ClusterPolicy
+  # or PolicyException, which is everything in infra/system/tenant-policies.yaml
+  # and the exceptions. Chart 3.8.1 = Kyverno 1.18.1, the newest line that still
+  # enforces them. Unpin only after migrating to policies.kyverno.io (roadmap).
+  version          = "3.8.1"
   namespace        = "kyverno"
   create_namespace = true
   wait             = true
@@ -39,6 +44,7 @@ resource "helm_release" "kyverno_policies" {
   name       = "kyverno-policies"
   repository = "https://kyverno.github.io/kyverno/"
   chart      = "kyverno-policies"
+  version    = "3.8.1" # same release line as the kyverno chart above
   namespace  = "kyverno"
 
   create_namespace = true
