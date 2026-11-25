@@ -5,7 +5,24 @@ import { Terminal } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default function LandingPage() {
+// Auth.js error codes (?error=...) mapped to something a person can act on.
+const SIGN_IN_ERRORS: Record<string, string> = {
+  AccessDenied:
+    "This GitHub account isn't allowed in. ShipZen is invite-only: sign in with an invited account, or ask an admin for an invitation.",
+  Configuration: "Sign-in is misconfigured on the server. Try again later.",
+  Verification: "That sign-in link has expired. Sign in again.",
+};
+
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string | string[] }>;
+}) {
+  const raw = (await searchParams).error;
+  const errorCode = Array.isArray(raw) ? raw[0] : raw;
+  const signInError = errorCode
+    ? SIGN_IN_ERRORS[errorCode] ?? "Sign-in didn't work. Try again."
+    : null;
   const hasGithub = !!(process.env.OAUTH_CLIENT_ID || process.env.SHIPZEN_OAUTH_CLIENT_ID);
 
   const isStubAuthEnabled = process.env.ENABLE_LOCAL_STUB_AUTH === "true";
@@ -49,6 +66,12 @@ export default function LandingPage() {
               Sign in to access your dashboard.
             </p>
           </div>
+
+          {signInError && (
+            <p role="alert" className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-600 dark:text-red-400">
+              {signInError}
+            </p>
+          )}
 
           <LoginButton hasGithub={hasGithub} isStubAuthEnabled={isStubAuthEnabled} />
         </div>

@@ -139,5 +139,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   pages: {
     signIn: "/",
+    // Send sign-in errors back to the landing page, which explains them.
+    // (The default Auth.js error page's "Sign in" link went to a broken URL.)
+    error: "/",
   },
 })
