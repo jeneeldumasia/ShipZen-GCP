@@ -1,0 +1,15 @@
+# Lets Kyverno's reports controller read HTTPRoutes, so the
+# restrict-tenant-hostnames ValidatingPolicy (tenant-policies.yaml) reports
+# Ready. Without it the policy still enforces at admission, but its status says
+# "missing permissions" and it never shows Ready. The label aggregates this
+# into the chart's kyverno:reports-controller ClusterRole.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:reports-controller:httproutes
+  labels:
+    rbac.kyverno.io/aggregate-to-reports-controller: "true"
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch"]

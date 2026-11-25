@@ -31,6 +31,7 @@ resources:
   - build-network-policy.yaml
   - tenant-appproject.yaml
   - tenant-policies.yaml
+  - kyverno-reports-rbac.yaml
   - applicationset.yaml
   - loki.yaml
 
