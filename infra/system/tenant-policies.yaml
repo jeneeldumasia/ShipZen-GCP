@@ -1,103 +1,96 @@
 # Kyverno rules for tenant namespaces (label shipzen.jeneeldumasia.codes/tenant=true).
 # Defence in depth behind the controller's templates and the tenant AppProject.
+#
+# CEL-based ValidatingPolicy (policies.kyverno.io/v1): Kyverno 1.20 no longer
+# runs the old kyverno.io ClusterPolicy type these used to be written in.
+# `namespaceObject` is the namespace the request is in, so its labels (set by
+# the controller) are read without an API call.
 
-# A tenant ExternalSecret may read only its own project's
-# secret, and only through the tenant store (whose Google identity can read
-# shipzen-project-* and nothing else). Without this a tenant manifest could ask
-# the store for another project's secret.
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+# A tenant ExternalSecret may read only its own project's secret, and only
+# through the tenant store (whose Google identity can read shipzen-project-*
+# and nothing else). Without this a tenant manifest could ask the store for
+# another project's secret.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: tenant-externalsecret-own-project
   annotations:
     policies.kyverno.io/title: Tenant ExternalSecrets read only their own project's secret
 spec:
-  validationFailureAction: Enforce
-  background: false
-  rules:
-    - name: own-project-secret-through-tenant-store
-      match:
-        any:
-          - resources:
-              kinds:
-                - external-secrets.io/v1beta1/ExternalSecret
-              namespaceSelector:
-                matchLabels:
-                  shipzen.jeneeldumasia.codes/tenant: "true"
-      context:
-        - name: projectId
-          apiCall:
-            urlPath: "/api/v1/namespaces/{{ request.namespace }}"
-            jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/project-id"'
-      validate:
-        message: >-
-          Tenant ExternalSecrets may only read shipzen-project-{{ projectId }} through
-          the gcp-secret-manager-tenants store.
-        deny:
-          conditions:
-            any:
-              - key: "{{ request.object.spec.secretStoreRef.name || '' }}"
-                operator: NotEquals
-                value: gcp-secret-manager-tenants
-              - key: "{{ request.object.spec.dataFrom[].extract.key || `[]` }}"
-                operator: AnyNotIn
-                value:
-                  - "shipzen-project-{{ projectId }}"
-              - key: "{{ length(request.object.spec.data || `[]`) }}"
-                operator: GreaterThan
-                value: 0
-              # dataFrom.find matches secrets by name pattern: never for tenants.
-              - key: "{{ length(request.object.spec.dataFrom[].find || `[]`) }}"
-                operator: GreaterThan
-                value: 0
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        shipzen.jeneeldumasia.codes/tenant: "true"
+    resourceRules:
+      - apiGroups: ["external-secrets.io"]
+        apiVersions: ["v1", "v1beta1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["externalsecrets"]
+  variables:
+    - name: projectId
+      expression: >-
+        namespaceObject.metadata.?labels[?'shipzen.jeneeldumasia.codes/project-id'].orValue('')
+    - name: ownSecret
+      expression: "'shipzen-project-' + variables.projectId"
+  validations:
+    - expression: >-
+        object.spec.?secretStoreRef.?name.orValue('') == 'gcp-secret-manager-tenants' &&
+        object.spec.?secretStoreRef.?kind.orValue('') == 'ClusterSecretStore'
+      message: Tenant ExternalSecrets must use the gcp-secret-manager-tenants ClusterSecretStore.
+    - expression: >-
+        variables.projectId != '' &&
+        object.spec.?dataFrom.orValue([]).all(d,
+          has(d.extract) && !has(d.find) && d.extract.key == variables.ownSecret)
+      messageExpression: >-
+        'Tenant ExternalSecrets may only read ' + variables.ownSecret +
+        ' (dataFrom.extract); find and other sources are not allowed.'
+    - expression: "size(object.spec.?data.orValue([])) == 0"
+      message: Tenant ExternalSecrets may not use spec.data; use dataFrom.extract of the project's secret.
 ---
-# Every hostname shares one Gateway, which accepts routes
-# from all namespaces. A tenant route may only claim hostnames of its own
-# project, never the platform's or another project's:
+# Every hostname shares one Gateway, which accepts routes from all namespaces.
+# A tenant route may only claim hostnames of its own project, never the
+# platform's or another project's:
 #   <8-char release id>-<project slug>-shipzen.jeneeldumasia.codes
 #   <its vanity name>-shipzen.jeneeldumasia.codes   (namespace label, set by the controller)
 # Exactly 8 characters before the slug, and vanity names can't have that shape,
 # so one project's pattern can't match another project's hostnames.
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: restrict-tenant-hostnames
   annotations:
     policies.kyverno.io/title: Tenant routes only use their own project's hostnames
 spec:
-  validationFailureAction: Enforce
-  background: false
-  rules:
-    - name: own-project-hostnames
-      match:
-        any:
-          - resources:
-              kinds:
-                - gateway.networking.k8s.io/v1/HTTPRoute
-              namespaceSelector:
-                matchLabels:
-                  shipzen.jeneeldumasia.codes/tenant: "true"
-      context:
-        - name: slug
-          apiCall:
-            urlPath: "/api/v1/namespaces/{{ request.namespace }}"
-            jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/slug" || '''''
-        - name: vanity
-          apiCall:
-            urlPath: "/api/v1/namespaces/{{ request.namespace }}"
-            jmesPath: 'metadata.labels."shipzen.jeneeldumasia.codes/vanity" || '''''
-      validate:
-        message: >-
-          Hostnames in this namespace must be <8-char release id>-{{ slug }}-shipzen.jeneeldumasia.codes
-          or the project's vanity name.
-        deny:
-          conditions:
-            any:
-              - key: "{{ slug }}"
-                operator: Equals
-                value: ""
-              - key: "{{ request.object.spec.hostnames || `[]` }}"
-                operator: AnyNotIn
-                value:
-                  - "????????-{{ slug }}-shipzen.jeneeldumasia.codes"
-                  - "{{ vanity }}-shipzen.jeneeldumasia.codes"
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        shipzen.jeneeldumasia.codes/tenant: "true"
+    resourceRules:
+      - apiGroups: ["gateway.networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["httproutes"]
+  variables:
+    - name: slug
+      expression: >-
+        namespaceObject.metadata.?labels[?'shipzen.jeneeldumasia.codes/slug'].orValue('')
+    - name: vanity
+      expression: >-
+        namespaceObject.metadata.?labels[?'shipzen.jeneeldumasia.codes/vanity'].orValue('')
+  validations:
+    - expression: >-
+        variables.slug != '' &&
+        object.spec.?hostnames.orValue([]).all(h,
+          h.matches('^[a-z0-9]{8}-' + variables.slug + '-shipzen[.]jeneeldumasia[.]codes$') ||
+          (variables.vanity != '' && h == variables.vanity + '-shipzen.jeneeldumasia.codes'))
+      messageExpression: >-
+        'Hostnames in this namespace must be <8-char release id>-' + variables.slug +
+        '-shipzen.jeneeldumasia.codes or the project\'s vanity name.'

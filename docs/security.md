@@ -51,6 +51,7 @@ under [Known gaps](#known-gaps), not under controls.
 | Check | How |
 |---|---|
 | Build pods have no Google identity | Run **Security Check** (Actions). Every identity probe must say PASS. |
+| Tenant policies are enforced | The same run sends good and bad HTTPRoutes and ExternalSecrets to a tenant namespace as server-side dry runs; Kyverno must refuse the bad ones (`scripts/policy-probe.sh`). |
 | Network isolation holds | The same run starts a pod in a tenant namespace and one in `shipzen-build`; every connection must be blocked or allowed as expected (`scripts/netpolicy-probe.sh`). It first checks that Dataplane V2 (`anetd`) is running, and that builds can't use an odd port. Terraform also warns on every plan while the cluster lacks Dataplane V2. |
 | Raw gateway IP is closed | `curl -m 5 http://<gateway IP>/` should time out; the site should still load. |
 | Nobody else can sign in | Sign in with another GitHub account: expect "Access denied". Invite it, sign in again (works), revoke, and the next page load fails. |
