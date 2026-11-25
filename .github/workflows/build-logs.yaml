@@ -38,7 +38,9 @@ jobs:
         env:
           DEPLOYMENT_ID: ${{ inputs.deployment_id }}
         run: |
-          set -uo pipefail
+          # GitHub runs this with bash -e; lookups below are allowed to fail
+          # (no cluster, no stored log) and are handled explicitly.
+          set +e -u -o pipefail
           redact() {
             sed -E -e 's/ya29\.[A-Za-z0-9._-]+/ya29.<redacted>/g' \
                    -e 's/(gh[pousr]_)[A-Za-z0-9]{20,}/\1<redacted>/g' \
@@ -58,10 +60,8 @@ jobs:
           # the Terraform naming convention when the cluster is down.
           BUCKET="$(kubectl get secret shipzen-gcs-config -n shipzen-system \
             -o jsonpath='{.data.bucket_name}' 2>/dev/null | base64 -d)"
-          if [ -z "$BUCKET" ]; then
-            BUCKET="$(gcloud storage buckets list --project "${{ secrets.GCP_PROJECT_ID }}" \
-              --format='value(name)' 2>/dev/null | grep -m1 'build-logs')"
-          fi
+          # Same name Terraform gives it (terraform/main.tf).
+          [ -z "$BUCKET" ] && BUCKET="${{ secrets.GCP_PROJECT_ID }}-build-logs"
           if [ -z "$BUCKET" ]; then echo "::error::couldn't find the build-logs bucket"; exit 1; fi
 
           if [ -z "$DEPLOYMENT_ID" ]; then
@@ -71,6 +71,10 @@ jobs:
           if [ -z "$DEPLOYMENT_ID" ]; then echo "::error::no build logs found"; exit 1; fi
 
           echo "Deployment: $DEPLOYMENT_ID"
+          if ! gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1; then
+            echo "::error::The build-logs bucket doesn't exist (it is deleted with the cluster on teardown); logs from before the last rebuild are gone."
+            exit 1
+          fi
           if ! gcloud storage cat "gs://$BUCKET/logs/$DEPLOYMENT_ID/build.log" > build.log 2>/dev/null; then
             echo "No stored log yet; showing the live build pod instead."
             kubectl logs -n shipzen-build -l "shipzen.jeneeldumasia.codes/deployment=$DEPLOYMENT_ID" \
