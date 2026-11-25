@@ -58,7 +58,7 @@ jobs:
           kubectl delete pod iam-probe -n shipzen-build --ignore-not-found
           kubectl create configmap iam-probe -n shipzen-build --from-file=probe.sh=/tmp/probe.sh --dry-run=client -o yaml | kubectl apply -f -
           kubectl run iam-probe -n shipzen-build --restart=Never --image=google/cloud-sdk:slim \
-            --overrides='{"spec":{"serviceAccountName":"shipzen-builder-sa","tolerations":[{"key":"shipzen.jeneeldumasia.codes/dedicated","operator":"Equal","value":"builder","effect":"NoSchedule"}],"volumes":[{"name":"p","configMap":{"name":"iam-probe"}}],"containers":[{"name":"iam-probe","image":"google/cloud-sdk:slim","command":["bash","/probe/probe.sh","'"$PROJECT"'"],"volumeMounts":[{"name":"p","mountPath":"/probe"}]}]}}'
+            --overrides='{"spec":{"serviceAccountName":"shipzen-builder-sa","tolerations":[{"key":"shipzen.jeneeldumasia.codes/dedicated","operator":"Equal","value":"builder","effect":"NoSchedule"}],"volumes":[{"name":"p","configMap":{"name":"iam-probe"}}],"containers":[{"name":"iam-probe","image":"google/cloud-sdk:slim","command":["bash","/probe/probe.sh","'"$PROJECT"'"],"resources":{"requests":{"cpu":"100m","memory":"256Mi"},"limits":{"cpu":"500m","memory":"512Mi"}},"volumeMounts":[{"name":"p","mountPath":"/probe"}]}]}}'
           kubectl wait pod/iam-probe -n shipzen-build --for=jsonpath='{.status.phase}'=Succeeded --timeout=300s || true
           RESULT="$(kubectl logs iam-probe -n shipzen-build 2>&1 | sed "s/$PROJECT/<project>/g")"
           kubectl delete pod iam-probe -n shipzen-build --ignore-not-found
